@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MemoryGraph의 Memory 노드, 13개 기억 타입, 35개 관계 타입과 확장 범위를 설명하는 대화형 문서">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='10' cy='16' r='6' fill='%23176b5b'/%3E%3Ccircle cx='24' cy='9' r='4' fill='%23a25b32'/%3E%3Ccircle cx='24' cy='24' r='4' fill='%2365558f'/%3E%3Cpath d='M15 13l5-2M15 19l5 3' stroke='%231d2925' stroke-width='2'/%3E%3C/svg%3E">
+  <title>MemoryGraph 기본 스키마와 확장 범위</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f1e9;
+      --paper: #fffdf7;
+      --paper-2: #ece8dc;
+      --ink: #1d2925;
+      --muted: #60706a;
+      --line: #d6d2c6;
+      --accent: #176b5b;
+      --accent-soft: #dcece7;
+      --warm: #a25b32;
+      --warm-soft: #f5e5d9;
+      --violet: #65558f;
+      --violet-soft: #e9e3f4;
+      --code: #17221f;
+      --code-ink: #ebf4f0;
+      --shadow: 0 20px 60px rgba(32, 43, 39, .09);
+      --radius: 18px;
+      --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111714;
+        --paper: #18201d;
+        --paper-2: #212b27;
+        --ink: #e8eeeb;
+        --muted: #a6b4ae;
+        --line: #35413c;
+        --accent: #71c6b2;
+        --accent-soft: #203c35;
+        --warm: #e2a47d;
+        --warm-soft: #3d2d23;
+        --violet: #baa8e3;
+        --violet-soft: #322c43;
+        --code: #0c110f;
+        --code-ink: #e7f1ed;
+        --shadow: 0 20px 60px rgba(0, 0, 0, .28);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.65;
+      letter-spacing: -.01em;
+    }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    button, input { font: inherit; }
+    code {
+      font-family: var(--mono);
+      font-size: .88em;
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: .08em .35em;
+    }
+    .skip-link {
+      position: fixed;
+      z-index: 20;
+      top: 10px;
+      left: 10px;
+      transform: translateY(-160%);
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--ink);
+      color: var(--paper);
+    }
+    .skip-link:focus { transform: translateY(0); }
+    .shell {
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr);
+      width: min(1420px, 100%);
+      margin: 0 auto;
+    }
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 34px 22px;
+      border-right: 1px solid var(--line);
+      overflow: auto;
+    }
+    .rail-mark {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 34px;
+      font-weight: 760;
+    }
+    .rail-mark::before {
+      content: "";
+      width: 17px;
+      height: 17px;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      box-shadow: 9px 0 0 -4px var(--bg), 10px 0 0 -2px var(--warm);
+    }
+    .rail nav { display: grid; gap: 4px; }
+    .rail nav a {
+      padding: 7px 10px;
+      color: var(--muted);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      font-size: .9rem;
+    }
+    .rail nav a:hover,
+    .rail nav a:focus-visible {
+      color: var(--ink);
+      border-left-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .rail-note {
+      margin-top: 34px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .78rem;
+    }
+    main {
+      min-width: 0;
+      padding: 54px clamp(24px, 5vw, 76px) 100px;
+    }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(28px, 5vw, 58px);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 280px;
+      height: 280px;
+      right: -90px;
+      top: -105px;
+      border: 44px solid var(--accent-soft);
+      border-radius: 50%;
+      opacity: .75;
+      pointer-events: none;
+    }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      position: relative;
+      z-index: 1;
+      max-width: 780px;
+      margin-bottom: 18px;
+      font-size: clamp(2.25rem, 5vw, 4.7rem);
+      line-height: 1.03;
+      letter-spacing: -.055em;
+    }
+    .lede {
+      position: relative;
+      z-index: 1;
+      max-width: 68ch;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.6vw, 1.2rem);
+    }
+    .stats {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 660px;
+      margin-top: 34px;
+    }
+    .stat {
+      padding: 16px;
+      border-top: 3px solid var(--accent);
+      background: var(--accent-soft);
+    }
+    .stat:nth-child(2) { border-color: var(--warm); background: var(--warm-soft); }
+    .stat:nth-child(3) { border-color: var(--violet); background: var(--violet-soft); }
+    .stat strong { display: block; font-size: 1.7rem; line-height: 1; }
+    .stat span { color: var(--muted); font-size: .82rem; }
+    section { scroll-margin-top: 24px; margin-top: 80px; }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, .7fr) minmax(280px, 1.3fr);
+      gap: 30px;
+      align-items: end;
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .section-head h2 {
+      margin: 0;
+      font-size: clamp(1.65rem, 3vw, 2.6rem);
+      line-height: 1.1;
+      letter-spacing: -.04em;
+    }
+    .section-head p { margin: 0; color: var(--muted); max-width: 66ch; }
+    .verdict-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .verdict {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper);
+    }
+    .verdict b:first-child {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .verdict p { margin: 2px 0 0; color: var(--muted); font-size: .92rem; }
+    .diagram-wrap {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(260px, .6fr);
+      gap: 20px;
+    }
+    figure {
+      margin: 0;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      overflow: hidden;
+    }
+    figure svg { width: 100%; height: auto; color: var(--ink); }
+    figcaption {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: .83rem;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .button:hover { border-color: var(--accent); color: var(--accent); }
+    .glossary {
+      padding: 22px;
+      border-radius: var(--radius);
+      background: var(--paper-2);
+    }
+    .glossary h3 { margin-bottom: 14px; }
+    .glossary dl { margin: 0; }
+    .glossary dt { margin-top: 13px; font-family: var(--mono); font-weight: 700; font-size: .85rem; }
+    .glossary dd { margin: 3px 0 0; color: var(--muted); font-size: .88rem; }
+    .code-line {
+      margin: 20px 0 0;
+      padding: 15px 18px;
+      overflow: auto;
+      border-radius: 10px;
+      background: var(--code);
+      color: var(--code-ink);
+      font: .9rem/1.65 var(--mono);
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .search {
+      flex: 1 1 240px;
+      min-height: 42px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--paper);
+      color: var(--ink);
+    }
+    .filter {
+      min-height: 36px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: .82rem;
+    }
+    .filter[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+    .type-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .type-card {
+      min-height: 104px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper);
+    }
+    .type-card code { display: inline-block; margin-bottom: 9px; color: var(--accent); }
+    .type-card p { margin: 0; color: var(--muted); font-size: .88rem; }
+    .type-card[hidden], .relation-card[hidden] { display: none; }
+    .decision-note {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 14px;
+      margin-top: 18px;
+      padding: 18px;
+      border-left: 4px solid var(--warm);
+      background: var(--warm-soft);
+    }
+    .decision-note .label {
+      color: var(--warm);
+      font: 700 .74rem var(--mono);
+      letter-spacing: .08em;
+    }
+    .decision-note p { margin: 0; }
+    .relation-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .relation-card {
+      display: grid;
+      grid-template-columns: 112px 1fr;
+      min-height: 112px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--paper);
+    }
+    .relation-category {
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      background: var(--paper-2);
+      color: var(--muted);
+      text-align: center;
+      font-size: .82rem;
+      font-weight: 700;
+    }
+    .relation-list { display: flex; flex-wrap: wrap; align-content: center; gap: 7px; padding: 14px; }
+    .relation-list span {
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font: .75rem var(--mono);
+      cursor: help;
+    }
+    .relation-list span:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .properties {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .property {
+      padding: 18px;
+      border-radius: 12px;
+      background: var(--paper-2);
+    }
+    .property strong { display: block; font-family: var(--mono); color: var(--violet); }
+    .property p { margin: 5px 0 0; color: var(--muted); font-size: .88rem; }
+    .support-grid, .choice-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .support, .choice {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+    }
+    .support .node-label {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      background: var(--violet-soft);
+      color: var(--violet);
+      font: 700 .78rem var(--mono);
+    }
+    .support p, .choice p, .choice li { color: var(--muted); }
+    .support p:last-child, .choice p:last-child { margin-bottom: 0; }
+    .choice.recommended { border-color: var(--accent); box-shadow: inset 0 4px 0 var(--accent); }
+    .choice small { color: var(--accent); font-weight: 700; }
+    .choice ul { padding-left: 20px; }
+    details {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--paper);
+    }
+    summary { padding: 14px 16px; cursor: pointer; font-weight: 700; }
+    details > div { padding: 0 16px 16px; color: var(--muted); }
+    footer {
+      margin-top: 90px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .82rem;
+    }
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 30;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--ink);
+      color: var(--paper);
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .empty { display: none; color: var(--muted); padding: 16px; border: 1px dashed var(--line); }
+    .empty.show { display: block; }
+
+    @media (max-width: 900px) {
+      .shell { display: block; }
+      .rail {
+        position: sticky;
+        z-index: 10;
+        height: auto;
+        padding: 10px 18px;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--bg) 92%, transparent);
+        backdrop-filter: blur(12px);
+      }
+      .rail-mark, .rail-note { display: none; }
+      .rail nav { display: flex; gap: 4px; overflow-x: auto; }
+      .rail nav a { white-space: nowrap; border-left: 0; border-bottom: 2px solid transparent; }
+      main { padding-top: 28px; }
+      .section-head { grid-template-columns: 1fr; gap: 10px; }
+      .diagram-wrap { grid-template-columns: 1fr; }
+      .type-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 620px) {
+      main { padding-inline: 15px; }
+      .hero { border-radius: 18px; }
+      .stats, .verdict-grid, .type-grid, .relation-grid, .properties, .support-grid, .choice-grid { grid-template-columns: 1fr; }
+      .relation-card { grid-template-columns: 94px 1fr; }
+      figcaption { align-items: flex-start; flex-direction: column; }
+    }
+    @media print {
+      .rail, .toolbar, .button, .toast { display: none !important; }
+      .shell { display: block; }
+      main { padding: 0; }
+      body { background: white; color: black; }
+      .hero, figure, .type-card, .relation-card, .support, .choice { box-shadow: none; break-inside: avoid; }
+      section { margin-top: 42px; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <div class="shell">
+    <aside class="rail" aria-label="문서 탐색">
+      <div class="rail-mark">MemoryGraph</div>
+      <nav>
+        <a href="#summary">핵심 결론</a>
+        <a href="#model">구조 이해</a>
+        <a href="#types">기억 타입 13개</a>
+        <a href="#relations">관계 타입 35개</a>
+        <a href="#internal">내부 보조 노드</a>
+        <a href="#extension">확장 범위</a>
+        <a href="#sources">출처</a>
+      </nav>
+      <p class="rail-note">기준 커밋<br><code>4f834c0</code></p>
+    </aside>
+
+    <main id="main">
+      <header class="hero">
+        <p class="eyebrow">Schema reference · Harness v2</p>
+        <h1>MemoryGraph의 기본 스키마와 확장 범위</h1>
+        <p class="lede">사용자가 저장하는 핵심 대상은 하나의 <code>Memory</code> 노드다. 문제와 해결책은 서로 다른 구조가 아니라 <code>Memory.type</code>으로 구분되며, 기억 사이에는 미리 정의된 방향 관계를 연결한다.</p>
+        <div class="stats" aria-label="핵심 수치">
+          <div class="stat"><strong>1</strong><span>핵심 사용자 노드 라벨</span></div>
+          <div class="stat"><strong>13</strong><span>허용된 기억 타입</span></div>
+          <div class="stat"><strong>35</strong><span>허용된 관계 타입</span></div>
+        </div>
+      </header>
+
+      <section id="summary">
+        <div class="section-head">
+          <h2>먼저 이것만 알면 된다</h2>
+          <p>MemoryGraph를 사용할 때 가장 자주 혼동하는 “노드 종류”와 “기억 분류”를 분리하면 전체 구조가 단순해진다.</p>
+        </div>
+        <div class="verdict-grid">
+          <article class="verdict"><b>1</b><div><strong>핵심 노드는 모두 Memory</strong><p>일반 사용자가 직접 저장하는 기억은 동일한 구조의 <code>Memory</code> 노드다.</p></div></article>
+          <article class="verdict"><b>2</b><div><strong>문제·해결책은 type 값</strong><p><code>problem</code>과 <code>solution</code>은 별도 노드 라벨이 아니라 분류값이다.</p></div></article>
+          <article class="verdict"><b>3</b><div><strong>관계는 방향이 있다</strong><p><code>solution —SOLVES→ problem</code>처럼 출발점과 도착점에 의미가 있다.</p></div></article>
+          <article class="verdict"><b>4</b><div><strong>임의 타입은 바로 추가할 수 없다</strong><p>공식 목록 밖의 값은 거부되며, 확장하려면 소스를 수정하고 다시 빌드해야 한다.</p></div></article>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="section-head">
+          <h2>하나의 구조, 다른 분류</h2>
+          <p>두 기억은 모두 <code>Memory</code>다. <code>type</code> 값과 관계만 달라진다. 점선으로 표시한 Entity와 Outcome은 고급 기능이 만드는 내부 보조 구조다.</p>
+        </div>
+        <div class="diagram-wrap">
+          <figure>
+            <svg id="schema-figure" viewBox="0 0 760 390" role="img" aria-labelledby="schema-title schema-desc">
+              <title id="schema-title">MemoryGraph 핵심 노드와 관계</title>
+              <desc id="schema-desc">solution 타입 Memory가 SOLVES 관계를 통해 problem 타입 Memory를 가리키며, 내부 Entity와 Outcome 보조 노드가 점선으로 연결된다.</desc>
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+                </marker>
+              </defs>
+              <g id="solution-memory">
+                <rect x="48" y="118" width="250" height="138" rx="18" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>
+                <text x="74" y="150" fill="var(--accent)" font-family="var(--mono)" font-size="13" font-weight="700">NODE LABEL</text>
+                <text x="74" y="182" fill="currentColor" font-family="var(--sans)" font-size="26" font-weight="750">Memory</text>
+                <text x="74" y="214" fill="currentColor" font-family="var(--mono)" font-size="15">type: "solution"</text>
+                <text x="74" y="238" fill="var(--muted)" font-family="var(--sans)" font-size="13">해결책 기억</text>
+              </g>
+              <g id="problem-memory">
+                <rect x="462" y="118" width="250" height="138" rx="18" fill="var(--warm-soft)" stroke="var(--warm)" stroke-width="2"/>
+                <text x="488" y="150" fill="var(--warm)" font-family="var(--mono)" font-size="13" font-weight="700">NODE LABEL</text>
+                <text x="488" y="182" fill="currentColor" font-family="var(--sans)" font-size="26" font-weight="750">Memory</text>
+                <text x="488" y="214" fill="currentColor" font-family="var(--mono)" font-size="15">type: "problem"</text>
+                <text x="488" y="238" fill="var(--muted)" font-family="var(--sans)" font-size="13">문제 기억</text>
+              </g>
+              <line x1="300" y1="187" x2="454" y2="187" stroke="currentColor" stroke-width="2" marker-end="url(#arrow)"/>
+              <rect x="342" y="165" width="72" height="30" rx="15" fill="var(--paper)" stroke="var(--line)"/>
+              <text x="378" y="185" text-anchor="middle" fill="currentColor" font-family="var(--mono)" font-size="12" font-weight="700">SOLVES</text>
+              <g opacity=".82">
+                <rect x="102" y="306" width="150" height="54" rx="27" fill="none" stroke="var(--violet)" stroke-width="2" stroke-dasharray="6 5"/>
+                <text x="177" y="339" text-anchor="middle" fill="var(--violet)" font-family="var(--mono)" font-size="14">Entity</text>
+                <line x1="177" y1="306" x2="177" y2="264" stroke="var(--violet)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+              </g>
+              <g opacity=".82">
+                <rect x="508" y="306" width="150" height="54" rx="27" fill="none" stroke="var(--violet)" stroke-width="2" stroke-dasharray="6 5"/>
+                <text x="583" y="339" text-anchor="middle" fill="var(--violet)" font-family="var(--mono)" font-size="14">Outcome</text>
+                <line x1="583" y1="306" x2="583" y2="264" stroke="var(--violet)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+              </g>
+            </svg>
+            <figcaption>
+              <span>같은 Memory 구조를 type으로 분류하고, 방향 관계로 의미를 연결한다.</span>
+              <button class="button" type="button" data-copy-svg="schema-figure">SVG 복사</button>
+            </figcaption>
+          </figure>
+          <aside class="glossary">
+            <h3>용어 바로잡기</h3>
+            <dl>
+              <dt>노드</dt><dd>그래프에 저장되는 대상 하나. 문제 기억 하나가 노드 하나다.</dd>
+              <dt>노드 라벨</dt><dd>노드의 구조적 종류. 일반 기억은 <code>Memory</code> 라벨을 쓴다.</dd>
+              <dt>Memory.type</dt><dd>기억이 문제인지 해결책인지 나타내는 분류 필드다.</dd>
+              <dt>관계</dt><dd>두 노드가 어떻게 연결되는지 나타내는 방향 있는 선이다.</dd>
+              <dt>enum</dt><dd>프로그램이 허용하는 값을 미리 정해 둔 목록이다.</dd>
+            </dl>
+          </aside>
+        </div>
+        <pre class="code-line" aria-label="Memory 노드 예시">(Memory { type: "problem", ... })
+(Memory { type: "solution", ... })</pre>
+      </section>
+
+      <section id="types">
+        <div class="section-head">
+          <h2>공식 기억 타입 13개</h2>
+          <p><code>Memory.type</code>에 들어갈 수 있는 값이다. 검색창으로 이름이나 쉬운 설명을 빠르게 좁힐 수 있다.</p>
+        </div>
+        <div class="toolbar">
+          <input class="search" id="type-search" type="search" placeholder="예: 문제, 명령, workflow" aria-label="기억 타입 검색">
+          <span id="type-count" aria-live="polite">13개 표시</span>
+        </div>
+        <div class="type-grid" id="type-grid">
+          <article class="type-card" data-search="task 수행한 작업 할 일"><code>task</code><p>수행한 작업이나 할 일</p></article>
+          <article class="type-card" data-search="code_pattern 코드 패턴 재사용 방식"><code>code_pattern</code><p>재사용할 수 있는 코드 방식</p></article>
+          <article class="type-card" data-search="problem 문제 제약"><code>problem</code><p>발견한 문제나 제약</p></article>
+          <article class="type-card" data-search="solution 해결책 결정 접근법"><code>solution</code><p>해결책, 결정 또는 선택한 접근법</p></article>
+          <article class="type-card" data-search="project 프로젝트 환경 구조 배경"><code>project</code><p>프로젝트 환경·구조·배경 지식</p></article>
+          <article class="type-card" data-search="technology 기술 프레임워크 도구"><code>technology</code><p>기술·프레임워크·도구 지식</p></article>
+          <article class="type-card" data-search="error 오류 에러"><code>error</code><p>구체적으로 발생한 오류</p></article>
+          <article class="type-card" data-search="fix 수정 고침"><code>fix</code><p>오류를 바로잡은 수정</p></article>
+          <article class="type-card" data-search="command 명령 CLI 사용법"><code>command</code><p>다시 사용할 명령과 사용법</p></article>
+          <article class="type-card" data-search="file_context 파일 역할 주의사항"><code>file_context</code><p>특정 파일의 역할과 주의사항</p></article>
+          <article class="type-card" data-search="workflow 작업 절차 프로세스"><code>workflow</code><p>반복 가능한 작업 절차</p></article>
+          <article class="type-card" data-search="general 일반 지식"><code>general</code><p>나머지 일반 지식</p></article>
+          <article class="type-card" data-search="conversation 대화 세션 요약"><code>conversation</code><p>대화나 작업 세션 요약</p></article>
+        </div>
+        <p class="empty" id="type-empty">일치하는 기억 타입이 없습니다.</p>
+        <div class="decision-note">
+          <span class="label">DECISION</span>
+          <p>공식 목록에는 <code>decision</code>이 없다. 소스를 바꾸지 않는 첫 버전에서는 설계 결정을 <code>solution</code>으로 저장하고 <code>decision</code> 태그를 붙여 세분화한다.</p>
+        </div>
+      </section>
+
+      <section id="relations">
+        <div class="section-head">
+          <h2>공식 관계 타입 35개</h2>
+          <p>관계는 기억 사이의 의미를 나타내는 방향 있는 선이다. 범주 버튼이나 검색으로 필요한 관계만 확인할 수 있다.</p>
+        </div>
+        <div class="toolbar" id="relation-filters">
+          <input class="search" id="relation-search" type="search" placeholder="예: SOLVES, 대체, 의존" aria-label="관계 타입 검색">
+          <button class="filter" type="button" data-category="all" aria-pressed="true">전체</button>
+          <button class="filter" type="button" data-category="causal" aria-pressed="false">원인·결과</button>
+          <button class="filter" type="button" data-category="solution" aria-pressed="false">문제 해결</button>
+          <button class="filter" type="button" data-category="context" aria-pressed="false">적용 맥락</button>
+          <button class="filter" type="button" data-category="learning" aria-pressed="false">지식 변화</button>
+          <button class="filter" type="button" data-category="similarity" aria-pressed="false">유사·비교</button>
+          <button class="filter" type="button" data-category="workflow" aria-pressed="false">작업 흐름</button>
+          <button class="filter" type="button" data-category="quality" aria-pressed="false">효과·선호</button>
+          <span id="relation-count" aria-live="polite">35개 표시</span>
+        </div>
+        <div class="relation-grid" id="relation-grid">
+          <article class="relation-card" data-category="causal" data-search="CAUSES 원인이 됨 TRIGGERS 촉발함 LEADS_TO 결과 PREVENTS 막음 BREAKS 망가뜨림"><div class="relation-category">원인·결과</div><div class="relation-list"><span title="원인이 됨">CAUSES</span><span title="촉발함">TRIGGERS</span><span title="결과로 이어짐">LEADS_TO</span><span title="막음">PREVENTS</span><span title="망가뜨림">BREAKS</span></div></article>
+          <article class="relation-card" data-category="solution" data-search="SOLVES 해결 ADDRESSES 다룸 ALTERNATIVE_TO 대안 IMPROVES 개선 REPLACES 대체"><div class="relation-category">문제 해결</div><div class="relation-list"><span title="해결함">SOLVES</span><span title="문제를 다룸">ADDRESSES</span><span title="대안임">ALTERNATIVE_TO</span><span title="개선함">IMPROVES</span><span title="대체함">REPLACES</span></div></article>
+          <article class="relation-card" data-category="context" data-search="OCCURS_IN 상황 APPLIES_TO 적용 WORKS_WITH 함께 REQUIRES 필요 USED_IN 사용"><div class="relation-category">적용 맥락</div><div class="relation-list"><span title="그 상황에서 발생함">OCCURS_IN</span><span title="적용됨">APPLIES_TO</span><span title="함께 동작함">WORKS_WITH</span><span title="필요로 함">REQUIRES</span><span title="그곳에서 사용됨">USED_IN</span></div></article>
+          <article class="relation-card" data-category="learning" data-search="BUILDS_ON 바탕 확장 CONTRADICTS 모순 CONFIRMS 뒷받침 GENERALIZES 일반화 SPECIALIZES 특정"><div class="relation-category">지식 변화</div><div class="relation-list"><span title="바탕으로 확장함">BUILDS_ON</span><span title="모순됨">CONTRADICTS</span><span title="뒷받침함">CONFIRMS</span><span title="일반화함">GENERALIZES</span><span title="특정 상황으로 좁힘">SPECIALIZES</span></div></article>
+          <article class="relation-card" data-category="similarity" data-search="SIMILAR_TO 비슷 VARIANT_OF 변형 RELATED_TO 관련 ANALOGY_TO 유사 OPPOSITE_OF 반대"><div class="relation-category">유사·비교</div><div class="relation-list"><span title="비슷함">SIMILAR_TO</span><span title="변형임">VARIANT_OF</span><span title="관련됨">RELATED_TO</span><span title="유사 구조임">ANALOGY_TO</span><span title="반대됨">OPPOSITE_OF</span></div></article>
+          <article class="relation-card" data-category="workflow" data-search="FOLLOWS 뒤따름 DEPENDS_ON 의존 ENABLES 가능 BLOCKS 막음 PARALLEL_TO 병렬"><div class="relation-category">작업 흐름</div><div class="relation-list"><span title="뒤따름">FOLLOWS</span><span title="의존함">DEPENDS_ON</span><span title="가능하게 함">ENABLES</span><span title="막음">BLOCKS</span><span title="병렬 가능함">PARALLEL_TO</span></div></article>
+          <article class="relation-card" data-category="quality" data-search="EFFECTIVE_FOR 효과 INEFFECTIVE_FOR 효과 없음 PREFERRED_OVER 선호 DEPRECATED_BY 폐기 VALIDATED_BY 검증"><div class="relation-category">효과·선호</div><div class="relation-list"><span title="효과적임">EFFECTIVE_FOR</span><span title="효과 없음">INEFFECTIVE_FOR</span><span title="더 선호됨">PREFERRED_OVER</span><span title="새 방식 때문에 폐기됨">DEPRECATED_BY</span><span title="검증됨">VALIDATED_BY</span></div></article>
+        </div>
+        <p class="empty" id="relation-empty">일치하는 관계 범주가 없습니다.</p>
+        <pre class="code-line" aria-label="관계 방향 예시">(solution)-[:SOLVES]-&gt;(problem)</pre>
+        <div class="properties">
+          <article class="property"><strong>strength</strong><p>두 기억이 얼마나 강하게 연결되는지 나타내는 값이다.</p></article>
+          <article class="property"><strong>confidence</strong><p>그 관계가 맞다는 확신 정도를 나타내는 값이다.</p></article>
+        </div>
+      </section>
+
+      <section id="internal">
+        <div class="section-head">
+          <h2>내부 보조 노드</h2>
+          <p>고급 기능은 핵심 Memory 외에 보조 구조를 만들 수 있다. 이것은 일반 CLI 사용자가 임의 노드 라벨을 정의하는 기능과 다르다.</p>
+        </div>
+        <div class="support-grid">
+          <article class="support">
+            <span class="node-label">Entity</span>
+            <h3>본문 속 대상을 가리킨다</h3>
+            <p>파일·함수·클래스·기술 등을 나타내며 Memory와 <code>MENTIONS</code> 관계로 연결된다.</p>
+            <a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/ts/src/intelligence/entity-extraction.ts#L18-L64">공식 구현 보기</a>
+          </article>
+          <article class="support">
+            <span class="node-label">Outcome</span>
+            <h3>기억을 사용한 결과를 남긴다</h3>
+            <p>기억을 실제로 사용한 결과가 성공인지 실패인지 나타내며 <code>RESULTED_IN</code> 관계로 연결된다.</p>
+            <a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/ts/src/proactive/outcome-learning.ts#L42-L104">공식 구현 보기</a>
+          </article>
+        </div>
+      </section>
+
+      <section id="extension">
+        <div class="section-head">
+          <h2>새 종류를 추가할 수 있는가?</h2>
+          <p>가능하지만 설정이나 CLI에서 즉석 등록하는 방식은 아니다. 변경 범위에 따라 비용이 크게 달라진다.</p>
+        </div>
+        <div class="choice-grid">
+          <article class="choice recommended">
+            <small>HARNESS v1 권장</small>
+            <h3>기존 type + tags</h3>
+            <p>공식 <code>Memory.type</code>을 큰 분류로 사용하고, 우리만의 세부 분류는 <code>tags</code>로 표현한다.</p>
+            <ul>
+              <li>공식 CLI와 바로 호환</li>
+              <li>소스 포크와 재빌드 불필요</li>
+              <li>사용 사례가 쌓인 뒤 확장 여부 판단 가능</li>
+            </ul>
+          </article>
+          <article class="choice">
+            <small>필요성이 입증된 뒤</small>
+            <h3>MemoryGraph 소스 확장</h3>
+            <p><code>MemoryType</code>이나 <code>RelationshipType</code> enum을 수정하고 다시 빌드한다. 새 노드 라벨은 더 넓은 변경이 필요하다.</p>
+            <ul>
+              <li>모델과 검증 로직 수정</li>
+              <li>저장·검색 및 CLI/API 수정</li>
+              <li>각 데이터베이스 백엔드 대응</li>
+            </ul>
+          </article>
+        </div>
+        <details open>
+          <summary>왜 임의 값을 바로 넣을 수 없나?</summary>
+          <div><p><code>store_memory</code>는 공식 목록 밖의 기억 타입을 <code>Invalid memory type</code>으로 거부하고, <code>create_relationship</code>도 공식 목록 밖의 관계 타입을 <code>Invalid relationship type</code>으로 거부한다.</p></div>
+        </details>
+        <details>
+          <summary>완전히 새로운 노드 라벨은?</summary>
+          <div><p>타입 목록만 수정해서는 부족하다. 새로운 모델과 저장·검색 경로, CLI/API, 각 DB 백엔드까지 확장해야 한다. 현재 공식 CLI에는 임의 노드 라벨 생성이나 범용 Cypher 실행 명령이 없다.</p></div>
+        </details>
+      </section>
+
+      <section id="sources">
+        <div class="section-head">
+          <h2>근거와 기준</h2>
+          <p>이 문서는 MemoryGraph 공식 저장소의 <code>main</code> 브랜치 커밋 <code>4f834c0</code>을 기준으로 확인했다.</p>
+        </div>
+        <div class="support-grid">
+          <article class="support"><h3>스키마와 타입</h3><p><a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/docs/schema.md#node-types">공식 스키마</a><br><a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/ts/src/models.ts#L14-L89">타입·관계 enum 소스</a><br><a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/ts/src/models.ts#L147-L175">관계 속성 소스</a></p></article>
+          <article class="support"><h3>검증과 확장</h3><p><a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/ts/src/tools/memory.ts#L18-L26">기억 타입 검증</a><br><a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/ts/src/tools/relationship.ts#L13-L21">관계 타입 검증</a><br><a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/docs/schema.md#schema-evolution">공식 확장 설명</a><br><a href="https://github.com/memory-graph/memory-graph/blob/4f834c01765dc52b66c621fa42928fb0b52208cb/README.md#cli-commands">CLI 명령 목록</a></p></article>
+        </div>
+      </section>
+
+      <footer>Harness v2 · MemoryGraph schema reference · 기준 커밋 4f834c0</footer>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite">복사했습니다.</div>
+  <script>
+    (() => {
+      const normalize = (value) => value.toLocaleLowerCase('ko-KR').trim();
+      const typeSearch = document.querySelector('#type-search');
+      const typeCards = [...document.querySelectorAll('.type-card')];
+      const typeCount = document.querySelector('#type-count');
+      const typeEmpty = document.querySelector('#type-empty');
+
+      const filterTypes = () => {
+        const query = normalize(typeSearch.value);
+        let visible = 0;
+        typeCards.forEach((card) => {
+          const match = normalize(card.dataset.search).includes(query);
+          card.hidden = !match;
+          if (match) visible += 1;
+        });
+        typeCount.textContent = `${visible}개 표시`;
+        typeEmpty.classList.toggle('show', visible === 0);
+      };
+      typeSearch.addEventListener('input', filterTypes);
+
+      const relationSearch = document.querySelector('#relation-search');
+      const relationCards = [...document.querySelectorAll('.relation-card')];
+      const relationButtons = [...document.querySelectorAll('[data-category].filter')];
+      const relationCount = document.querySelector('#relation-count');
+      const relationEmpty = document.querySelector('#relation-empty');
+      let activeCategory = 'all';
+
+      const filterRelations = () => {
+        const query = normalize(relationSearch.value);
+        let visibleTypes = 0;
+        let visibleCards = 0;
+        relationCards.forEach((card) => {
+          const categoryMatch = activeCategory === 'all' || card.dataset.category === activeCategory;
+          const relations = [...card.querySelectorAll('.relation-list span')];
+          let matchedRelations = 0;
+          relations.forEach((relation) => {
+            const relationText = normalize(`${relation.textContent} ${relation.title}`);
+            const match = query.length === 0 || relationText.includes(query);
+            relation.hidden = !match;
+            if (match) matchedRelations += 1;
+          });
+          const showCard = categoryMatch && matchedRelations > 0;
+          card.hidden = !showCard;
+          if (showCard) {
+            visibleCards += 1;
+            visibleTypes += matchedRelations;
+          }
+        });
+        relationCount.textContent = `${visibleTypes}개 표시`;
+        relationEmpty.classList.toggle('show', visibleCards === 0);
+      };
+
+      relationButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          activeCategory = button.dataset.category;
+          relationButtons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+          filterRelations();
+        });
+      });
+      relationSearch.addEventListener('input', filterRelations);
+
+      const toast = document.querySelector('#toast');
+      let toastTimer;
+      const showToast = (message) => {
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+      };
+
+      const copyText = async (text) => {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+      };
+
+      document.querySelectorAll('[data-copy-svg]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const svg = document.getElementById(button.dataset.copySvg);
+          try {
+            await copyText(new XMLSerializer().serializeToString(svg));
+            showToast('SVG를 복사했습니다.');
+          } catch {
+            showToast('복사하지 못했습니다.');
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "ltm_sqlite_foreign_key_connection_policy",
+  "created_at": "2026-08-12T13:22:38Z",
+  "kind": "decision",
+  "title": "SQLite 외래키 연결 정책",
+  "summary": "모든 상태 저장소 연결은 open_database()를 통해 생성하고, 함수가 외래키 활성화와 확인을 강제한다.",
+  "problem": "SQLite의 foreign_keys 설정은 DB 파일에 영구 적용되지 않고 새 연결마다 다시 활성화해야 한다.",
+  "solution": "MCP 도구, CLI, Hook과 테스트가 직접 SQLite에 연결하지 않고 공통 open_database() 함수를 사용하도록 한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/state-store.html#connection"
+    }
+  ]
+}

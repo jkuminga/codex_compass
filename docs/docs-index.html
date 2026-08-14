@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Harness v2 설계 문서를 카드로 탐색하는 로컬 문서 허브">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='5' width='24' height='22' rx='4' fill='%23176b5b'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h9' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <title>Harness v2 문서 허브</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f1e9;
+      --paper: #fffdf7;
+      --paper-2: #ece8dc;
+      --ink: #1d2925;
+      --muted: #60706a;
+      --line: #d6d2c6;
+      --accent: #176b5b;
+      --accent-soft: #dcece7;
+      --warm: #a25b32;
+      --warm-soft: #f5e5d9;
+      --violet: #65558f;
+      --violet-soft: #e9e3f4;
+      --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111714;
+        --paper: #18201d;
+        --paper-2: #212b27;
+        --ink: #e8eeeb;
+        --muted: #a6b4ae;
+        --line: #35413c;
+        --accent: #71c6b2;
+        --accent-soft: #203c35;
+        --warm: #e2a47d;
+        --warm-soft: #3d2d23;
+        --violet: #baa8e3;
+        --violet-soft: #322c43;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.55;
+      letter-spacing: -.01em;
+    }
+    a { color: inherit; }
+    button, input { font: inherit; }
+    code { font-family: var(--mono); }
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: clamp(36px, 7vw, 88px) 0 80px;
+    }
+    .masthead {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(260px, .7fr);
+      gap: 42px;
+      align-items: end;
+      padding-bottom: 34px;
+      border-bottom: 1px solid var(--line);
+    }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font: 700 .78rem var(--mono);
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      max-width: 760px;
+      margin-bottom: 18px;
+      font-size: clamp(2.4rem, 6vw, 5.4rem);
+      line-height: .98;
+      letter-spacing: -.065em;
+    }
+    .lede { max-width: 63ch; margin: 0; color: var(--muted); font-size: 1.05rem; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .metric { padding: 15px 0; border-top: 3px solid var(--accent); }
+    .metric:last-child { border-color: var(--warm); }
+    .metric strong { display: block; font-size: 2rem; line-height: 1; }
+    .metric span { color: var(--muted); font-size: .82rem; }
+    .tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      align-items: center;
+      margin: 34px 0 28px;
+    }
+    .search {
+      flex: 1 1 310px;
+      min-height: 46px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      color: var(--ink);
+      outline: none;
+    }
+    .search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .filter {
+      min-height: 38px;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .filter:hover { color: var(--ink); border-color: var(--accent); }
+    .filter[aria-pressed="true"] { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+    .result-count { margin-left: auto; color: var(--muted); font-size: .85rem; }
+    .group { margin-top: 44px; }
+    .group[hidden], .doc-card[hidden] { display: none; }
+    .group-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: baseline;
+      margin-bottom: 14px;
+      padding-bottom: 11px;
+      border-bottom: 1px solid var(--line);
+    }
+    .group-head h2 { margin: 0; font-size: 1.25rem; letter-spacing: -.025em; }
+    .group-head p { margin: 0; color: var(--muted); font-size: .86rem; }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .doc-card {
+      position: relative;
+      display: flex;
+      min-height: 210px;
+      flex-direction: column;
+      padding: 20px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--paper);
+      text-decoration: none;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+    .arrow {
+      position: absolute;
+      top: 16px;
+      right: 17px;
+      color: var(--muted);
+      font-size: 1.1rem;
+      transition: transform .16s ease, color .16s ease;
+    }
+    .doc-card:hover,
+    .doc-card:focus-visible {
+      z-index: 1;
+      transform: translateY(-3px);
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--paper) 91%, var(--accent-soft));
+      outline: none;
+    }
+    .doc-card:hover .arrow,
+    .doc-card:focus-visible .arrow { color: var(--accent); transform: translate(2px, -2px); }
+    .card-meta { display: flex; gap: 7px; align-items: center; padding-right: 30px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 23px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--paper-2);
+      color: var(--muted);
+      font: 700 .68rem var(--mono);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .badge.html { color: var(--accent); background: var(--accent-soft); }
+    .card-meta .topic { color: var(--muted); font-size: .75rem; }
+    .doc-card h3 {
+      margin: 24px 0 9px;
+      padding-right: 12px;
+      font-size: 1.22rem;
+      line-height: 1.25;
+      letter-spacing: -.03em;
+    }
+    .doc-card p { margin: 0; color: var(--muted); font-size: .9rem; }
+    .filename {
+      margin-top: auto;
+      padding-top: 18px;
+      color: var(--muted);
+      font: .7rem var(--mono);
+      overflow-wrap: anywhere;
+    }
+    .featured { border-color: var(--accent); }
+    .empty {
+      display: none;
+      margin-top: 30px;
+      padding: 30px;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      text-align: center;
+    }
+    .empty.show { display: block; }
+    .serve {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: center;
+      margin-top: 70px;
+      padding: 26px;
+      border-left: 4px solid var(--warm);
+      background: var(--warm-soft);
+    }
+    .serve h2 { margin-bottom: 6px; font-size: 1.15rem; }
+    .serve p { margin: 0; color: var(--muted); }
+    .command {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 9px 10px 9px 13px;
+      border: 1px solid color-mix(in srgb, var(--warm) 45%, var(--line));
+      border-radius: 8px;
+      background: var(--paper);
+      white-space: nowrap;
+    }
+    .command code { font-size: .76rem; }
+    .copy {
+      padding: 5px 8px;
+      border: 0;
+      border-radius: 5px;
+      background: var(--warm);
+      color: #fff;
+      cursor: pointer;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 46px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .78rem;
+    }
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 20;
+      padding: 10px 14px;
+      border-radius: 7px;
+      background: var(--ink);
+      color: var(--paper);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: .2s ease;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 860px) {
+      .masthead { grid-template-columns: 1fr; gap: 28px; }
+      .summary { max-width: 440px; }
+      .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .serve { grid-template-columns: 1fr; }
+      .command { white-space: normal; overflow-wrap: anywhere; }
+    }
+    @media (max-width: 560px) {
+      .page { width: min(100% - 24px, 1180px); padding-top: 34px; }
+      .tools { align-items: stretch; }
+      .filter { flex: 1 1 auto; }
+      .result-count { width: 100%; margin-left: 0; }
+      .card-grid { grid-template-columns: 1fr; }
+      .doc-card { min-height: 185px; }
+      .group-head { align-items: flex-start; flex-direction: column; gap: 4px; }
+      footer { flex-direction: column; }
+    }
+    @media print {
+      .tools, .serve, .toast { display: none; }
+      body { background: #fff; color: #111; }
+      .doc-card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Harness v2 · local knowledge base</p>
+        <h1>문서 허브</h1>
+        <p class="lede">하네스의 설계 결정, 상태 관리 방식과 장기 기억 구조를 한곳에서 찾는다. 카드를 클릭하면 해당 문서로 이동한다.</p>
+      </div>
+      <div class="summary" aria-label="문서 현황">
+        <div class="metric"><strong>10</strong><span>등록된 문서</span></div>
+        <div class="metric"><strong>3</strong><span>문서 범주</span></div>
+      </div>
+    </header>
+
+    <div class="tools" aria-label="문서 필터">
+      <input id="search" class="search" type="search" placeholder="제목·설명·파일명 검색" aria-label="문서 검색">
+      <button class="filter" type="button" data-filter="all" aria-pressed="true">전체</button>
+      <button class="filter" type="button" data-filter="overview" aria-pressed="false">개요</button>
+      <button class="filter" type="button" data-filter="workflow" aria-pressed="false">작업·상태</button>
+      <button class="filter" type="button" data-filter="memory" aria-pressed="false">장기 기억</button>
+      <span class="result-count" id="result-count" aria-live="polite">10개 표시</span>
+    </div>
+
+    <section class="group" data-group="overview">
+      <div class="group-head"><h2>개요</h2><p>전체 구조와 앞으로의 설계 방향</p></div>
+      <div class="card-grid">
+        <a class="doc-card" data-category="overview" data-search="harness v2 개요 전체 구조 설계" href="./viewer.html?file=harness-overview.md">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge">Markdown</span><span class="topic">Overview</span></div>
+          <h3>Harness v2 개요</h3>
+          <p>이 하네스가 어떤 구성으로 동작하고, 다음에 무엇을 설계할지 한눈에 설명한다.</p>
+          <span class="filename">harness-overview.md</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="group" data-group="workflow">
+      <div class="group-head"><h2>작업과 상태</h2><p>프로젝트를 나누고 실행하며 검증하는 방법</p></div>
+      <div class="card-grid">
+        <a class="doc-card featured" data-category="workflow" data-search="상태 저장소 프로젝트 할 일 진행 상태 검증 근거 sqlite 테이블 상태 전이 interactive" href="./state-store.html">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge html">HTML</span><span class="topic">Interactive state schema</span></div>
+          <h3>상태 저장소</h3>
+          <p>프로젝트의 현재 할 일·진행 상태·검증 근거와 8개 테이블을 검색하며 살펴본다.</p>
+          <span class="filename">state-store.html</span>
+        </a>
+        <a class="doc-card featured" data-category="workflow" data-search="mcp 도구 state store db 함수 대응표 codex adapter interface" href="./mcp-state-store-functions.html">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge html">HTML</span><span class="topic">Function map</span></div>
+          <h3>MCP · DB 함수표</h3>
+          <p>Codex가 호출하는 MCP 도구와 내부 상태 저장소 함수가 어떻게 연결되는지 표로 보여준다.</p>
+          <span class="filename">mcp-state-store-functions.html</span>
+        </a>
+        <a class="doc-card" data-category="workflow" data-search="작업 단위 feature workitem 설계 조사 구현 분해 생성 매칭" href="./viewer.html?file=implementation-units.md">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge">Markdown</span><span class="topic">Planning</span></div>
+          <h3>작업 단위 분해</h3>
+          <p>설계·조사·구현 목표를 WorkItem으로 만들고 기존 작업과 연결하는 기준을 설명한다.</p>
+          <span class="filename">implementation-units.md</span>
+        </a>
+        <a class="doc-card featured" data-category="workflow" data-search="codex 단일 요청 pipeline lifecycle hook mcp skill preflight postflight run artifact evidence" href="./single-request-pipeline.html">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge html">HTML</span><span class="topic">Canonical lifecycle</span></div>
+          <h3>단일 Codex 요청 파이프라인</h3>
+          <p>한 요청에서 Hook·MCP·Skill이 언제 상태를 읽고 실행·검증·종료하는지 보여준다.</p>
+          <span class="filename">single-request-pipeline.html</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="group" data-group="memory">
+      <div class="group-head"><h2>장기 기억</h2><p>후보 생성부터 MemoryGraph 저장과 연결까지</p></div>
+      <div class="card-grid">
+        <a class="doc-card" data-category="memory" data-search="장기 기억 운영 전략 memorygraph hook skill" href="./viewer.html?file=long-term-memory.md">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge">Markdown</span><span class="topic">Strategy</span></div>
+          <h3>장기 기억</h3>
+          <p>MemoryGraph에 어떤 경험을 남기고, Codex Hook과 스킬이 어떻게 나누어 쓰는지 설명한다.</p>
+          <span class="filename">long-term-memory.md</span>
+        </a>
+        <a class="doc-card featured" data-category="memory" data-search="장기 기억 후보 스키마 db 내용 단건 즉시 저장 staging sqlite interactive" href="./memory-candidate-schema.html">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge html">HTML</span><span class="topic">Interactive staging schema</span></div>
+          <h3>장기 기억 후보 스키마</h3>
+          <p>기억 후보의 경량 필드와 즉시 단건 저장·최종 검토 흐름을 검색과 다이어그램으로 살펴본다.</p>
+          <span class="filename">memory-candidate-schema.html</span>
+        </a>
+        <a class="doc-card featured" data-category="memory" data-search="memorygraph 기본 스키마 노드 기억 관계 타입 확장" href="./memorygraph-schema.html">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge html">HTML</span><span class="topic">Interactive schema</span></div>
+          <h3>MemoryGraph 기본 스키마</h3>
+          <p>MemoryGraph의 기억·관계 종류와 확장 제약을 검색·필터·다이어그램으로 살펴본다.</p>
+          <span class="filename">memorygraph-schema.html</span>
+        </a>
+        <a class="doc-card" data-category="memory" data-search="memorygraph 에이전트 연동 agent skill cli hook" href="./viewer.html?file=memorygraph-agent-integration.md">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge">Markdown</span><span class="topic">Integration</span></div>
+          <h3>MemoryGraph 에이전트 연동</h3>
+          <p>공식 Agent Skill 제공 여부와 Codex에서 CLI·지침·Hook을 어떻게 구분해 쓸지 설명한다.</p>
+          <span class="filename">memorygraph-agent-integration.md</span>
+        </a>
+        <a class="doc-card" data-category="memory" data-search="tencentdb agent memory 자동 추출 대화 중요한 기억 llm 중복" href="./viewer.html?file=tencentdb-agent-memory-extraction.md">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge">Markdown</span><span class="topic">Research</span></div>
+          <h3>TencentDB Agent Memory 자동 추출</h3>
+          <p>대화에서 중요한 기억을 LLM이 고르고 중복을 정리해 저장하는 실제 코드 흐름을 설명한다.</p>
+          <span class="filename">tencentdb-agent-memory-extraction.md</span>
+        </a>
+      </div>
+    </section>
+
+    <p class="empty" id="empty">검색 조건에 맞는 문서가 없습니다.</p>
+
+    <aside class="serve" aria-labelledby="serve-title">
+      <div>
+        <h2 id="serve-title">브라우저에서 계속 보기</h2>
+        <p>프로젝트 루트에서 로컬 정적 서버를 실행한 뒤 <code>http://localhost:4173/docs/docs-index.html</code>을 연다.</p>
+      </div>
+      <div class="command">
+        <code id="serve-command">python3 -m http.server 4173 --bind 127.0.0.1</code>
+        <button class="copy" type="button" data-copy="serve-command">복사</button>
+      </div>
+    </aside>
+
+    <footer>
+      <span>Harness v2 documentation</span>
+      <span>문서 생성·이름 변경 시 이 카드 목록도 함께 갱신한다.</span>
+    </footer>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite">복사했습니다.</div>
+  <script>
+    (() => {
+      const cards = [...document.querySelectorAll('.doc-card')];
+      const groups = [...document.querySelectorAll('.group')];
+      const buttons = [...document.querySelectorAll('.filter')];
+      const search = document.querySelector('#search');
+      const count = document.querySelector('#result-count');
+      const empty = document.querySelector('#empty');
+      let activeFilter = 'all';
+
+      const normalize = (value) => value.toLocaleLowerCase('ko-KR').trim();
+      const applyFilters = () => {
+        const query = normalize(search.value);
+        let visible = 0;
+        cards.forEach((card) => {
+          const categoryMatch = activeFilter === 'all' || card.dataset.category === activeFilter;
+          const textMatch = normalize(`${card.dataset.search} ${card.textContent}`).includes(query);
+          const show = categoryMatch && textMatch;
+          card.hidden = !show;
+          if (show) visible += 1;
+        });
+        groups.forEach((group) => {
+          group.hidden = !group.querySelector('.doc-card:not([hidden])');
+        });
+        count.textContent = `${visible}개 표시`;
+        empty.classList.toggle('show', visible === 0);
+      };
+
+      search.addEventListener('input', applyFilters);
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          activeFilter = button.dataset.filter;
+          buttons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+          applyFilters();
+        });
+      });
+
+      const toast = document.querySelector('#toast');
+      let toastTimer;
+      const showToast = (message) => {
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 1500);
+      };
+      const copyText = async (text) => {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+      };
+      document.querySelectorAll('[data-copy]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          try {
+            await copyText(document.getElementById(button.dataset.copy).textContent);
+            showToast('명령을 복사했습니다.');
+          } catch {
+            showToast('복사하지 못했습니다.');
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,548 @@
+"""Codex-facing MCP tools for the Harness v2 state store.
+
+This module is a thin adapter. Tool descriptions and input shapes live here;
+all state validation, transactions, and SQL remain in ``state_store.py``.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any, Literal
+
+from mcp.server import MCPServer
+
+from . import state_store
+
+
+def create_server(
+    database_path: str | Path = state_store.DEFAULT_DATABASE_PATH,
+) -> MCPServer:
+    """Create an MCP server bound to one local Harness state database."""
+
+    server = MCPServer(
+        name="harness-state",
+        title="Harness State Store",
+        version="0.1.0",
+        instructions=(
+            "Use these tools to read and change Harness project state. "
+            "Read context before starting work, record verifiable results, "
+            "and finish the active Run before reporting completion."
+        ),
+    )
+
+    @server.tool(name="get_project_status")
+    def get_project_status(
+        next_limit: int = 10,
+        activity_limit: int = 20,
+    ) -> dict[str, Any]:
+        """Read overall progress, ready WorkItems, and recent state changes.
+
+        Use at the beginning of a task when no WorkItem has been selected, or
+        whenever the current Project direction is unclear. This tool is
+        read-only and does not create a Run.
+        """
+
+        return {
+            "progress": state_store.get_project_progress(database_path=database_path),
+            "next_work_items": state_store.list_next_work_items(
+                limit=next_limit, database_path=database_path
+            ),
+            "recent_activity": state_store.get_recent_activity(
+                limit=activity_limit, database_path=database_path
+            ),
+        }
+
+    @server.tool(name="get_work_context")
+    def get_work_context(work_item_id: str) -> dict[str, Any]:
+        """Read the compact preflight context for one selected WorkItem.
+
+        Call before editing files or starting a Run for the WorkItem. The
+        result includes its goal, next action, Acceptance Criteria, Feature,
+        active Run, recent Runs, and completion verification.
+        """
+
+        return state_store.get_preflight_context(
+            work_item_id, database_path=database_path
+        )
+
+    @server.tool(name="create_feature")
+    def create_feature(
+        title: str,
+        goal: str,
+        priority: Literal["urgent", "high", "normal", "low"] = "normal",
+    ) -> dict[str, Any]:
+        """Create a Feature, the large capability grouping for WorkItems.
+
+        Use during planning after the capability and goal are understood. Do
+        not create a Feature for a single small implementation step.
+        """
+
+        return state_store.create_feature(
+            title=title,
+            goal=goal,
+            priority=priority,
+            actor="codex",
+            database_path=database_path,
+        )
+
+    @server.tool(name="update_feature")
+    def update_feature(
+        feature_id: str,
+        title: str | None = None,
+        goal: str | None = None,
+        priority: Literal["urgent", "high", "normal", "low"] | None = None,
+        status: Literal[
+            "planned", "active", "paused", "completed", "cancelled"
+        ]
+        | None = None,
+        reason: str = "Feature updated",
+    ) -> dict[str, Any]:
+        """Revise a Feature's content, priority, or lifecycle state.
+
+        Progress values are not editable because they are calculated from the
+        Feature's WorkItems.
+        """
+
+        feature = state_store.update_feature(
+            feature_id,
+            title=title,
+            goal=goal,
+            priority=priority,
+            actor="codex",
+            database_path=database_path,
+        )
+        if status is not None and status != feature["status"]:
+            feature = state_store.change_feature_status(
+                feature_id,
+                status,
+                actor="codex",
+                reason=reason,
+                database_path=database_path,
+            )
+        return feature
+
+    @server.tool(name="create_work_item")
+    def create_work_item(
+        title: str,
+        kind: Literal[
+            "implementation",
+            "bug",
+            "research",
+            "decision",
+            "refactor",
+            "migration",
+            "verification",
+            "maintenance",
+        ],
+        goal: str,
+        feature_id: str | None = None,
+        priority: Literal["urgent", "high", "normal", "low"] = "normal",
+        next_action: str | None = None,
+        acceptance_criteria: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Create one executable WorkItem and its initial completion criteria.
+
+        New WorkItems start in backlog. Keep criteria outcome-oriented rather
+        than prescribing one exact test command.
+        """
+
+        return state_store.create_work_item(
+            feature_id=feature_id,
+            title=title,
+            kind=kind,
+            goal=goal,
+            priority=priority,
+            next_action=next_action,
+            acceptance_criteria=acceptance_criteria or (),
+            actor="codex",
+            database_path=database_path,
+        )
+
+    @server.tool(name="revise_work_item")
+    def revise_work_item(
+        work_item_id: str,
+        title: str | None = None,
+        kind: Literal[
+            "implementation",
+            "bug",
+            "research",
+            "decision",
+            "refactor",
+            "migration",
+            "verification",
+            "maintenance",
+        ]
+        | None = None,
+        goal: str | None = None,
+        priority: Literal["urgent", "high", "normal", "low"] | None = None,
+        next_action: str | None = None,
+    ) -> dict[str, Any]:
+        """Revise the mutable planning fields of a non-terminal WorkItem.
+
+        Omitted values stay unchanged. Terminal WorkItems preserve their final
+        historical meaning and cannot be revised.
+        """
+
+        arguments: dict[str, Any] = {
+            "title": title,
+            "kind": kind,
+            "goal": goal,
+            "priority": priority,
+            "actor": "codex",
+            "database_path": database_path,
+        }
+        if next_action is not None:
+            arguments["next_action"] = next_action
+        return state_store.revise_work_item(work_item_id, **arguments)
+
+    @server.tool(name="manage_criterion")
+    def manage_criterion(
+        action: Literal["add", "revise", "waive"],
+        work_item_id: str | None = None,
+        criterion_id: str | None = None,
+        description: str | None = None,
+        reason: str | None = None,
+        sort_order: int | None = None,
+    ) -> dict[str, Any]:
+        """Add, revise, or explicitly waive one Acceptance Criterion.
+
+        add needs work_item_id and description; revise needs criterion_id and
+        description; waive needs criterion_id and a concrete reason. Evidence
+        judgments belong to verify_criterion instead.
+        """
+
+        if action == "add":
+            if work_item_id is None or description is None:
+                raise state_store.ConflictError(
+                    "add requires work_item_id and description"
+                )
+            return state_store.add_criterion(
+                work_item_id,
+                description,
+                sort_order=sort_order,
+                actor="codex",
+                database_path=database_path,
+            )
+        if action == "revise":
+            if criterion_id is None or description is None:
+                raise state_store.ConflictError(
+                    "revise requires criterion_id and description"
+                )
+            return state_store.revise_criterion(
+                criterion_id,
+                description,
+                actor="codex",
+                database_path=database_path,
+            )
+        if criterion_id is None or reason is None:
+            raise state_store.ConflictError(
+                "waive requires criterion_id and reason"
+            )
+        return state_store.waive_criterion(
+            criterion_id,
+            actor="codex",
+            reason=reason,
+            database_path=database_path,
+        )
+
+    @server.tool(name="change_work_item_state")
+    def change_work_item_state(
+        work_item_id: str,
+        status: Literal["ready", "blocked", "cancelled"],
+        reason: str,
+        next_action: str | None = None,
+        block_reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Prepare, block, or cancel a WorkItem outside Run finalization.
+
+        A ready or blocked WorkItem requires a concrete next action. A blocked
+        WorkItem also requires block_reason. Active Runs must be finalized by
+        finish_work instead of this tool.
+        """
+
+        return state_store.change_work_item_status(
+            work_item_id,
+            status,
+            actor="codex",
+            reason=reason,
+            next_action=next_action,
+            block_reason=block_reason,
+            database_path=database_path,
+        )
+
+    @server.tool(name="start_work")
+    def start_work(
+        work_item_id: str,
+        trace_ref: str | None = None,
+    ) -> dict[str, Any]:
+        """Start one ready WorkItem and create its single active Run.
+
+        Call only after get_work_context has confirmed the goal, next action,
+        and Acceptance Criteria. A WorkItem cannot have two active Runs.
+        """
+
+        return state_store.start_run(
+            work_item_id,
+            trace_ref=trace_ref,
+            actor="codex",
+            database_path=database_path,
+        )
+
+    @server.tool(name="record_artifact")
+    def record_artifact(
+        run_id: str,
+        kind: Literal[
+            "file",
+            "commit",
+            "test_run",
+            "lint_run",
+            "build_run",
+            "pull_request",
+            "deployment",
+            "screenshot",
+            "report",
+            "other",
+        ],
+        uri: str,
+        verification_status: Literal[
+            "not_applicable", "pending", "passed", "failed"
+        ],
+        summary: str,
+    ) -> dict[str, Any]:
+        """Register a file, test, build, commit, or other verifiable Run result.
+
+        Store only a short summary and URI; keep full output in the referenced
+        file, Trace, Git, or CI system.
+        """
+
+        return state_store.create_artifact(
+            run_id,
+            kind=kind,
+            uri=uri,
+            verification_status=verification_status,
+            summary=summary,
+            actor="codex",
+            database_path=database_path,
+        )
+
+    @server.tool(name="resolve_artifact")
+    def resolve_artifact(
+        artifact_id: str,
+        verification_status: Literal["passed", "failed"],
+        summary: str,
+    ) -> dict[str, Any]:
+        """Finalize one pending Artifact as passed or failed.
+
+        Final Artifact verification cannot be rewritten later.
+        """
+
+        return state_store.resolve_artifact(
+            artifact_id,
+            verification_status,
+            summary=summary,
+            actor="codex",
+            database_path=database_path,
+        )
+
+    @server.tool(name="verify_criterion")
+    def verify_criterion(
+        criterion_id: str,
+        artifact_id: str,
+        result: Literal["passed", "failed"],
+        note: str | None = None,
+        reason: str = "Verification result recorded",
+    ) -> dict[str, Any]:
+        """Link an Artifact as Evidence and judge one Acceptance Criterion.
+
+        A passed judgment succeeds only when the Artifact is valid Evidence
+        from the same WorkItem. Use failed when the result does not satisfy the
+        Criterion; later valid Evidence may still pass it.
+        """
+
+        evidence = state_store.link_evidence(
+            criterion_id,
+            artifact_id,
+            note=note,
+            actor="codex",
+            database_path=database_path,
+        )
+        if result == "passed":
+            criterion = state_store.pass_criterion(
+                criterion_id,
+                actor="codex",
+                reason=reason,
+                database_path=database_path,
+            )
+        else:
+            criterion = state_store.fail_criterion(
+                criterion_id,
+                actor="codex",
+                reason=reason,
+                database_path=database_path,
+            )
+        return {"evidence": evidence, "criterion": criterion}
+
+    @server.tool(name="get_postflight_status")
+    def get_postflight_status(work_item_id: str) -> dict[str, Any]:
+        """Read the completion checklist before finishing the active Run.
+
+        Inspect unresolved Acceptance Criteria, Artifacts, and pending Memory
+        Candidates. Resolve meaningful omissions before calling finish_work.
+        """
+
+        return state_store.get_postflight_status(
+            work_item_id, database_path=database_path
+        )
+
+    @server.tool(name="finish_work")
+    def finish_work(
+        run_id: str,
+        outcome: Literal[
+            "completed",
+            "progressed",
+            "retry_needed",
+            "blocked",
+            "interrupted",
+            "cancelled",
+        ],
+        summary: str,
+        reason: str,
+        next_action: str | None = None,
+        block_reason: str | None = None,
+        termination_reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Atomically finish a Run and move its WorkItem to the matching state.
+
+        completed means succeeded/done; progressed means this Run succeeded but
+        the WorkItem returns to ready with a concrete next action; retry_needed
+        means failed/ready; blocked means interrupted/blocked; interrupted means
+        interrupted/ready; cancelled closes both. Failed, interrupted, and
+        cancelled Runs need a termination reason, and ready or blocked WorkItems
+        need a concrete next action.
+        """
+
+        run = state_store.get_run(run_id, database_path=database_path)
+        if outcome == "completed":
+            return state_store.complete_work_item(
+                run["work_item_id"],
+                summary=summary,
+                actor="codex",
+                reason=reason,
+                database_path=database_path,
+            )
+
+        mapping = {
+            "progressed": ("succeeded", "ready"),
+            "retry_needed": ("failed", "ready"),
+            "blocked": ("interrupted", "blocked"),
+            "interrupted": ("interrupted", "ready"),
+            "cancelled": ("cancelled", "cancelled"),
+        }
+        run_status, work_item_status = mapping[outcome]
+        resolved_termination_reason = (
+            None if run_status == "succeeded" else termination_reason or reason
+        )
+        return state_store.finish_run(
+            run_id,
+            run_status=run_status,
+            work_item_status=work_item_status,
+            summary=summary,
+            actor="codex",
+            reason=reason,
+            termination_reason=resolved_termination_reason,
+            next_action=next_action,
+            block_reason=block_reason,
+            database_path=database_path,
+        )
+
+    @server.tool(name="create_memory_candidate")
+    def create_memory_candidate(
+        run_id: str,
+        proposed_type: Literal[
+            "task",
+            "code_pattern",
+            "problem",
+            "solution",
+            "project",
+            "technology",
+            "error",
+            "fix",
+            "command",
+            "file_context",
+            "workflow",
+            "general",
+            "conversation",
+        ],
+        title: str,
+        content: str,
+        keywords: list[str],
+    ) -> dict[str, Any]:
+        """Immediately capture one potentially durable Memory Candidate.
+
+        Use during an active Run when a reusable decision, problem and fix,
+        technique, command, or project fact is discovered. Do not store routine
+        progress, guesses, secrets, or one-off details.
+        """
+
+        return state_store.create_candidate(
+            run_id,
+            proposed_type=proposed_type,
+            title=title,
+            content=content,
+            keywords=keywords,
+            database_path=database_path,
+        )
+
+    @server.tool(name="list_memory_candidates")
+    def list_memory_candidates(run_id: str | None = None) -> dict[str, Any]:
+        """List pending Memory Candidates, optionally limited to one Run.
+
+        Use during memory finalization before promoting or rejecting candidates.
+        """
+
+        return {
+            "candidates": state_store.list_pending_candidates(
+                run_id=run_id, database_path=database_path
+            )
+        }
+
+    @server.tool(name="promote_memory_candidate")
+    def promote_memory_candidate(
+        candidate_id: str,
+        memory_ref: str,
+    ) -> dict[str, Any]:
+        """Mark a reviewed Candidate stored in MemoryGraph.
+
+        Call only after the memory finalizer has actually stored or merged the
+        memory. memory_ref identifies the resulting MemoryGraph node.
+        """
+
+        return state_store.promote_candidate(
+            candidate_id,
+            memory_ref=memory_ref,
+            database_path=database_path,
+        )
+
+    @server.tool(name="reject_memory_candidate")
+    def reject_memory_candidate(candidate_id: str) -> dict[str, Any]:
+        """Reject a reviewed Candidate that is not worth long-term storage."""
+
+        return state_store.reject_candidate(
+            candidate_id, database_path=database_path
+        )
+
+    return server
+
+
+mcp = create_server(os.environ.get("HARNESS_STATE_DB", state_store.DEFAULT_DATABASE_PATH))
+
+
+def main() -> None:
+    """Run the local MCP server over stdio for Codex."""
+
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "ltm_workitem_run_scope_decision",
+  "created_at": "2026-08-13T14:06:10Z",
+  "kind": "decision",
+  "title": "설계부터 검증까지 WorkItem과 Run으로 관리",
+  "summary": "답변으로 끝나는 일회성 질문을 제외하고 프로젝트를 진전시키는 설계·조사·의사결정·구현·검증 작업은 WorkItem과 Run으로 관리한다. 기존 WorkItem 재사용을 우선하고 독립적인 새 목표일 때만 생성한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/single-request-pipeline.html"
+    },
+    {
+      "type": "file",
+      "ref": "docs/implementation-units.md"
+    },
+    {
+      "type": "file",
+      "ref": "docs/state-store.html"
+    }
+  ]
+}

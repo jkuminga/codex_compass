@@ -1,0 +1,9 @@
+# Local Harness state. The schema is versioned; runtime data is not.
+.harness/state.db
+.harness/state.db-shm
+.harness/state.db-wal
+
+# Python test caches.
+__pycache__/
+*.py[cod]
+.venv/

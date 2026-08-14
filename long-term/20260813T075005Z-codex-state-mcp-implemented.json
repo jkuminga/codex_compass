@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "ltm_codex_state_mcp_implemented",
+  "created_at": "2026-08-13T07:50:05Z",
+  "kind": "project_progress",
+  "title": "Codex 상태 저장소 MCP 구현 완료",
+  "summary": "MCP Python SDK v2와 stdio 전송을 사용해 상태 저장소의 18개 Codex 도구를 구현하고 프로젝트 전용 Codex 설정에 등록했다.",
+  "solution": "mcp_server.py는 행동 중심의 얇은 Adapter로 유지하고 모든 상태 검증과 SQLite 변경은 state_store.py에 위임한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "src/harness/mcp_server.py"
+    },
+    {
+      "type": "file",
+      "ref": ".codex/config.toml"
+    },
+    {
+      "type": "test",
+      "ref": "uv run python -m unittest discover -s tests -v"
+    }
+  ]
+}

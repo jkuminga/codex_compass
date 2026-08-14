@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Harness v2 MCP 도구와 state_store.py 함수의 대응표">
+  <title>MCP · 상태 저장소 함수표</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f1e9;
+      --paper: #fffdf7;
+      --ink: #1d2925;
+      --muted: #60706a;
+      --line: #d6d2c6;
+      --accent: #176b5b;
+      --accent-soft: #dcece7;
+      --warm: #a25b32;
+      --warm-soft: #f5e5d9;
+      --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111714;
+        --paper: #18201d;
+        --ink: #e8eeeb;
+        --muted: #a6b4ae;
+        --line: #35413c;
+        --accent: #71c6b2;
+        --accent-soft: #203c35;
+        --warm: #e2a47d;
+        --warm-soft: #3d2d23;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 var(--sans);
+    }
+    code { font: .88em/1.45 var(--mono); }
+    .page { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 64px 0 80px; }
+    header { max-width: 850px; margin-bottom: 30px; }
+    .eyebrow { margin: 0 0 10px; color: var(--accent); font: 700 .76rem var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    h1 { margin: 0 0 14px; font-size: clamp(2.2rem, 6vw, 4.7rem); line-height: 1; letter-spacing: -.06em; }
+    .lede { max-width: 68ch; margin: 0; color: var(--muted); font-size: 1.02rem; }
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin: 28px 0 34px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-soft);
+    }
+    .flow code { padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); border-radius: 5px; background: var(--paper); }
+    .flow span { color: var(--muted); }
+    .tabs { display: flex; gap: 7px; margin-bottom: 13px; }
+    .tab {
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .tab[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+    section { margin-top: 44px; }
+    section[hidden] { display: none; }
+    .section-head { display: flex; justify-content: space-between; gap: 20px; align-items: baseline; margin-bottom: 12px; }
+    h2 { margin: 0; font-size: 1.25rem; letter-spacing: -.025em; }
+    .section-head p { margin: 0; color: var(--muted); font-size: .82rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); background: var(--paper); }
+    table { width: 100%; border-collapse: collapse; min-width: 780px; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font: 700 .7rem var(--mono); letter-spacing: .05em; text-transform: uppercase; background: color-mix(in srgb, var(--paper) 78%, var(--accent-soft)); }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: color-mix(in srgb, var(--paper) 92%, var(--accent-soft)); }
+    td:first-child code { color: var(--accent); font-weight: 700; }
+    .group-row td { padding: 8px 14px; color: var(--warm); font: 700 .72rem var(--mono); letter-spacing: .06em; text-transform: uppercase; background: var(--warm-soft); }
+    .call-list { display: flex; flex-wrap: wrap; gap: 5px; }
+    .call-list code { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); white-space: nowrap; }
+    .note { color: var(--muted); }
+    footer { margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
+    footer a { color: var(--accent); }
+    @media (max-width: 640px) {
+      .page { width: min(100% - 22px, 1180px); padding-top: 36px; }
+      .section-head { align-items: flex-start; flex-direction: column; gap: 3px; }
+      .table-wrap { border: 0; overflow: visible; background: transparent; }
+      table, tbody, tr, td { display: block; min-width: 0; }
+      thead { display: none; }
+      tbody { display: grid; gap: 10px; }
+      tr { padding: 13px; border: 1px solid var(--line); background: var(--paper); }
+      td { padding: 4px 0; border: 0; }
+      td::before { content: attr(data-label); display: block; margin: 5px 0 1px; color: var(--muted); font: 700 .64rem var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+      .group-row { padding: 0; border: 0; background: transparent; }
+      .group-row td { padding: 10px 0 0; background: transparent; }
+      .group-row td::before { display: none; }
+    }
+    @media print {
+      body { background: #fff; color: #111; }
+      .tabs { display: none; }
+      section[hidden] { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Harness v2 · interface map</p>
+      <h1>MCP · DB 함수표</h1>
+      <p class="lede">Codex가 호출하는 MCP 도구와, 그 도구가 내부에서 사용하는 <code>state_store.py</code> 함수를 한눈에 대응시킨다. MCP는 행동을 보여주고 DB 함수는 상태 규칙과 SQL을 책임진다.</p>
+    </header>
+
+    <div class="flow" aria-label="호출 흐름">
+      <code>Codex</code><span>→</span><code>MCP 도구</code><span>→</span><code>mcp_server.py</code><span>→</span><code>state_store.py</code><span>→</span><code>SQLite</code>
+    </div>
+
+    <nav class="tabs" aria-label="표 선택">
+      <button class="tab" type="button" data-target="mcp" aria-pressed="true">MCP 도구</button>
+      <button class="tab" type="button" data-target="db" aria-pressed="false">DB 함수</button>
+    </nav>
+
+    <section id="mcp">
+      <div class="section-head"><h2>MCP 도구 → DB 함수</h2><p>Codex에 공개할 행동 중심 Interface</p></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>MCP 도구</th><th>쉬운 설명</th><th>주요 입력</th><th>호출하는 DB 함수</th></tr></thead>
+          <tbody>
+            <tr class="group-row"><td colspan="4">조회</td></tr>
+            <tr><td data-label="MCP 도구"><code>get_project_status</code></td><td data-label="설명">전체 진행률, 다음 작업과 최근 변경을 가져온다.</td><td data-label="주요 입력">표시 개수</td><td data-label="DB 함수"><div class="call-list"><code>get_project_progress()</code><code>list_next_work_items()</code><code>get_recent_activity()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>get_work_context</code></td><td data-label="설명">작업 시작·재개에 필요한 상태와 완료 조건을 읽는다.</td><td data-label="주요 입력"><code>work_item_id</code></td><td data-label="DB 함수"><div class="call-list"><code>get_preflight_context()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>get_postflight_status</code></td><td data-label="설명">종료 전에 검증 결과와 기억 후보 누락을 확인한다.</td><td data-label="주요 입력"><code>work_item_id</code></td><td data-label="DB 함수"><div class="call-list"><code>get_postflight_status()</code></div></td></tr>
+
+            <tr class="group-row"><td colspan="4">계획</td></tr>
+            <tr><td data-label="MCP 도구"><code>create_feature</code></td><td data-label="설명">여러 WorkItem을 묶는 큰 목표·기능·작업 영역을 만든다.</td><td data-label="주요 입력">제목, 목표, 우선순위</td><td data-label="DB 함수"><div class="call-list"><code>create_feature()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>update_feature</code></td><td data-label="설명">Feature 내용이나 상태를 바꾼다.</td><td data-label="주요 입력"><code>feature_id</code>, 변경 내용</td><td data-label="DB 함수"><div class="call-list"><code>update_feature()</code><code>change_feature_status()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>create_work_item</code></td><td data-label="설명">실행할 작업과 초기 완료 조건을 함께 만든다.</td><td data-label="주요 입력">Feature, 제목, 목표, 완료 조건</td><td data-label="DB 함수"><div class="call-list"><code>create_work_item()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>revise_work_item</code></td><td data-label="설명">작업 목표, 우선순위와 다음 행동을 수정한다.</td><td data-label="주요 입력"><code>work_item_id</code>, 변경 내용</td><td data-label="DB 함수"><div class="call-list"><code>revise_work_item()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>change_work_item_state</code></td><td data-label="설명">작업을 준비·막힘·취소 상태로 변경한다.</td><td data-label="주요 입력">상태, 이유, 다음 행동</td><td data-label="DB 함수"><div class="call-list"><code>change_work_item_status()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>manage_criterion</code></td><td data-label="설명">완료 조건을 추가·수정하거나 명시적으로 면제한다.</td><td data-label="주요 입력">작업 또는 조건 ID, 행동, 설명</td><td data-label="DB 함수"><div class="call-list"><code>add_criterion()</code><code>revise_criterion()</code><code>waive_criterion()</code></div></td></tr>
+
+            <tr class="group-row"><td colspan="4">실행·검증</td></tr>
+            <tr><td data-label="MCP 도구"><code>start_work</code></td><td data-label="설명">설계·조사·구현 등을 수행할 ready WorkItem을 시작하고 Run을 만든다.</td><td data-label="주요 입력"><code>work_item_id</code>, Trace 참조</td><td data-label="DB 함수"><div class="call-list"><code>start_run()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>record_artifact</code></td><td data-label="설명">파일·테스트·빌드 같은 실행 결과를 등록한다.</td><td data-label="주요 입력"><code>run_id</code>, 종류, 위치, 결과</td><td data-label="DB 함수"><div class="call-list"><code>create_artifact()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>resolve_artifact</code></td><td data-label="설명">pending Artifact를 passed 또는 failed로 확정한다.</td><td data-label="주요 입력"><code>artifact_id</code>, 결과, 요약</td><td data-label="DB 함수"><div class="call-list"><code>resolve_artifact()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>verify_criterion</code></td><td data-label="설명">Artifact를 완료 조건의 근거로 연결하고 판정한다.</td><td data-label="주요 입력">조건 ID, Artifact ID, 판정</td><td data-label="DB 함수"><div class="call-list"><code>link_evidence()</code><code>pass_criterion()</code><code>fail_criterion()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>finish_work</code></td><td data-label="설명">Run과 WorkItem을 전체 완료·정상 진전·재시도·막힘·취소 결과로 함께 종료한다. <code>progressed</code>는 Run만 성공시키고 WorkItem을 ready로 이어간다.</td><td data-label="주요 입력"><code>run_id</code>, 결과, 요약, 다음 행동</td><td data-label="DB 함수"><div class="call-list"><code>complete_work_item()</code><code>finish_run()</code></div></td></tr>
+
+            <tr class="group-row"><td colspan="4">장기 기억 후보</td></tr>
+            <tr><td data-label="MCP 도구"><code>create_memory_candidate</code></td><td data-label="설명">발견한 기억 후보를 작업 도중 즉시 저장한다.</td><td data-label="주요 입력"><code>run_id</code>, 종류, 제목, 내용, 키워드</td><td data-label="DB 함수"><div class="call-list"><code>create_candidate()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>list_memory_candidates</code></td><td data-label="설명">아직 검토하지 않은 후보를 가져온다.</td><td data-label="주요 입력"><code>run_id</code></td><td data-label="DB 함수"><div class="call-list"><code>list_pending_candidates()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>promote_memory_candidate</code></td><td data-label="설명">MemoryGraph에 저장된 후보와 실제 기억 참조를 연결한다.</td><td data-label="주요 입력">후보 ID, <code>memory_ref</code></td><td data-label="DB 함수"><div class="call-list"><code>promote_candidate()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>reject_memory_candidate</code></td><td data-label="설명">장기 보관하지 않을 후보를 거절 처리한다.</td><td data-label="주요 입력">후보 ID</td><td data-label="DB 함수"><div class="call-list"><code>reject_candidate()</code></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note"><strong><code>progressed</code>:</strong> 이번 Run은 정상 성공했지만 WorkItem 전체가 남았을 때 사용한다. Run은 <code>succeeded</code>, WorkItem은 새 <code>next_action</code>이 있는 <code>ready</code>가 된다.</p>
+    </section>
+
+    <section id="db" hidden>
+      <div class="section-head"><h2><code>state_store.py</code> 함수 모음</h2><p>MCP와 Hook이 재사용하는 내부 Interface</p></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>영역</th><th>함수</th><th>쉬운 설명</th><th>주 사용자</th></tr></thead>
+          <tbody>
+            <tr><td data-label="영역">DB</td><td data-label="함수"><code>open_database()</code></td><td data-label="설명">외래키 검사를 켠 안전한 SQLite 연결을 연다.</td><td data-label="주 사용자">모든 DB 함수</td></tr>
+            <tr><td data-label="영역">DB</td><td data-label="함수"><code>initialize_database()</code></td><td data-label="설명">스키마를 적용해 로컬 DB를 준비한다.</td><td data-label="주 사용자">설치·초기화 CLI</td></tr>
+            <tr><td data-label="영역">DB</td><td data-label="함수"><code>check_database_health()</code></td><td data-label="설명">DB 무결성과 외래키 위반을 검사한다.</td><td data-label="주 사용자">진단·테스트</td></tr>
+            <tr><td data-label="영역">Feature</td><td data-label="함수"><code>create_feature()</code> · <code>update_feature()</code> · <code>change_feature_status()</code></td><td data-label="설명">큰 목표·기능·작업 영역을 만들고 수정한다.</td><td data-label="주 사용자">계획 MCP</td></tr>
+            <tr><td data-label="영역">Feature</td><td data-label="함수"><code>get_feature()</code> · <code>list_features()</code></td><td data-label="설명">Feature와 계산된 진행률을 읽는다.</td><td data-label="주 사용자">조회 MCP</td></tr>
+            <tr><td data-label="영역">WorkItem</td><td data-label="함수"><code>create_work_item()</code> · <code>revise_work_item()</code> · <code>delete_backlog_work_item()</code></td><td data-label="설명">실행 작업을 만들고 수정하며, 시작 전 후보만 삭제한다.</td><td data-label="주 사용자">계획 MCP</td></tr>
+            <tr><td data-label="영역">WorkItem</td><td data-label="함수"><code>get_work_item()</code> · <code>list_next_work_items()</code></td><td data-label="설명">작업 상태와 우선순위가 높은 다음 작업을 읽는다.</td><td data-label="주 사용자">조회 MCP</td></tr>
+            <tr><td data-label="영역">WorkItem</td><td data-label="함수"><code>change_work_item_status()</code></td><td data-label="설명">허용된 규칙 안에서 작업 상태를 바꾼다.</td><td data-label="주 사용자">상태 변경 MCP</td></tr>
+            <tr><td data-label="영역">완료 조건</td><td data-label="함수"><code>add_criterion()</code> · <code>revise_criterion()</code></td><td data-label="설명">Acceptance Criterion을 추가하거나 근거 연결 전에 수정한다.</td><td data-label="주 사용자">계획 MCP</td></tr>
+            <tr><td data-label="영역">완료 조건</td><td data-label="함수"><code>pass_criterion()</code> · <code>fail_criterion()</code> · <code>waive_criterion()</code></td><td data-label="설명">완료 조건을 통과·실패·면제로 판정한다.</td><td data-label="주 사용자">검증 MCP</td></tr>
+            <tr><td data-label="영역">Run</td><td data-label="함수"><code>start_run()</code> · <code>finish_run()</code> · <code>complete_work_item()</code></td><td data-label="설명">개별 실행을 시작하고 WorkItem과 함께 안전하게 종료한다.</td><td data-label="주 사용자">실행 MCP</td></tr>
+            <tr><td data-label="영역">Run</td><td data-label="함수"><code>get_run()</code> · <code>get_running_run()</code></td><td data-label="설명">특정 Run이나 현재 실행 중인 Run을 읽는다.</td><td data-label="주 사용자">MCP·Hook</td></tr>
+            <tr><td data-label="영역">Artifact</td><td data-label="함수"><code>create_artifact()</code> · <code>resolve_artifact()</code> · <code>get_run_artifacts()</code></td><td data-label="설명">실행 결과를 등록·확정·조회한다.</td><td data-label="주 사용자">검증 MCP·Hook</td></tr>
+            <tr><td data-label="영역">Evidence</td><td data-label="함수"><code>link_evidence()</code> · <code>get_criterion_evidence()</code></td><td data-label="설명">Artifact와 완료 조건의 증명 관계를 연결하고 읽는다.</td><td data-label="주 사용자">검증 MCP</td></tr>
+            <tr><td data-label="영역">기억 후보</td><td data-label="함수"><code>create_candidate()</code> · <code>list_pending_candidates()</code></td><td data-label="설명">후보를 즉시 만들고 미검토 목록을 읽는다.</td><td data-label="주 사용자">기억 MCP·Skill</td></tr>
+            <tr><td data-label="영역">기억 후보</td><td data-label="함수"><code>promote_candidate()</code> · <code>reject_candidate()</code></td><td data-label="설명">검토된 후보를 장기 기억 저장 또는 거절로 마감한다.</td><td data-label="주 사용자">기억 검토 Skill</td></tr>
+            <tr><td data-label="영역">Hook 조회</td><td data-label="함수"><code>get_preflight_context()</code> · <code>get_postflight_status()</code></td><td data-label="설명">작업 전후에 필요한 상태만 작게 묶어 반환한다.</td><td data-label="주 사용자">Hook·MCP</td></tr>
+            <tr><td data-label="영역">진행 조회</td><td data-label="함수"><code>get_project_progress()</code> · <code>get_recent_activity()</code></td><td data-label="설명">프로젝트 집계와 최근 State Event를 읽는다.</td><td data-label="주 사용자">조회 MCP</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer><a href="./docs-index.html">← 문서 허브</a> · 표의 18개 MCP 도구는 <code>src/harness/mcp_server.py</code>에 구현되어 있으며, 실제 상태 규칙은 <code>src/harness/state_store.py</code>가 책임진다.</footer>
+  </main>
+  <script>
+    const tabs = [...document.querySelectorAll('.tab')];
+    const sections = [...document.querySelectorAll('main > section')];
+    tabs.forEach((tab) => tab.addEventListener('click', () => {
+      tabs.forEach((item) => item.setAttribute('aria-pressed', String(item === tab)));
+      sections.forEach((section) => { section.hidden = section.id !== tab.dataset.target; });
+    }));
+  </script>
+</body>
+</html>

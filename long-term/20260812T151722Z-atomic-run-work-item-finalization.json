@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "ltm_atomic_run_work_item_finalization",
+  "created_at": "2026-08-12T15:17:22Z",
+  "kind": "decision",
+  "title": "Run과 WorkItem 원자적 종료 정책",
+  "summary": "동일 WorkItem의 running Run은 최대 하나로 제한하고, 정상 종료 시 finish_run()이 Run과 WorkItem 상태 및 State Event를 한 트랜잭션에서 함께 변경한다.",
+  "problem": "Run이 실행 중인데 WorkItem만 종료 상태로 바뀌거나 두 종료 작업 중 하나만 성공하면 상태가 서로 모순될 수 있다.",
+  "solution": "부분 UNIQUE 인덱스로 실행 중 Run을 하나로 제한하고, finish_run()은 관련 변경을 원자적으로 처리하며 별도 상태 변경 함수는 running Run이 있으면 변경을 거부한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/state-store.html#states"
+    },
+    {
+      "type": "file",
+      "ref": "docs/state-store.html#flow"
+    }
+  ]
+}

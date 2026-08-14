@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "ltm_single_state_store_module",
+  "created_at": "2026-08-12T14:45:04Z",
+  "kind": "decision",
+  "title": "v1 DB 함수를 단일 상태 저장 모듈에 배치",
+  "summary": "v1에서는 모든 DB 연결·조회·변경·검증 함수를 src/harness/state_store.py 한 파일에 모으고 MCP 서버는 이를 호출하는 얇은 연결부로 유지한다.",
+  "problem": "작은 초기 상태 저장소를 도메인별 파일로 미리 나누면 DB 규칙의 위치가 분산되고 탐색 비용이 늘어난다.",
+  "solution": "state_store.py가 open_database()와 모든 상태 저장 함수를 소유하고, mcp_server.py에는 SQL이나 상태 규칙을 두지 않는다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/state-store.html#connection"
+    }
+  ]
+}

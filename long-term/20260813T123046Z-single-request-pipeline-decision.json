@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "ltm_single_request_pipeline_decision",
+  "created_at": "2026-08-13T12:30:46Z",
+  "kind": "decision",
+  "title": "단일 Codex 요청의 역할 분리",
+  "summary": "Codex는 MCP로 의미 판단과 Run 마감을 수행하고, Hook은 상태 조회·기계적 기록·누락 검사만 담당한다. 구현 요청만 WorkItem과 Run을 필수로 사용한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/single-request-pipeline.html"
+    },
+    {
+      "type": "file",
+      "ref": "src/harness/mcp_server.py"
+    }
+  ]
+}

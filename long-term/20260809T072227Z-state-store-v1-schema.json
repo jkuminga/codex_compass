@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "ltm_state_store_v1_schema",
+  "created_at": "2026-08-09T07:22:27Z",
+  "kind": "decision",
+  "title": "상태 저장소 v1 스키마 확정",
+  "summary": "상태 저장소 v1은 SQLite를 현재 상태와 변경 이력의 유일한 정본으로 사용하고 Project, Feature, WorkItem, Acceptance Criterion, Run, Artifact, Evidence 연결, Memory Link, State Event를 분리한다. Artifact의 소속 WorkItem은 Run을 통해 계산하며 events.jsonl과 상태 문서는 DB에서 생성하는 파생물로 취급한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/state-store.md"
+    },
+    {
+      "type": "file",
+      "ref": "CONTEXT.md"
+    }
+  ]
+}

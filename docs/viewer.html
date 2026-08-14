@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Harness v2의 Markdown 설계 문서를 브라우저에서 읽기 좋게 보여주는 로컬 뷰어">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='5' width='24' height='22' rx='4' fill='%23176b5b'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h9' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <title>문서 불러오는 중 · Harness v2</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f1e9;
+      --paper: #fffdf7;
+      --paper-2: #ece8dc;
+      --ink: #1d2925;
+      --muted: #60706a;
+      --line: #d6d2c6;
+      --accent: #176b5b;
+      --accent-soft: #dcece7;
+      --warm: #a25b32;
+      --warm-soft: #f5e5d9;
+      --danger: #9f3f35;
+      --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111714;
+        --paper: #18201d;
+        --paper-2: #212b27;
+        --ink: #e8eeeb;
+        --muted: #a6b4ae;
+        --line: #35413c;
+        --accent: #71c6b2;
+        --accent-soft: #203c35;
+        --warm: #e2a47d;
+        --warm-soft: #3d2d23;
+        --danger: #ef9a90;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.68;
+      letter-spacing: -.01em;
+    }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    button { font: inherit; }
+    code, pre { font-family: var(--mono); }
+    .topbar {
+      position: sticky;
+      z-index: 20;
+      top: 0;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      min-height: 58px;
+      padding: 9px max(18px, calc((100vw - 1240px) / 2));
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--bg) 92%, transparent);
+      backdrop-filter: blur(12px);
+    }
+    .back {
+      display: inline-flex;
+      gap: 7px;
+      align-items: center;
+      color: var(--ink);
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .file-name {
+      min-width: 0;
+      margin-right: auto;
+      overflow: hidden;
+      color: var(--muted);
+      font: .78rem var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .top-action {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--paper);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: .78rem;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .top-action:hover { border-color: var(--accent); color: var(--ink); }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 760px) 250px;
+      gap: clamp(40px, 7vw, 96px);
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+      padding: clamp(46px, 7vw, 84px) 0 100px;
+    }
+    .document { min-width: 0; }
+    .document > :first-child { margin-top: 0; }
+    .document h1,
+    .document h2,
+    .document h3,
+    .document h4,
+    .document h5,
+    .document h6 {
+      position: relative;
+      scroll-margin-top: 82px;
+      line-height: 1.25;
+      letter-spacing: -.035em;
+    }
+    .document h1 {
+      margin: 0 0 1.1em;
+      padding-bottom: .55em;
+      border-bottom: 2px solid var(--ink);
+      font-size: clamp(2.15rem, 5vw, 3.7rem);
+      line-height: 1.08;
+    }
+    .document h2 {
+      margin: 2.8em 0 .8em;
+      padding-bottom: .42em;
+      border-bottom: 1px solid var(--line);
+      font-size: clamp(1.45rem, 3vw, 1.9rem);
+    }
+    .document h3 { margin: 2.1em 0 .65em; font-size: 1.27rem; }
+    .document h4 { margin: 1.8em 0 .5em; font-size: 1.08rem; }
+    .document p { margin: 0 0 1.15em; }
+    .document ul,
+    .document ol { margin: 0 0 1.25em; padding-left: 1.55em; }
+    .document li { margin: .28em 0; }
+    .document li > ul,
+    .document li > ol { margin: .35em 0 .55em; }
+    .document blockquote {
+      margin: 1.5em 0;
+      padding: .8em 1.1em;
+      border-left: 4px solid var(--warm);
+      background: var(--warm-soft);
+      color: var(--muted);
+    }
+    .document blockquote > :last-child { margin-bottom: 0; }
+    .document pre {
+      margin: 1.5em 0;
+      padding: 20px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper-2);
+      font-size: .88rem;
+      line-height: 1.6;
+      tab-size: 2;
+    }
+    .document :not(pre) > code {
+      padding: .16em .38em;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--paper-2);
+      color: var(--warm);
+      font-size: .88em;
+      overflow-wrap: anywhere;
+    }
+    .table-wrap { margin: 1.5em 0; overflow-x: auto; }
+    .document table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+    .document th,
+    .document td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    .document th { border-top: 2px solid var(--ink); background: var(--paper-2); }
+    .document tr:last-child td { border-bottom: 2px solid var(--ink); }
+    .document hr { margin: 2.5em 0; border: 0; border-top: 1px solid var(--line); }
+    .heading-link {
+      position: absolute;
+      left: -1.1em;
+      opacity: 0;
+      color: var(--muted);
+      font-size: .72em;
+      text-decoration: none;
+      transition: opacity .15s ease;
+    }
+    .document :is(h2, h3, h4):hover .heading-link,
+    .heading-link:focus { opacity: 1; }
+    .toc {
+      position: sticky;
+      top: 86px;
+      align-self: start;
+      max-height: calc(100vh - 116px);
+      overflow-y: auto;
+      padding-left: 18px;
+      border-left: 1px solid var(--line);
+    }
+    .toc-title {
+      margin: 0 0 13px;
+      color: var(--muted);
+      font: 700 .7rem var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .toc ol { margin: 0; padding: 0; list-style: none; }
+    .toc li { margin: 0; }
+    .toc a {
+      display: block;
+      padding: 5px 0;
+      color: var(--muted);
+      font-size: .82rem;
+      line-height: 1.35;
+      text-decoration: none;
+    }
+    .toc .level-3 a { padding-left: 12px; font-size: .76rem; }
+    .toc a:hover { color: var(--accent); }
+    .state {
+      grid-column: 1 / -1;
+      padding: 36px;
+      border: 1px dashed var(--line);
+      background: var(--paper);
+      text-align: center;
+    }
+    .state h1 { margin-bottom: 8px; font-size: 1.5rem; }
+    .state p { margin: 0; color: var(--muted); }
+    .state.error { border-color: var(--danger); }
+    .state code { color: var(--warm); }
+    .notice {
+      margin-top: 56px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .78rem;
+    }
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 40;
+      padding: 9px 13px;
+      border-radius: 6px;
+      background: var(--ink);
+      color: var(--paper);
+      font-size: .82rem;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity .16s ease, transform .16s ease;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 850px) {
+      .layout { display: block; width: min(760px, calc(100% - 32px)); }
+      .toc { display: none; }
+      .heading-link { display: none; }
+    }
+    @media (max-width: 540px) {
+      .topbar { gap: 10px; min-height: 52px; padding: 8px 14px; }
+      .back span:last-child { display: none; }
+      .file-name { font-size: .69rem; }
+      .top-action { padding: 5px 8px; font-size: .7rem; }
+      .layout { width: min(100% - 28px, 760px); padding: 38px 0 70px; }
+      .document h1 { font-size: 2.1rem; }
+      .document pre { margin-inline: -4px; padding: 15px; font-size: .78rem; }
+      .document th, .document td { padding: 8px 9px; }
+    }
+    @media print {
+      :root { color-scheme: light; --bg: #fff; --paper: #fff; --ink: #111; --muted: #444; --line: #ccc; }
+      .topbar, .toc, .toast { display: none; }
+      .layout { display: block; width: 100%; padding: 0; }
+      .document { max-width: none; }
+      .document a { color: inherit; }
+      .document pre, .document blockquote { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="back" href="./docs-index.html" aria-label="문서 허브로 돌아가기"><span aria-hidden="true">←</span><span>문서 허브</span></a>
+    <span class="file-name" id="file-name">문서를 확인하는 중…</span>
+    <a class="top-action" id="raw-link" href="#">원문</a>
+    <button class="top-action" id="copy-link" type="button">링크 복사</button>
+  </header>
+
+  <main class="layout" id="layout">
+    <section class="state" id="state" aria-live="polite">
+      <h1>문서를 불러오고 있습니다</h1>
+      <p>잠시만 기다려주세요.</p>
+    </section>
+    <article class="document" id="document" hidden></article>
+    <nav class="toc" id="toc" aria-label="문서 목차" hidden>
+      <p class="toc-title">On this page</p>
+      <ol id="toc-list"></ol>
+    </nav>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite">복사했습니다.</div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const params = new URLSearchParams(location.search);
+      const requestedFile = params.get('file') || '';
+      const filePattern = /^[a-z0-9][a-z0-9._-]*\.md$/i;
+      const state = document.querySelector('#state');
+      const article = document.querySelector('#document');
+      const toc = document.querySelector('#toc');
+      const tocList = document.querySelector('#toc-list');
+      const fileName = document.querySelector('#file-name');
+      const rawLink = document.querySelector('#raw-link');
+      const copyLink = document.querySelector('#copy-link');
+      const toast = document.querySelector('#toast');
+      const headings = [];
+      const slugCounts = new Map();
+
+      const escapeHtml = (value) => String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+      const plainText = (value) => String(value)
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/[`*_~]/g, '')
+        .trim();
+
+      const slugify = (value) => {
+        const base = plainText(value)
+          .normalize('NFKC')
+          .toLocaleLowerCase('ko-KR')
+          .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+          .replace(/^-+|-+$/g, '') || 'section';
+        const count = slugCounts.get(base) || 0;
+        slugCounts.set(base, count + 1);
+        return count ? `${base}-${count + 1}` : base;
+      };
+
+      const resolveLink = (raw) => {
+        const value = raw.trim().replace(/^<|>$/g, '');
+        if (/^(?:javascript|data|vbscript):/i.test(value)) return '#';
+        const match = value.match(/^\.\/([a-z0-9][a-z0-9._-]*\.md)(#[\p{Letter}\p{Number}._~-]+)?$/iu)
+          || value.match(/^([a-z0-9][a-z0-9._-]*\.md)(#[\p{Letter}\p{Number}._~-]+)?$/iu);
+        if (match) return `./viewer.html?file=${encodeURIComponent(match[1])}${match[2] || ''}`;
+        return value;
+      };
+
+      const inline = (source) => {
+        const tokens = [];
+        const token = (html) => {
+          const key = `\u0000${tokens.length}\u0000`;
+          tokens.push(html);
+          return key;
+        };
+        let value = String(source);
+        value = value.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g, (_, alt, href) => {
+          const safe = resolveLink(href);
+          return token(`<a href="${escapeHtml(safe)}">[이미지: ${escapeHtml(alt || '설명 없음')}]</a>`);
+        });
+        value = value.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g, (_, label, href) => {
+          const safe = resolveLink(href);
+          const external = /^https?:\/\//i.test(safe) ? ' target="_blank" rel="noreferrer"' : '';
+          return token(`<a href="${escapeHtml(safe)}"${external}>${inline(label)}</a>`);
+        });
+        value = value.replace(/`([^`\n]+)`/g, (_, code) => token(`<code>${escapeHtml(code)}</code>`));
+        value = escapeHtml(value);
+        value = value
+          .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+          .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+          .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+          .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+          .replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+        return value.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)]);
+      };
+
+      const splitTableRow = (line) => {
+        let value = line.trim();
+        if (value.startsWith('|')) value = value.slice(1);
+        if (value.endsWith('|')) value = value.slice(0, -1);
+        return value.split(/(?<!\\)\|/).map((cell) => cell.trim().replaceAll('\\|', '|'));
+      };
+
+      const isTableDivider = (line) => {
+        const cells = splitTableRow(line);
+        return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+      };
+
+      const startsBlock = (lines, index) => {
+        const line = lines[index] || '';
+        if (!line.trim()) return true;
+        if (/^ {0,3}(#{1,6})\s+/.test(line)) return true;
+        if (/^\s*```/.test(line)) return true;
+        if (/^\s*>/.test(line)) return true;
+        if (/^\s*([-+*]|\d+\.)\s+/.test(line)) return true;
+        if (/^ {0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) return true;
+        return index + 1 < lines.length && line.includes('|') && isTableDivider(lines[index + 1]);
+      };
+
+      const parseList = (lines, start, baseIndent) => {
+        const first = lines[start].match(/^(\s*)([-+*]|\d+\.)\s+(.+)$/);
+        const tag = /\d+\./.test(first[2]) ? 'ol' : 'ul';
+        let html = `<${tag}>`;
+        let index = start;
+        let itemOpen = false;
+        while (index < lines.length) {
+          const match = lines[index].match(/^(\s*)([-+*]|\d+\.)\s+(.+)$/);
+          if (!match) break;
+          const indent = match[1].replaceAll('\t', '  ').length;
+          const currentTag = /\d+\./.test(match[2]) ? 'ol' : 'ul';
+          if (indent < baseIndent) break;
+          if (indent > baseIndent) {
+            if (!itemOpen) break;
+            const nested = parseList(lines, index, indent);
+            html += nested.html;
+            index = nested.next;
+            continue;
+          }
+          if (currentTag !== tag) break;
+          if (itemOpen) html += '</li>';
+          html += `<li>${inline(match[3])}`;
+          itemOpen = true;
+          index += 1;
+        }
+        if (itemOpen) html += '</li>';
+        html += `</${tag}>`;
+        return { html, next: index };
+      };
+
+      const parseBlocks = (source) => {
+        const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
+        const output = [];
+        let index = 0;
+        while (index < lines.length) {
+          const line = lines[index];
+          if (!line.trim()) { index += 1; continue; }
+
+          const fence = line.match(/^\s*```\s*([\w+-]*)\s*$/);
+          if (fence) {
+            const code = [];
+            index += 1;
+            while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) {
+              code.push(lines[index]);
+              index += 1;
+            }
+            if (index < lines.length) index += 1;
+            const language = fence[1] ? ` data-language="${escapeHtml(fence[1])}"` : '';
+            output.push(`<pre><code${language}>${escapeHtml(code.join('\n'))}</code></pre>`);
+            continue;
+          }
+
+          const heading = line.match(/^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+          if (heading) {
+            const level = heading[1].length;
+            const label = heading[2];
+            const id = slugify(label);
+            if (level >= 2 && level <= 3) headings.push({ level, label: plainText(label), id });
+            const anchor = level >= 2 ? `<a class="heading-link" href="#${id}" aria-label="이 제목으로 이동">#</a>` : '';
+            output.push(`<h${level} id="${id}">${anchor}${inline(label)}</h${level}>`);
+            index += 1;
+            continue;
+          }
+
+          if (/^ {0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+            output.push('<hr>');
+            index += 1;
+            continue;
+          }
+
+          if (/^\s*>/.test(line)) {
+            const quote = [];
+            while (index < lines.length && /^\s*>/.test(lines[index])) {
+              quote.push(lines[index].replace(/^\s*>\s?/, ''));
+              index += 1;
+            }
+            output.push(`<blockquote>${parseBlocks(quote.join('\n'))}</blockquote>`);
+            continue;
+          }
+
+          const listMatch = line.match(/^(\s*)([-+*]|\d+\.)\s+(.+)$/);
+          if (listMatch) {
+            const parsed = parseList(lines, index, listMatch[1].replaceAll('\t', '  ').length);
+            output.push(parsed.html);
+            index = parsed.next;
+            continue;
+          }
+
+          if (index + 1 < lines.length && line.includes('|') && isTableDivider(lines[index + 1])) {
+            const headers = splitTableRow(line);
+            const alignments = splitTableRow(lines[index + 1]).map((cell) => {
+              if (cell.startsWith(':') && cell.endsWith(':')) return 'center';
+              if (cell.endsWith(':')) return 'right';
+              return 'left';
+            });
+            index += 2;
+            const rows = [];
+            while (index < lines.length && lines[index].trim() && lines[index].includes('|')) {
+              rows.push(splitTableRow(lines[index]));
+              index += 1;
+            }
+            const head = headers.map((cell, cellIndex) => `<th style="text-align:${alignments[cellIndex] || 'left'}">${inline(cell)}</th>`).join('');
+            const body = rows.map((row) => `<tr>${headers.map((_, cellIndex) => `<td style="text-align:${alignments[cellIndex] || 'left'}">${inline(row[cellIndex] || '')}</td>`).join('')}</tr>`).join('');
+            output.push(`<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`);
+            continue;
+          }
+
+          const paragraph = [line.trim()];
+          index += 1;
+          while (index < lines.length && !startsBlock(lines, index)) {
+            paragraph.push(lines[index].trim());
+            index += 1;
+          }
+          output.push(`<p>${inline(paragraph.join(' '))}</p>`);
+        }
+        return output.join('\n');
+      };
+
+      const showError = (title, message) => {
+        state.classList.add('error');
+        state.innerHTML = `<h1>${escapeHtml(title)}</h1><p>${message}</p>`;
+        fileName.textContent = '문서를 열 수 없음';
+        document.title = `${title} · Harness v2`;
+      };
+
+      const showToast = (message) => {
+        toast.textContent = message;
+        toast.classList.add('show');
+        window.setTimeout(() => toast.classList.remove('show'), 1400);
+      };
+
+      const buildToc = () => {
+        tocList.innerHTML = headings.map((heading) =>
+          `<li class="level-${heading.level}"><a href="#${heading.id}">${escapeHtml(heading.label)}</a></li>`
+        ).join('');
+        toc.hidden = headings.length === 0;
+      };
+
+      const load = async () => {
+        if (!filePattern.test(requestedFile)) {
+          showError('잘못된 문서 주소입니다', '`file`에는 <code>docs/</code> 바로 아래의 Markdown 파일 이름만 사용할 수 있습니다.');
+          return;
+        }
+        fileName.textContent = requestedFile;
+        rawLink.href = `./${encodeURIComponent(requestedFile)}`;
+        try {
+          const response = await fetch(`./${encodeURIComponent(requestedFile)}`, { cache: 'no-cache' });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const markdown = await response.text();
+          const rendered = parseBlocks(markdown);
+          article.innerHTML = `${rendered}<p class="notice">이 화면은 <code>${escapeHtml(requestedFile)}</code> 원본을 변경하지 않고 브라우저에서 읽기 좋게 렌더링한 결과입니다.</p>`;
+          state.hidden = true;
+          article.hidden = false;
+          buildToc();
+          const title = plainText(markdown.match(/^#\s+(.+)$/m)?.[1] || requestedFile.replace(/\.md$/i, ''));
+          document.title = `${title} · Harness v2`;
+        } catch (error) {
+          showError('문서를 불러오지 못했습니다', '프로젝트 루트에서 로컬 서버를 실행했는지 확인하세요. <code>python3 -m http.server 4173 --bind 127.0.0.1</code>');
+          console.error(error);
+        }
+      };
+
+      copyLink.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(location.href);
+          showToast('문서 링크를 복사했습니다.');
+        } catch {
+          showToast('브라우저에서 주소를 직접 복사해주세요.');
+        }
+      });
+
+      load();
+    })();
+  </script>
+</body>
+</html>

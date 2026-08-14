@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "ltm_remove_work_item_dependencies",
+  "created_at": "2026-08-12T13:41:36Z",
+  "kind": "decision",
+  "title": "WorkItem 의존 관계 테이블 제거",
+  "summary": "Harness v2의 v1 상태 저장소에서는 WorkItem 의존 관계 테이블을 두지 않고 status, next_action, block_reason으로 작업 순서를 관리한다.",
+  "problem": "단일 에이전트의 점진적 계획 구조에서 별도 의존 관계는 순환 검사와 추가 도구를 요구해 얻는 이점보다 복잡성이 컸다.",
+  "solution": "work_item_dependencies를 제거하고 실행 가능 여부는 status, 다음 행동은 next_action, 막힌 이유는 block_reason으로 표현한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/state-store.html"
+    }
+  ]
+}

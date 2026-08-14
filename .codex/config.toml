@@ -1,0 +1,27 @@
+[mcp_servers.harness-state]
+command = "uv"
+args = ["run", "python", "-m", "src.harness.mcp_server"]
+cwd = "."
+required = true
+startup_timeout_sec = 20
+tool_timeout_sec = 30
+enabled_tools = [
+  "get_project_status",
+  "get_work_context",
+  "get_postflight_status",
+  "create_feature",
+  "update_feature",
+  "create_work_item",
+  "revise_work_item",
+  "change_work_item_state",
+  "manage_criterion",
+  "start_work",
+  "record_artifact",
+  "resolve_artifact",
+  "verify_criterion",
+  "finish_work",
+  "create_memory_candidate",
+  "list_memory_candidates",
+  "promote_memory_candidate",
+  "reject_memory_candidate",
+]

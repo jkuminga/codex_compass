@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Harness v2 단일 Codex 요청의 Hook, MCP, Skill 파이프라인">
+  <title>단일 Codex 요청 파이프라인</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#f4f1e9;--paper:#fffdf7;--ink:#1d2925;--muted:#60706a;--line:#d6d2c6;--hook:#176b5b;--hook-soft:#dcece7;--agent:#a25b32;--agent-soft:#f5e5d9;--skill:#65558f;--skill-soft:#e9e3f4;--danger:#a43c35;--danger-soft:#f4dedb;--sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    @media(prefers-color-scheme:dark){:root{--bg:#111714;--paper:#18201d;--ink:#e8eeeb;--muted:#a6b4ae;--line:#35413c;--hook:#71c6b2;--hook-soft:#203c35;--agent:#e2a47d;--agent-soft:#3d2d23;--skill:#baa8e3;--skill-soft:#322c43;--danger:#ef938b;--danger-soft:#402421}}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:15.5px/1.58 var(--sans)}code,pre{font-family:var(--mono)}a{color:var(--hook)}
+    .page{width:min(1160px,calc(100% - 32px));margin:auto;padding:64px 0 84px}header{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(260px,.65fr);gap:44px;align-items:end;padding-bottom:30px;border-bottom:1px solid var(--line)}
+    .eyebrow{margin:0 0 10px;color:var(--hook);font:700 .75rem var(--mono);letter-spacing:.1em;text-transform:uppercase}h1,h2,h3,p{margin-top:0}h1{margin-bottom:16px;font-size:clamp(2.5rem,6vw,5.3rem);line-height:.97;letter-spacing:-.065em}.lede{max-width:68ch;margin:0;color:var(--muted);font-size:1.05rem}
+    .rule{padding:20px;border-left:4px solid var(--agent);background:var(--agent-soft)}.rule strong{display:block;margin-bottom:7px}.rule p{margin:0;color:var(--muted)}nav{display:flex;flex-wrap:wrap;gap:8px;margin:26px 0 42px}nav a{padding:6px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);text-decoration:none;font-size:.78rem}
+    section{min-width:0;margin-top:58px}.section-head{display:grid;grid-template-columns:minmax(0,.7fr) minmax(300px,1.3fr);gap:26px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}h2{margin:0;font-size:1.55rem;letter-spacing:-.035em}.section-head p{margin:0;color:var(--muted)}
+    .request-grid,.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.request,.lane{padding:19px;background:var(--paper);border:1px solid var(--line)}.request b{display:block;margin-bottom:8px}.request p,.lane p{color:var(--muted)}.request code{display:block;padding:8px;background:var(--bg)}
+    .pipeline{display:grid;width:100%;max-width:100%;min-width:0;grid-template-columns:repeat(5,minmax(150px,1fr));gap:28px 14px;overflow-x:auto;padding:20px;border:1px solid var(--line);background:var(--paper)}.step{position:relative;min-height:126px;padding:15px;border-top:4px solid var(--line);cursor:pointer}.step:not(:nth-child(5))::after{content:"→";position:absolute;right:-13px;top:47px;color:var(--muted)}.step:nth-child(n+6){grid-row:2}.step:nth-child(6){grid-column:5}.step:nth-child(7){grid-column:4}.step:nth-child(8){grid-column:3}.step:nth-child(9){grid-column:2}.step:nth-child(10){grid-column:1}.step:nth-child(n+6):not(:last-child)::after{content:"←"}.step.hook{border-color:var(--hook);background:var(--hook-soft)}.step.agent{border-color:var(--agent);background:var(--agent-soft)}.step.skill{border-color:var(--skill);background:var(--skill-soft)}.step b{display:block;margin-bottom:7px}.step span{color:var(--muted);font-size:.78rem}.step.active{outline:3px solid color-mix(in srgb,var(--ink) 25%,transparent)}
+    .inspector{display:grid;grid-template-columns:130px 1fr;gap:18px;margin-top:12px;padding:16px 18px;border-left:4px solid var(--hook);background:var(--hook-soft)}.inspector b{font:700 .78rem var(--mono)}.inspector p{margin:0;color:var(--muted)}
+    .lane{border-top-width:4px}.lane.hook{border-top-color:var(--hook)}.lane.agent{border-top-color:var(--agent)}.lane.skill{border-top-color:var(--skill)}.lane h3{font-size:1rem}.lane ul{margin:0;padding-left:18px}.lane li+li{margin-top:6px}
+    .table-wrap{overflow-x:auto;border:1px solid var(--line);background:var(--paper)}table{width:100%;min-width:840px;border-collapse:collapse}th,td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--hook-soft);color:var(--muted);font:700 .69rem var(--mono);letter-spacing:.05em;text-transform:uppercase}tbody tr:last-child td{border-bottom:0}.owner{font:700 .72rem var(--mono)}.owner.hook{color:var(--hook)}.owner.agent{color:var(--agent)}.owner.skill{color:var(--skill)}
+    .binding{display:grid;grid-template-columns:minmax(0,.9fr) minmax(340px,1.1fr);gap:26px}.binding pre{margin:0;padding:18px;overflow:auto;border:1px solid var(--line);background:var(--paper);font-size:13px}.callout{margin-top:18px;padding:16px 18px;border-left:4px solid var(--danger);background:var(--danger-soft)}.callout p{margin:0;color:var(--muted)}
+    details{border-bottom:1px solid var(--line)}summary{padding:14px 0;font-weight:700;cursor:pointer}details div{padding:0 0 17px;color:var(--muted)}footer{margin-top:64px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.8rem}
+    @media(max-width:900px){header,.section-head,.binding{grid-template-columns:1fr}.request-grid,.three{grid-template-columns:1fr}.pipeline{width:100%;grid-template-columns:repeat(5,minmax(160px,1fr))}.page{padding-top:38px}}
+    @media(max-width:560px){.page{width:min(100% - 22px,1160px);overflow:hidden}h1{font-size:2.15rem;overflow-wrap:anywhere}.inspector{grid-template-columns:1fr}.table-wrap{border:0;overflow:visible;background:transparent}table,tbody,tr,td{display:block;min-width:0}thead{display:none}tbody{display:grid;gap:10px}tr{padding:12px;border:1px solid var(--line);background:var(--paper)}td{padding:4px 0;border:0}td::before{content:attr(data-label);display:block;margin-top:5px;color:var(--muted);font:700 .63rem var(--mono);text-transform:uppercase}}
+  </style>
+</head>
+<body>
+<main class="page">
+  <header>
+    <div><p class="eyebrow">Harness v2 · canonical lifecycle</p><h1>단일 Codex 요청 파이프라인</h1><p class="lede">한 번의 사용자 요청을 상태 조회, WorkItem 실행, 검증, 장기 기억 후보와 종료까지 연결하는 기준 흐름이다. Hook·Codex MCP·Skill은 서로 대신하지 않고 각자 잘하는 일만 맡는다.</p></div>
+    <aside class="rule"><strong>핵심 규칙</strong><p>Hook은 Run을 자동 생성·종료하지 않는다. Codex가 의미를 판단해 MCP로 시작하고 종료하며, Hook은 문맥 공급·기계적 기록·누락 검사만 한다.</p></aside>
+  </header>
+  <nav><a href="#status">구현 상태</a><a href="#classification">요청 분류</a><a href="#flow">전체 흐름</a><a href="#ownership">역할 분리</a><a href="#matrix">호출표</a><a href="#binding">Runtime Binding</a><a href="#failure">실패 처리</a></nav>
+
+  <section id="status">
+    <div class="section-head"><h2>현재 구현 상태</h2><p>이 문서는 목표 파이프라인의 정본이다. 이미 동작하는 부분과 다음에 구현할 부분을 구분한다.</p></div>
+    <div class="three">
+      <article class="lane agent"><h3>구현됨</h3><p>SQLite 상태 저장소, DB 함수, Codex용 MCP 도구와 <code>progressed</code> 종료.</p></article>
+      <article class="lane hook"><h3>다음 구현</h3><p>Hook 어댑터, Trace, Runtime Binding과 Stop Guard.</p></article>
+      <article class="lane skill"><h3>다음 구현</h3><p>MemoryGraph Finalize Skill과 후보 승격·거절 절차.</p></article>
+    </div>
+  </section>
+
+  <section id="classification">
+    <div class="section-head"><h2>프로젝트를 진전시키면 Run을 쓴다</h2><p>코드 구현 여부가 아니라, 결과와 다음 행동을 이후 세션에서 이어받아야 하는 프로젝트 작업인지를 기준으로 구분한다.</p></div>
+    <div class="request-grid">
+      <article class="request"><b>일회성 질문·설명</b><p>답변으로 끝나며 프로젝트의 목표·결과·다음 행동을 바꾸지 않는다.</p><code>WorkItem 없음 · Run 없음</code></article>
+      <article class="request"><b>기존 목표를 진행</b><p>설계·조사·구현·검증 중 무엇이든 기존 WorkItem의 완료에 필요한 작업이다.</p><code>기존 WorkItem · 새 Run</code></article>
+      <article class="request"><b>독립적인 새 목표</b><p>기존 작업과 별도로 완료할 목표와 완료 조건이 필요한 프로젝트 작업이다.</p><code>새 WorkItem · 새 Run</code></article>
+    </div>
+  </section>
+
+  <section id="flow">
+    <div class="section-head"><h2>프로젝트 작업의 전체 흐름</h2><p>설계·조사·의사결정·구현·검증에 공통으로 적용한다. 단계를 누르면 실제 책임을 확인할 수 있다.</p></div>
+    <div class="pipeline">
+      <article class="step hook active" data-detail="상태 DB를 읽고 실행 중인 WorkItem과 ready 후보 최대 3개를 짧게 주입한다. 사용자가 WorkItem ID를 적었다고 가정하지 않으며, Hook은 선택이나 Run 생성을 하지 않는다."><b>1. UserPromptSubmit</b><span>WorkItem 후보 공급</span></article>
+      <article class="step agent" data-detail="Codex가 일회성 답변인지 프로젝트 작업인지 판단한다. 프로젝트 작업이면 기존 WorkItem 재사용을 우선하고, 독립적인 새 목표일 때만 WorkItem을 만든다."><b>2. 요청 분류·매칭</b><span>답변 · 재사용 · 새 작업</span></article>
+      <article class="step agent" data-detail="기존 WorkItem이면 get_work_context 후 start_work를 호출한다. 새 목표이면 create_work_item, ready 전환, start_work 순으로 WorkItem과 Run을 준비한다."><b>3. 작업 시작</b><span>선택/생성 → start_work</span></article>
+      <article class="step hook" data-detail="Runtime Binding이 있으면 활성 Run과 일치하는지 확인하고, 위험 명령·권한·범위를 기계적으로 검사한다. Binding이 없을 때 요청 종류를 추측해 무조건 차단하지는 않는다."><b>4. PreToolUse</b><span>정책 검사 · Trace 입력</span></article>
+      <article class="step agent" data-detail="Codex가 설계·조사·문서·코드·테스트 등 WorkItem 목표에 필요한 작업을 수행한다. 재사용할 지식이 생기면 create_memory_candidate를 즉시 호출한다."><b>5. 실제 작업</b><span>설계 · 조사 · 구현 · 검증</span></article>
+      <article class="step hook" data-detail="도구 결과를 Trace에 기록한다. 테스트·린트·빌드·커밋처럼 기계적으로 식별 가능한 결과만 Artifact로 자동 등록한다."><b>6. PostToolUse</b><span>Trace · Artifact 기록</span></article>
+      <article class="step agent" data-detail="Codex가 Artifact가 어떤 Acceptance Criterion을 증명하는지 판단하고 verify_criterion을 호출한다."><b>7. 검증 연결</b><span>verify_criterion</span></article>
+      <article class="step skill" data-detail="pending 후보가 있을 때 MemoryGraph Skill로 가치·중복·관계를 검토한다. 저장 후 promote, 제외 시 reject 처리한다."><b>8. 기억 Finalize</b><span>promote · reject</span></article>
+      <article class="step agent" data-detail="get_postflight_status로 누락을 확인한 뒤 finish_work를 호출한다. WorkItem 전체가 끝나면 completed, 이번 세션 목표만 달성하고 계속 이어가면 progressed로 종료한다."><b>9. 종료 준비</b><span>postflight → finish_work</span></article>
+      <article class="step hook" data-detail="Run이나 완료 조건 처리가 남았는지만 검사한다. 마감을 대신하지 않고 누락 시 같은 Codex를 한 번 계속한다."><b>10. Stop Guard</b><span>통과 또는 1회 계속</span></article>
+    </div>
+    <div class="inspector"><b id="inspect-title">1. UserPromptSubmit</b><p id="inspect-detail">상태 DB를 읽고 실행 중인 WorkItem과 ready 후보 최대 3개를 짧게 주입한다. 사용자가 WorkItem ID를 적었다고 가정하지 않으며, Hook은 선택이나 Run 생성을 하지 않는다.</p></div>
+  </section>
+
+  <section id="ownership">
+    <div class="section-head"><h2>판단 책임을 나눈다</h2><p>입력만 보면 답이 정해지는 처리는 Hook, 사용자 의도와 의미를 읽어야 하는 처리는 Codex, 반복되는 고급 추론 절차는 Skill이 맡는다.</p></div>
+    <div class="three">
+      <article class="lane hook"><h3>Hook → <code>state_store.py</code></h3><p>모델 없이 가능한 기계 처리.</p><ul><li>DB 건강 검사와 상태 조회</li><li>Binding이 가리키는 Run·정책·권한 확인</li><li>Trace와 식별 가능한 Artifact 기록</li><li>종료 누락 검사와 1회 continuation</li></ul></article>
+      <article class="lane agent"><h3>Codex → MCP</h3><p>문맥과 결과 의미가 필요한 판단.</p><ul><li>일회성 답변과 프로젝트 작업 구분</li><li>기존 WorkItem 재사용 또는 새 목표 생성</li><li>Run 시작과 최종 outcome 결정</li><li>Artifact와 완료 조건 연결</li><li>Run 요약과 next_action 작성</li></ul></article>
+      <article class="lane skill"><h3>Codex → Skill</h3><p>재사용하는 추론 절차.</p><ul><li>후보 가치 평가</li><li>기존 기억 검색과 중복 판단</li><li>관계 선택과 MemoryGraph 저장</li><li>후보 promote 또는 reject</li></ul></article>
+    </div>
+  </section>
+
+  <section id="matrix">
+    <div class="section-head"><h2>단계별 Interface 호출표</h2><p>MCP 도구는 Codex 전용이다. Hook·CLI·테스트 같은 내부 시스템은 <code>state_store.py</code>를 직접 사용한다.</p></div>
+    <div class="table-wrap"><table><thead><tr><th>시점</th><th>주체</th><th>호출</th><th>이유</th></tr></thead><tbody>
+      <tr><td data-label="시점">요청 직전</td><td data-label="주체"><span class="owner hook">UserPromptSubmit</span></td><td data-label="호출"><code>check_database_health()</code>, <code>get_project_progress()</code>, <code>list_next_work_items()</code>, 선택 시 <code>get_preflight_context()</code></td><td data-label="이유">읽기 전용이고 기계적으로 결정 가능하다.</td></tr>
+      <tr><td data-label="시점">작업 선택</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출">기존 작업은 <code>get_work_context</code> → <code>start_work</code>; 새 목표는 <code>create_work_item</code> → <code>change_work_item_state</code> → <code>start_work</code></td><td data-label="이유">사용자 요청과 기존 목표를 비교해 재사용 또는 생성을 판단해야 한다.</td></tr>
+      <tr><td data-label="시점">도구 직전</td><td data-label="주체"><span class="owner hook">PreToolUse</span></td><td data-label="호출">Binding 확인, 필요 시 <code>get_running_run()</code>, 정책 검사, Trace 입력 기록</td><td data-label="이유">위험 행동과 이미 시작된 Run의 불일치는 실행 전에 막는다.</td></tr>
+      <tr><td data-label="시점">도구 직후</td><td data-label="주체"><span class="owner hook">PostToolUse</span></td><td data-label="호출"><code>create_artifact()</code>, Trace 결과 기록</td><td data-label="이유">명확한 결과를 추가 토큰 없이 수집한다.</td></tr>
+      <tr><td data-label="시점">작업 도중</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>record_artifact</code>, <code>resolve_artifact</code>, <code>create_memory_candidate</code></td><td data-label="이유">자동 인식하지 못한 결과와 기억 가치는 문맥 판단이 필요하다.</td></tr>
+      <tr><td data-label="시점">검증 후</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>verify_criterion</code></td><td data-label="이유">어떤 Artifact가 어느 Criterion의 Evidence인지 이해해야 한다.</td></tr>
+      <tr><td data-label="시점">기억 검토</td><td data-label="주체"><span class="owner skill">Memory Skill</span></td><td data-label="호출"><code>list_memory_candidates</code>, MemoryGraph 저장, <code>promote_memory_candidate</code>/<code>reject_memory_candidate</code></td><td data-label="이유">중복·가치·관계 평가는 반복 가능한 추론 절차다.</td></tr>
+      <tr><td data-label="시점">종료 직전</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>get_postflight_status</code> → <code>finish_work</code></td><td data-label="이유">전체 완료·정상 진전·재시도·막힘·중단 중 outcome을 Codex가 판단한다.</td></tr>
+      <tr><td data-label="시점">종료 시도</td><td data-label="주체"><span class="owner hook">Stop</span></td><td data-label="호출"><code>get_running_run()</code>, <code>get_postflight_status()</code></td><td data-label="이유">마감 대신 누락만 검사한다.</td></tr>
+      <tr><td data-label="시점">세션 종료</td><td data-label="주체"><span class="owner hook">SessionEnd</span></td><td data-label="호출">Trace flush, 임시 파일 정리</td><td data-label="이유">늦게 실행돼도 안전한 보조 처리만 둔다.</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section id="binding">
+    <div class="section-head"><h2>Hook이 현재 Run을 찾는 방법</h2><p>DB에 Codex 세션 필드를 넣지 않고, 짧게 살아 있는 Runtime Binding을 별도로 둔다.</p></div>
+    <div class="binding">
+      <div><h3>Runtime Binding</h3><p>Codex thread 또는 Hook 식별자를 현재 WorkItem·Run과 연결하는 임시 포인터다. 프로젝트 상태의 정본은 아니며 실제 상태는 항상 SQLite에서 다시 확인한다.</p><ul><li>PostToolUse가 성공한 <code>start_work</code> 결과의 ID를 받아 생성</li><li>Pre/PostToolUse와 Stop이 현재 Run 탐색에 사용</li><li><code>finish_work</code> 성공을 본 PostToolUse가 삭제 또는 비활성화</li><li>유실 시 DB의 running Run 후보를 찾되, 하나로 확정할 수 없으면 Codex에 재선택을 요구</li></ul></div>
+      <pre><code>.harness/runtime/
+  &lt;codex-thread-id&gt;.json
+
+{
+  "work_item_id": "WI-123",
+  "run_id": "RUN-456",
+  "updated_at": "2026-08-13T08:00:00Z"
+}</code></pre>
+    </div>
+    <div class="callout"><p><strong>정본이 아니다.</strong> Hook은 Binding에서 ID를 찾은 다음 반드시 <code>state_store.py</code>로 실제 WorkItem과 Run 상태를 확인한다. 이 Binding과 Hook 어댑터는 아직 구현 전이다.</p></div>
+  </section>
+
+  <section id="failure">
+    <div class="section-head"><h2>실패와 예외 처리</h2><p>Hook이 결과 의미를 추측해 상태를 자동 마감하지 않는 것이 공통 원칙이다.</p></div>
+    <details open><summary>활성 Run 없이 파일을 수정하려 하면?</summary><div>설계 문서를 포함한 저장소 변경은 프로젝트 작업이므로 먼저 WorkItem을 선택하거나 만들고 <code>start_work</code>를 호출해야 한다. PreToolUse는 Run 없는 변경 도구를 차단할 수 있다. 단순 질문과 프로젝트 조사 모두 읽기 도구를 쓸 수 있으므로, 읽기 전용 작업의 Run 필요 여부는 Codex가 AGENTS 지침에 따라 분류한다.</div></details>
+    <details><summary>어떤 기존 WorkItem을 선택하나?</summary><div>기본값은 재사용이다. “기존 WorkItem을 완료하려면 이번 요청도 처리해야 하는가?”가 참이면 같은 WorkItem에 새 Run을 만든다. 독립적으로 완료할 별도 목표와 완료 조건이 필요할 때만 새 WorkItem을 만든다.</div></details>
+    <details><summary>후보 세 개와 맞는 WorkItem이 없다면?</summary><div>세 항목은 정답이 아니라 빠른 후보다. 추가 상태 조회나 향후 검색 Interface로 관련 미완료 WorkItem을 확인하고, 그래도 적합한 목표가 없을 때 새 WorkItem을 만든다.</div></details>
+    <details><summary>테스트는 통과했지만 Criterion과 연결되지 않았다면?</summary><div>PostToolUse는 Artifact까지만 만든다. Codex가 <code>verify_criterion</code>으로 Evidence를 연결하지 않으면 Stop Guard가 누락을 알리고 한 번 계속한다.</div></details>
+    <details><summary>작업이 실패하거나 막혔다면?</summary><div>Codex가 <code>finish_work</code>에서 <code>retry_needed</code>, <code>blocked</code> 또는 <code>interrupted</code>를 선택하고 다음 Run이 이어갈 <code>next_action</code>과 종료 이유를 기록한다.</div></details>
+    <details><summary>이번 Run은 성공했지만 WorkItem은 아직 남았다면?</summary><div><code>finish_work(outcome="progressed")</code>로 종료한다. Run은 <code>succeeded</code>, WorkItem은 <code>ready</code>와 새 <code>next_action</code>으로 남아 다음 Run에서 이어진다.</div></details>
+    <details><summary>pending 기억 후보가 남았다면?</summary><div>Memory Finalize Skill이 구현된 뒤에는 저장 또는 reject가 끝나지 않은 후보를 Stop Guard가 알리고 한 번 continuation을 요청한다. Skill 구현 전에는 경고만 한다.</div></details>
+    <details><summary>한 번 더 실행해도 정리하지 못했다면?</summary><div>무한 반복하지 않는다. 같은 이유의 재시도는 한 번으로 제한하고 Run을 보존한 채 남은 누락과 사용자 조치 필요성을 보고한다.</div></details>
+  </section>
+
+  <footer><a href="./docs-index.html">← 문서 허브</a> · 관련 Interface는 <a href="./mcp-state-store-functions.html">MCP · DB 함수표</a>, 저장 규칙은 <a href="./state-store.html">상태 저장소</a>를 참고한다.</footer>
+</main>
+<script>
+  const steps=[...document.querySelectorAll('.step')],title=document.querySelector('#inspect-title'),detail=document.querySelector('#inspect-detail');
+  steps.forEach(step=>step.addEventListener('click',()=>{steps.forEach(item=>item.classList.remove('active'));step.classList.add('active');title.textContent=step.querySelector('b').textContent;detail.textContent=step.dataset.detail}));
+</script>
+</body>
+</html>
