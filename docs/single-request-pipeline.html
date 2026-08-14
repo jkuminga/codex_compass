@@ -30,7 +30,7 @@
     <div><p class="eyebrow">Harness v2 · canonical lifecycle</p><h1>단일 Codex 요청 파이프라인</h1><p class="lede">한 번의 사용자 요청을 상태 조회, WorkItem 실행, 검증, 장기 기억 후보와 종료까지 연결하는 기준 흐름이다. Hook·Codex MCP·Skill은 서로 대신하지 않고 각자 잘하는 일만 맡는다.</p></div>
     <aside class="rule"><strong>핵심 규칙</strong><p>Hook은 Run을 자동 생성·종료하지 않는다. Codex가 의미를 판단해 MCP로 시작하고 종료하며, Hook은 문맥 공급·기계적 기록·누락 검사만 한다.</p></aside>
   </header>
-  <nav><a href="#status">구현 상태</a><a href="#classification">요청 분류</a><a href="#flow">전체 흐름</a><a href="#ownership">역할 분리</a><a href="#matrix">호출표</a><a href="#binding">Runtime Binding</a><a href="#failure">실패 처리</a></nav>
+  <nav><a href="#status">구현 상태</a><a href="#classification">요청 분류</a><a href="#flow">전체 흐름</a><a href="#pretool-policy">PreToolUse 정책</a><a href="#ownership">역할 분리</a><a href="#matrix">호출표</a><a href="#binding">Runtime Binding</a><a href="#failure">실패 처리</a></nav>
 
   <section id="status">
     <div class="section-head"><h2>현재 구현 상태</h2><p>이 문서는 목표 파이프라인의 정본이다. 이미 동작하는 부분과 다음에 구현할 부분을 구분한다.</p></div>
@@ -56,7 +56,7 @@
       <article class="step hook active" data-detail="상태 DB를 읽고 실행 중인 WorkItem과 ready 후보 최대 3개를 짧게 주입한다. 사용자가 WorkItem ID를 적었다고 가정하지 않으며, Hook은 선택이나 Run 생성을 하지 않는다."><b>1. UserPromptSubmit</b><span>WorkItem 후보 공급</span></article>
       <article class="step agent" data-detail="Codex가 일회성 답변인지 프로젝트 작업인지 판단한다. 프로젝트 작업이면 기존 WorkItem 재사용을 우선하고, 독립적인 새 목표일 때만 WorkItem을 만든다."><b>2. 요청 분류·매칭</b><span>답변 · 재사용 · 새 작업</span></article>
       <article class="step agent" data-detail="기존 WorkItem이면 get_work_context 후 start_work를 호출한다. 새 목표이면 create_work_item, ready 전환, start_work 순으로 WorkItem과 Run을 준비한다."><b>3. 작업 시작</b><span>선택/생성 → start_work</span></article>
-      <article class="step hook" data-detail="Runtime Binding이 있으면 활성 Run과 일치하는지 확인하고, 위험 명령·권한·범위를 기계적으로 검사한다. Binding이 없을 때 요청 종류를 추측해 무조건 차단하지는 않는다."><b>4. PreToolUse</b><span>정책 검사 · Trace 입력</span></article>
+      <article class="step hook" data-detail="도구 이름과 입력을 정책표로 분류한다. 명확한 조회는 허용하고, 작업 준비 도구는 Run 없이 허용하며, 프로젝트 변경과 불명확한 호출은 유효한 활성 Run을 요구한다. 위험 호출은 별도로 거부한다."><b>4. PreToolUse</b><span>도구 분류 · 상태 검사</span></article>
       <article class="step agent" data-detail="Codex가 설계·조사·문서·코드·테스트 등 WorkItem 목표에 필요한 작업을 수행한다. 재사용할 지식이 생기면 create_memory_candidate를 즉시 호출한다."><b>5. 실제 작업</b><span>설계 · 조사 · 구현 · 검증</span></article>
       <article class="step hook" data-detail="도구 결과를 Trace에 기록한다. 테스트·린트·빌드·커밋처럼 기계적으로 식별 가능한 결과만 Artifact로 자동 등록한다."><b>6. PostToolUse</b><span>Trace · Artifact 기록</span></article>
       <article class="step agent" data-detail="Codex가 Artifact가 어떤 Acceptance Criterion을 증명하는지 판단하고 verify_criterion을 호출한다."><b>7. 검증 연결</b><span>verify_criterion</span></article>
@@ -65,6 +65,49 @@
       <article class="step hook" data-detail="Run이나 완료 조건 처리가 남았는지만 검사한다. 마감을 대신하지 않고 누락 시 같은 Codex를 한 번 계속한다."><b>10. Stop Guard</b><span>통과 또는 1회 계속</span></article>
     </div>
     <div class="inspector"><b id="inspect-title">1. UserPromptSubmit</b><p id="inspect-detail">상태 DB를 읽고 실행 중인 WorkItem과 ready 후보 최대 3개를 짧게 주입한다. 사용자가 WorkItem ID를 적었다고 가정하지 않으며, Hook은 선택이나 Run 생성을 하지 않는다.</p></div>
+  </section>
+
+  <section id="pretool-policy">
+    <div class="section-head"><h2>PreToolUse 작업 허용 정책</h2><p>Hook은 사용자 의도를 추론하거나 Bash의 모든 효과를 예측하지 않는다. Codex가 전달한 <code>tool_name</code>과 <code>tool_input</code>을 작은 허용 목록과 보수적인 기본값으로 분류한다.</p></div>
+    <div class="table-wrap"><table><thead><tr><th>우선순위</th><th>분류</th><th>대표 호출</th><th>기계적 처리</th></tr></thead><tbody>
+      <tr><td data-label="우선순위">1</td><td data-label="분류">명시적 위험</td><td data-label="대표 호출"><code>rm -rf</code>, <code>git reset --hard</code>, <code>git clean -fd</code>, <code>git push --force</code>, 저장소 밖 변경</td><td data-label="기계적 처리">v1에서는 활성 Run과 관계없이 거부한다. 일회성 허가 수단을 설계하기 전에는 Hook 우회 실행을 제공하지 않는다.</td></tr>
+      <tr><td data-label="우선순위">2</td><td data-label="분류">명확한 조회</td><td data-label="대표 호출">조회 전용 MCP, 아래 Bash 조회 허용 목록</td><td data-label="기계적 처리">Run 없이 허용한다.</td></tr>
+      <tr><td data-label="우선순위">3</td><td data-label="분류">작업 준비</td><td data-label="대표 호출"><code>create_work_item</code>, <code>start_work</code> 계열 MCP</td><td data-label="기계적 처리">Run을 만들기 위한 호출이므로 활성 Run 없이 허용한다. 입력과 상태 전이의 유효성은 MCP·DB 함수가 검사한다.</td></tr>
+      <tr><td data-label="우선순위">4</td><td data-label="분류">프로젝트 변경</td><td data-label="대표 호출"><code>apply_patch</code>, 변경·종료·기록 MCP, 테스트·빌드·Git 쓰기 Bash</td><td data-label="기계적 처리">Runtime Binding이 가리키는 Run이 DB에서 실제 <code>running</code>이고 WorkItem이 <code>in_progress</code>일 때만 허용한다.</td></tr>
+      <tr><td data-label="우선순위">5</td><td data-label="분류">미등록·불명확</td><td data-label="대표 호출">처음 보는 MCP, Python·Node 스크립트, 복합 Bash</td><td data-label="기계적 처리">변경 가능 호출로 간주하여 활성 Run을 요구한다.</td></tr>
+    </tbody></table></div>
+
+    <div class="three" style="margin-top:12px">
+      <article class="lane hook"><h3>Bash · Run 없이 허용</h3><p>부작용이 명확히 없는 좁은 목록만 둔다.</p><ul><li><code>pwd</code>, <code>ls</code>, <code>rg</code></li><li><code>cat</code>, <code>head</code>, <code>tail</code>, <code>wc</code></li><li><code>stat</code>, <code>file</code>, <code>which</code>, <code>command -v</code></li><li><code>git status</code>, <code>git diff</code>, <code>git log</code>, <code>git show</code>, <code>git rev-parse</code>, <code>git branch --show-current</code></li></ul></article>
+      <article class="lane agent"><h3>Bash · 활성 Run 필요</h3><p>변경하거나 부작용을 확정하기 어려운 호출이다.</p><ul><li>Python·Node·Bun·Deno와 사용자 스크립트</li><li>테스트·린트·포맷·빌드와 패키지 관리자</li><li><code>mkdir</code>, <code>touch</code>, <code>cp</code>, <code>mv</code>, <code>chmod</code></li><li><code>git add</code>, <code>commit</code>, <code>push</code>, <code>merge</code>, <code>rebase</code></li></ul></article>
+      <article class="lane skill"><h3>Bash · 복합 명령 기본값</h3><p><code>&gt;</code>, <code>&gt;&gt;</code>, <code>|</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>;</code>, 명령 치환이 있으면 조회 명령으로 인정하지 않는다.</p><ul><li>초기 구현은 셸 의미를 완전히 해석하지 않는다.</li><li>복합 명령과 허용 목록 밖 명령은 활성 Run을 요구한다.</li><li>오탐은 “작업을 영구 차단”하지 않고 “먼저 Run을 시작하라”로 귀결된다.</li></ul></article>
+    </div>
+
+    <div class="binding" style="margin-top:18px">
+      <div><h3>MCP 정책 목록</h3><p>문서에 정의된 MCP 도구 이름을 Hook 내부에서 세 집합으로 관리한다.</p><ul><li><strong>조회:</strong> 언제나 허용</li><li><strong>작업 준비:</strong> Run 없이 허용</li><li><strong>변경·종료·기록:</strong> 현재 Binding과 활성 Run이 일치해야 허용</li><li><strong>미등록:</strong> 활성 Run 필요</li></ul></div>
+      <pre><code>판정 순서
+1. 위험 호출인가?               → 거부
+2. 조회 허용 목록인가?          → 허용
+3. WorkItem·Run 준비 호출인가?  → 허용
+4. Binding과 DB 상태가 유효한가? → 허용
+5. 나머지                      → 거부하고 Run 시작 안내</code></pre>
+    </div>
+    <div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>경계 상황</th><th>확정 정책</th><th>쉬운 의미</th></tr></thead><tbody>
+      <tr><td data-label="경계 상황">Binding 없음·불일치</td><td data-label="확정 정책">조회와 <code>create_work_item</code>·<code>start_work</code>만 허용하고, 나머지 변경은 거부한다.</td><td data-label="쉬운 의미">현재 요청과 연결된 Run을 모르면 파일이나 상태를 바꾸지 않는다.</td></tr>
+      <tr><td data-label="경계 상황">DB 열기·조회 실패</td><td data-label="확정 정책">조회 시도와 작업 준비 호출은 통과시키되, 프로젝트 변경은 거부하고 상태 저장소 점검을 안내한다.</td><td data-label="쉬운 의미">DB 상태를 확인할 수 없으면 기존 Run이 있다고 추측하지 않는다.</td></tr>
+      <tr><td data-label="경계 상황">경로 검사</td><td data-label="확정 정책">저장소 루트를 기준으로 실제 경로를 계산한다. 저장소 밖, 외부를 가리키는 심볼릭 링크, <code>.git/</code>, <code>.harness/state.db*</code> 직접 변경을 거부한다.</td><td data-label="쉬운 의미">프로젝트 파일만 바꾸며, Git 내부와 DB는 전용 Interface를 통하지 않고 만지지 않는다.</td></tr>
+      <tr><td data-label="경계 상황">Bash의 불투명한 경로</td><td data-label="확정 정책">명령에서 확인 가능한 절대 경로와 <code>..</code> 이탈은 거부한다. 스크립트 내부의 동적 경로처럼 Hook이 볼 수 없는 효과는 Codex 샌드박스·권한 체계에 맡긴다.</td><td data-label="쉬운 의미">Hook이 실제로 확인할 수 있는 범위까지만 책임지고 보안 경계인 척하지 않는다.</td></tr>
+      <tr><td data-label="경계 상황">위험 명령 예외</td><td data-label="확정 정책">v1은 예외 없이 거부한다. 이후 필요해지면 사용자 승인으로 생성되는 1회성 Permit을 별도 설계한다.</td><td data-label="쉬운 의미">초기 구현에서는 위험 명령을 자동으로 풀어 주지 않는다.</td></tr>
+    </tbody></table></div>
+    <div class="binding" style="margin-top:18px">
+      <div><h3>정책 코드의 단일 위치</h3><p>도구 목록과 판정 규칙은 <code>src/harness/hook_policy.py</code> 한 곳에 둔다. Hook 실행 파일은 JSON 입력을 읽고 이 모듈을 호출하는 얇은 어댑터만 담당한다.</p><ul><li>조회·작업 준비·활성 Run 필요 MCP 집합</li><li>Bash 조회 허용 목록과 위험 패턴</li><li>경로 정규화와 보호 경로 검사</li><li><code>classify_tool_call()</code>: 호출을 조회·준비·변경·위험으로 분류</li><li><code>authorize_tool_call()</code>: Binding과 DB 상태까지 확인해 최종 허용·거부</li></ul></div>
+      <pre><code>PreToolUse JSON
+  → hook adapter
+  → hook_policy.classify_tool_call()
+  → hook_policy.authorize_tool_call()
+  → allow 또는 deny JSON</code></pre>
+    </div>
+    <div class="callout"><p><strong>책임 경계:</strong> PreToolUse는 호출 가능 여부만 판단한다. MCP 입력 검증과 WorkItem·Run 상태 전이는 <code>state_store.py</code>가 담당하며, Hook 정책은 Codex 샌드박스·권한 체계를 대신하는 보안 경계가 아니다.</p></div>
   </section>
 
   <section id="ownership">
@@ -81,7 +124,7 @@
     <div class="table-wrap"><table><thead><tr><th>시점</th><th>주체</th><th>호출</th><th>이유</th></tr></thead><tbody>
       <tr><td data-label="시점">요청 직전</td><td data-label="주체"><span class="owner hook">UserPromptSubmit</span></td><td data-label="호출"><code>check_database_health()</code>, <code>get_project_progress()</code>, <code>list_next_work_items()</code>, 선택 시 <code>get_preflight_context()</code></td><td data-label="이유">읽기 전용이고 기계적으로 결정 가능하다.</td></tr>
       <tr><td data-label="시점">작업 선택</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출">기존 작업은 <code>get_work_context</code> → <code>start_work</code>; 새 목표는 <code>create_work_item</code> → <code>change_work_item_state</code> → <code>start_work</code></td><td data-label="이유">사용자 요청과 기존 목표를 비교해 재사용 또는 생성을 판단해야 한다.</td></tr>
-      <tr><td data-label="시점">도구 직전</td><td data-label="주체"><span class="owner hook">PreToolUse</span></td><td data-label="호출">Binding 확인, 필요 시 <code>get_running_run()</code>, 정책 검사, Trace 입력 기록</td><td data-label="이유">위험 행동과 이미 시작된 Run의 불일치는 실행 전에 막는다.</td></tr>
+      <tr><td data-label="시점">도구 직전</td><td data-label="주체"><span class="owner hook">PreToolUse</span></td><td data-label="호출">도구 정책 목록 분류 → Binding 확인 → 필요 시 <code>get_running_run()</code> → 허용·거부</td><td data-label="이유">조회와 작업 준비는 열어 두고, 프로젝트 변경은 활성 Run 안에서만 실행한다.</td></tr>
       <tr><td data-label="시점">도구 직후</td><td data-label="주체"><span class="owner hook">PostToolUse</span></td><td data-label="호출"><code>create_artifact()</code>, Trace 결과 기록</td><td data-label="이유">명확한 결과를 추가 토큰 없이 수집한다.</td></tr>
       <tr><td data-label="시점">작업 도중</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>record_artifact</code>, <code>resolve_artifact</code>, <code>create_memory_candidate</code></td><td data-label="이유">자동 인식하지 못한 결과와 기억 가치는 문맥 판단이 필요하다.</td></tr>
       <tr><td data-label="시점">검증 후</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>verify_criterion</code></td><td data-label="이유">어떤 Artifact가 어느 Criterion의 Evidence인지 이해해야 한다.</td></tr>
@@ -95,22 +138,26 @@
   <section id="binding">
     <div class="section-head"><h2>Hook이 현재 Run을 찾는 방법</h2><p>DB에 Codex 세션 필드를 넣지 않고, 짧게 살아 있는 Runtime Binding을 별도로 둔다.</p></div>
     <div class="binding">
-      <div><h3>Runtime Binding</h3><p>Codex thread 또는 Hook 식별자를 현재 WorkItem·Run과 연결하는 임시 포인터다. 프로젝트 상태의 정본은 아니며 실제 상태는 항상 SQLite에서 다시 확인한다.</p><ul><li>PostToolUse가 성공한 <code>start_work</code> 결과의 ID를 받아 생성</li><li>Pre/PostToolUse와 Stop이 현재 Run 탐색에 사용</li><li><code>finish_work</code> 성공을 본 PostToolUse가 삭제 또는 비활성화</li><li>유실 시 DB의 running Run 후보를 찾되, 하나로 확정할 수 없으면 Codex에 재선택을 요구</li></ul></div>
+      <div><h3>Runtime Binding</h3><p>Codex의 현재 세션·요청을 WorkItem·Run과 연결하는 임시 포인터다. <code>session_id</code>는 대화 세션, <code>turn_id</code>는 그 안의 이번 사용자 요청을 구분한다. 프로젝트 상태의 정본은 아니며 실제 상태는 항상 SQLite에서 다시 확인한다.</p><ul><li>파일명은 Hook 입력의 <code>session_id</code>를 안전한 이름으로 정규화해 사용</li><li>PostToolUse가 성공한 <code>start_work</code> 결과와 현재 <code>turn_id</code>를 받아 생성</li><li>Pre/PostToolUse와 Stop은 <code>session_id</code>와 <code>turn_id</code>가 모두 일치할 때만 사용</li><li><code>finish_work</code> 성공을 본 PostToolUse가 삭제</li><li>유실·불일치 시 DB의 running Run을 임의로 선택하지 않고, 조회·작업 준비 외의 변경을 거부</li></ul></div>
       <pre><code>.harness/runtime/
-  &lt;codex-thread-id&gt;.json
+  &lt;session-id&gt;.json
 
 {
+  "session_id": "session-abc",
+  "turn_id": "turn-003",
   "work_item_id": "WI-123",
   "run_id": "RUN-456",
-  "updated_at": "2026-08-13T08:00:00Z"
+  "updated_at": "2026-08-14T07:00:00Z"
 }</code></pre>
     </div>
-    <div class="callout"><p><strong>정본이 아니다.</strong> Hook은 Binding에서 ID를 찾은 다음 반드시 <code>state_store.py</code>로 실제 WorkItem과 Run 상태를 확인한다. 이 Binding과 Hook 어댑터는 아직 구현 전이다.</p></div>
+    <div class="callout"><p><strong>정본이 아니다.</strong> Hook은 Binding의 세션·요청 ID가 현재 Hook 입력과 같은지 확인한 뒤, <code>state_store.py</code>로 실제 WorkItem이 <code>in_progress</code>이고 Run이 <code>running</code>인지 다시 확인한다. 하나라도 다르면 프로젝트 변경을 거부한다. 이 Binding과 Hook 어댑터는 아직 구현 전이다.</p></div>
   </section>
 
   <section id="failure">
     <div class="section-head"><h2>실패와 예외 처리</h2><p>Hook이 결과 의미를 추측해 상태를 자동 마감하지 않는 것이 공통 원칙이다.</p></div>
     <details open><summary>활성 Run 없이 파일을 수정하려 하면?</summary><div>설계 문서를 포함한 저장소 변경은 프로젝트 작업이므로 먼저 WorkItem을 선택하거나 만들고 <code>start_work</code>를 호출해야 한다. PreToolUse는 Run 없는 변경 도구를 차단할 수 있다. 단순 질문과 프로젝트 조사 모두 읽기 도구를 쓸 수 있으므로, 읽기 전용 작업의 Run 필요 여부는 Codex가 AGENTS 지침에 따라 분류한다.</div></details>
+    <details><summary>Binding이 없거나 DB 상태를 확인하지 못하면?</summary><div>조회 도구와 WorkItem·Run 준비 도구는 허용한다. 파일·DB 상태를 바꾸는 호출은 거부하며, 기존 running Run을 추측해서 자동 연결하지 않는다.</div></details>
+    <details><summary>위험 명령이 정말 필요하면?</summary><div>v1에서는 활성 Run이나 사용자 요청만으로 예외를 만들지 않는다. 실제 필요 사례가 생기면 사용자 승인을 한 번만 소비하는 Permit 구조를 별도로 설계한다.</div></details>
     <details><summary>어떤 기존 WorkItem을 선택하나?</summary><div>기본값은 재사용이다. “기존 WorkItem을 완료하려면 이번 요청도 처리해야 하는가?”가 참이면 같은 WorkItem에 새 Run을 만든다. 독립적으로 완료할 별도 목표와 완료 조건이 필요할 때만 새 WorkItem을 만든다.</div></details>
     <details><summary>후보 세 개와 맞는 WorkItem이 없다면?</summary><div>세 항목은 정답이 아니라 빠른 후보다. 추가 상태 조회나 향후 검색 Interface로 관련 미완료 WorkItem을 확인하고, 그래도 적합한 목표가 없을 때 새 WorkItem을 만든다.</div></details>
     <details><summary>테스트는 통과했지만 Criterion과 연결되지 않았다면?</summary><div>PostToolUse는 Artifact까지만 만든다. Codex가 <code>verify_criterion</code>으로 Evidence를 연결하지 않으면 Stop Guard가 누락을 알리고 한 번 계속한다.</div></details>
