@@ -1,0 +1,3 @@
+[submodule "vendor/memory-graph"]
+	path = vendor/memory-graph
+	url = https://github.com/memory-graph/memory-graph.git
