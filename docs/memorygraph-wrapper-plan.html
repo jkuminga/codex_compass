@@ -113,6 +113,7 @@
     .milestones { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; counter-reset: step; }
     .milestone { position: relative; padding: 42px 14px 16px; border-top: 2px solid var(--line); }
     .milestone::before { counter-increment: step; content: counter(step); position: absolute; top: -16px; left: 0; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: white; font: 700 .76rem var(--mono); }
+    .milestone.pending::before { background: var(--warm); }
     .milestone b { display: block; margin-bottom: 4px; }
     .milestone span { color: var(--muted); font-size: .84rem; }
     .not-doing { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--line); background: var(--line); }
@@ -315,7 +316,7 @@
           <article><h3><code>memory/recall.ts</code></h3><p>키워드 정규화, 반복 검색, ID 병합, 정렬, 제한을 수행하는 핵심 함수다.</p></article>
           <article><h3><code>memory/cli.ts</code></h3><p><code>harness-memory recall</code> 인자를 읽고 항상 JSON을 stdout에 출력하는 얇은 명령 진입점이다.</p></article>
           <article><h3><code>memory/types.ts</code></h3><p>입력·응답·경고 코드처럼 Wrapper가 공개하는 객체 구조를 정의한다.</p></article>
-          <article class="wide"><h3>예상 파일 트리</h3><pre><code>vendor/
+          <article class="wide"><h3>구현된 파일 트리</h3><pre><code>vendor/
 └── memory-graph/                  # Git submodule · v0.13.0 SHA 고정
 
 src/harness/memory/
@@ -331,13 +332,13 @@ tests/memory/
       </section>
 
       <section id="plan">
-        <div class="section-head"><div><p class="eyebrow">Implementation order</p><h2>바로 이어갈 구현 순서</h2></div><p>각 단계가 독립적으로 검증되도록 Submodule부터 Hook 연결까지 한 방향으로 진행한다.</p></div>
+        <div class="section-head"><div><p class="eyebrow">Implementation status</p><h2>현재 구현 상태</h2></div><p>Recall Wrapper와 독립 실행 CLI까지 구현하고 검증했다. 남은 단계는 <code>start_work</code> 전용 PostToolUse Hook 연결이다.</p></div>
         <div class="milestones">
-          <div class="milestone"><b>Submodule 고정</b><span>공식 저장소를 추가하고 정확한 SHA를 기록한다.</span></div>
-          <div class="milestone"><b>Client 경계</b><span>프로젝트 DB 연결과 <code>searchMemories()</code> 호출을 만든다.</span></div>
-          <div class="milestone"><b>Recall 정책</b><span>정규화·검색·병합·정렬과 JSON 계약을 테스트한다.</span></div>
-          <div class="milestone"><b>CLI 제공</b><span><code>harness-memory recall</code> 명령과 실패 코드를 연결한다.</span></div>
-          <div class="milestone"><b>Hook 통합</b><span><code>start_work</code> PostToolUse가 호출하고 Context Packet을 주입한다.</span></div>
+          <div class="milestone"><b>Submodule 고정 · 완료</b><span>공식 저장소와 정확한 SHA가 Git에 기록됐다.</span></div>
+          <div class="milestone"><b>Client 경계 · 완료</b><span>프로젝트 DB 연결과 <code>searchMemories()</code> 호출을 구현했다.</span></div>
+          <div class="milestone"><b>Recall 정책 · 완료</b><span>정규화·검색·병합·결정적 정렬을 테스트했다.</span></div>
+          <div class="milestone"><b>CLI 제공 · 완료</b><span><code>bin/harness-memory recall</code>이 JSON 계약을 제공한다.</span></div>
+          <div class="milestone pending"><b>Hook 통합 · 다음</b><span><code>start_work</code> PostToolUse가 호출하고 Context Packet을 주입한다.</span></div>
         </div>
         <h3 style="margin-top:34px">최소 검증 목록</h3>
         <div class="table-wrap"><table><thead><tr><th>검증</th><th>통과 조건</th></tr></thead><tbody>

@@ -1,0 +1,12 @@
+{
+  "name": "codex-compass-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "memory:setup": "bun install --cwd vendor/memory-graph/ts --frozen-lockfile",
+    "memory:recall": "bun run src/harness/memory/cli.ts",
+    "test:memory": "bun test tests/memory",
+    "typecheck:memory": "vendor/memory-graph/ts/node_modules/.bin/tsc --noEmit -p tsconfig.memory.json"
+  }
+}
