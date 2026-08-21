@@ -66,6 +66,31 @@ def create_server(
             work_item_id, database_path=database_path
         )
 
+    @server.tool(name="search_work_items")
+    def search_work_items(
+        terms: list[str],
+        statuses: list[Literal["backlog", "ready", "blocked"]] | None = None,
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        """Search open WorkItems when the three prompt candidates do not fit.
+
+        Derive two to five concise terms from the user's requested goal and
+        call this tool at most once before creating a new WorkItem. Results
+        match title, goal, and next action and are ordered by a small relevance
+        score. This tool is read-only.
+        """
+
+        return {
+            "work_items": state_store.search_work_items(
+                terms,
+                statuses=statuses
+                if statuses is not None
+                else ("backlog", "ready", "blocked"),
+                limit=limit,
+                database_path=database_path,
+            )
+        }
+
     @server.tool(name="create_feature")
     def create_feature(
         title: str,
@@ -453,6 +478,32 @@ def create_server(
             termination_reason=resolved_termination_reason,
             next_action=next_action,
             block_reason=block_reason,
+            database_path=database_path,
+        )
+
+    @server.tool(name="recover_abandoned_work")
+    def recover_abandoned_work(
+        work_item_id: str,
+        expected_run_id: str,
+        user_confirmation: Literal["confirmed"],
+    ) -> dict[str, Any]:
+        """Recover a WorkItem only after the user confirms its session ended.
+
+        When the requested WorkItem is owned by another session, first explain
+        the conflict and ask whether that session is gone and this session
+        should recover the work. Call this tool only after an explicit yes.
+        Pass the active Run ID that was shown with the conflict; recovery fails
+        if that Run changed, so a live or newly resumed session is not replaced.
+        After recovery, call start_work separately to create this session's Run.
+        """
+
+        if user_confirmation != "confirmed":
+            raise state_store.ConflictError("explicit user confirmation is required")
+        return state_store.recover_abandoned_work(
+            work_item_id,
+            expected_run_id=expected_run_id,
+            actor="codex",
+            reason="사용자가 중단된 다른 세션의 작업 복구를 확인함",
             database_path=database_path,
         )
 

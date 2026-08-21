@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MemoryGraph를 Git submodule과 SQLiteBackend로 연결하는 Recall Wrapper의 32개 결정, 고정 버전과 구현 계약">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='8' cy='16' r='5' fill='%23176b5b'/%3E%3Ccircle cx='24' cy='8' r='4' fill='%23a25b32'/%3E%3Ccircle cx='24' cy='24' r='4' fill='%2365558f'/%3E%3Cpath d='M13 14l7-4M13 18l7 4' stroke='%231d2925' stroke-width='2'/%3E%3C/svg%3E">
+  <title>MemoryGraph Recall Wrapper 구현 기준</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f1e9;
+      --paper: #fffdf7;
+      --paper-2: #ece8dc;
+      --ink: #1d2925;
+      --muted: #60706a;
+      --line: #d6d2c6;
+      --accent: #176b5b;
+      --accent-soft: #dcece7;
+      --warm: #a25b32;
+      --warm-soft: #f5e5d9;
+      --violet: #65558f;
+      --violet-soft: #e9e3f4;
+      --danger: #9a4239;
+      --code: #17221f;
+      --code-ink: #ebf4f0;
+      --shadow: 0 20px 60px rgba(32, 43, 39, .09);
+      --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111714; --paper: #18201d; --paper-2: #212b27; --ink: #e8eeeb;
+        --muted: #a6b4ae; --line: #35413c; --accent: #71c6b2; --accent-soft: #203c35;
+        --warm: #e2a47d; --warm-soft: #3d2d23; --violet: #baa8e3;
+        --violet-soft: #322c43; --danger: #ef9a90; --code: #0c110f;
+        --code-ink: #e7f1ed; --shadow: 0 20px 60px rgba(0, 0, 0, .28);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.62 var(--sans); letter-spacing: -.01em; }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    code, pre { font-family: var(--mono); }
+    :not(pre) > code { padding: .1em .36em; border: 1px solid var(--line); border-radius: 5px; background: var(--paper-2); color: var(--warm); font-size: .88em; overflow-wrap: anywhere; }
+    .skip { position: fixed; z-index: 20; top: 8px; left: 8px; padding: 8px 12px; transform: translateY(-150%); background: var(--ink); color: var(--paper); }
+    .skip:focus { transform: translateY(0); }
+    .shell { display: grid; grid-template-columns: 235px minmax(0, 1fr); width: min(1480px, 100%); margin: 0 auto; }
+    .rail { position: sticky; top: 0; height: 100vh; padding: 30px 20px; overflow-y: auto; border-right: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; color: var(--ink); font-weight: 760; text-decoration: none; }
+    .brand-mark { width: 22px; height: 22px; border: 2px solid var(--accent); border-radius: 50%; box-shadow: 9px -5px 0 -5px var(--warm), 9px 5px 0 -5px var(--violet); }
+    nav { display: grid; gap: 3px; }
+    nav a { padding: 7px 9px; border-left: 2px solid transparent; color: var(--muted); font-size: .84rem; text-decoration: none; }
+    nav a:hover, nav a:focus-visible { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+    .rail-note { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: .76rem; }
+    main { min-width: 0; padding: 54px clamp(24px, 5vw, 76px) 88px; }
+    section, header { max-width: 1120px; margin: 0 auto; }
+    header { padding-bottom: 42px; border-bottom: 1px solid var(--line); }
+    .eyebrow { margin: 0 0 12px; color: var(--accent); font: 700 .76rem var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 900px; margin-bottom: 18px; font-size: clamp(2.5rem, 6vw, 5.5rem); line-height: .98; letter-spacing: -.065em; }
+    h2 { margin-bottom: 10px; font-size: clamp(1.7rem, 3vw, 2.45rem); line-height: 1.12; letter-spacing: -.035em; }
+    h3 { margin-bottom: 8px; font-size: 1.03rem; }
+    .lede { max-width: 72ch; margin: 0; color: var(--muted); font-size: 1.08rem; }
+    .status-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 30px; border: 1px solid var(--line); background: var(--line); }
+    .status-strip div { padding: 17px; background: var(--paper); }
+    .status-strip strong { display: block; font-size: 1.55rem; line-height: 1.1; }
+    .status-strip span { color: var(--muted); font-size: .79rem; }
+    section { padding-top: 66px; }
+    .section-head { display: flex; justify-content: space-between; gap: 28px; align-items: end; margin-bottom: 22px; }
+    .section-head p { max-width: 58ch; margin: 0; color: var(--muted); }
+    .principle { padding: 18px 20px; border-left: 4px solid var(--accent); background: var(--accent-soft); }
+    .principle p { margin: 0; }
+    .flow { padding: 22px; border: 1px solid var(--line); background: var(--paper); overflow-x: auto; box-shadow: var(--shadow); }
+    .flow svg { display: block; min-width: 860px; width: 100%; height: auto; }
+    .flow .node { fill: var(--paper-2); stroke: var(--line); stroke-width: 1.5; }
+    .flow .primary { fill: var(--accent-soft); stroke: var(--accent); }
+    .flow .memory { fill: var(--violet-soft); stroke: var(--violet); }
+    .flow text { fill: var(--ink); font-family: var(--sans); }
+    .flow .sub { fill: var(--muted); font-size: 12px; }
+    .flow .arrow { fill: none; stroke: var(--muted); stroke-width: 2; marker-end: url(#arrow); }
+    .decision-groups { display: grid; gap: 24px; }
+    .decision-group { border-top: 3px solid var(--accent); }
+    .decision-group:nth-child(even) { border-color: var(--warm); }
+    .decision-group > h3 { margin: 0; padding: 13px 0; border-bottom: 1px solid var(--line); font-size: 1.12rem; }
+    .decisions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .decision { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; padding: 16px 18px 16px 0; border-bottom: 1px solid var(--line); }
+    .decision:nth-child(odd) { border-right: 1px solid var(--line); }
+    .decision:nth-child(even) { padding-left: 18px; }
+    .num { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 50%; color: var(--accent); font: 700 .78rem var(--mono); }
+    .decision strong { display: block; margin-bottom: 3px; }
+    .decision p { margin: 0; color: var(--muted); font-size: .91rem; }
+    .version { display: grid; grid-template-columns: .8fr 1.2fr; gap: 24px; }
+    .pin { padding: 26px; background: var(--code); color: var(--code-ink); }
+    .pin .label { color: #9ab8ae; font: 700 .72rem var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .pin strong { display: block; margin: 10px 0 18px; color: white; font-size: 1.65rem; }
+    .pin code { display: block; overflow-wrap: anywhere; color: #bce9dc; font-size: .9rem; }
+    .reasons { display: grid; gap: 1px; border: 1px solid var(--line); background: var(--line); }
+    .reason { padding: 15px 17px; background: var(--paper); }
+    .reason b { display: block; margin-bottom: 3px; }
+    .reason p { margin: 0; color: var(--muted); font-size: .9rem; }
+    .contract { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .contract article { padding: 22px; border: 1px solid var(--line); background: var(--paper); }
+    .contract .wide { grid-column: 1 / -1; }
+    pre { margin: 14px 0 0; padding: 17px; overflow-x: auto; background: var(--code); color: var(--code-ink); font-size: .82rem; line-height: 1.55; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; background: var(--paper); }
+    th, td { padding: 13px 15px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font: 700 .76rem var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 700 .72rem var(--mono); }
+    .badge.warn { background: var(--warm-soft); color: var(--warm); }
+    .milestones { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; counter-reset: step; }
+    .milestone { position: relative; padding: 42px 14px 16px; border-top: 2px solid var(--line); }
+    .milestone::before { counter-increment: step; content: counter(step); position: absolute; top: -16px; left: 0; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: white; font: 700 .76rem var(--mono); }
+    .milestone b { display: block; margin-bottom: 4px; }
+    .milestone span { color: var(--muted); font-size: .84rem; }
+    .not-doing { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--line); background: var(--line); }
+    .not-doing div { padding: 17px; background: var(--paper); }
+    .not-doing p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+    footer { max-width: 1120px; margin: 66px auto 0; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
+    @media (max-width: 900px) {
+      .shell { display: block; }
+      .rail { position: static; width: auto; height: auto; padding: 18px 20px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .rail nav, .rail-note { display: none; }
+      .brand { margin: 0; }
+      main { padding: 38px 20px 70px; }
+      .status-strip, .version, .contract, .not-doing { grid-template-columns: 1fr 1fr; }
+      .milestones { grid-template-columns: 1fr; gap: 16px; }
+      .milestone { padding: 10px 14px 10px 48px; border-top: 0; border-left: 2px solid var(--line); }
+      .milestone::before { top: 6px; left: -16px; }
+    }
+    @media (max-width: 640px) {
+      .status-strip, .version, .contract, .not-doing, .decisions { grid-template-columns: 1fr; }
+      .contract .wide { grid-column: auto; }
+      .decision:nth-child(odd) { border-right: 0; }
+      .decision:nth-child(even) { padding-left: 0; }
+      .section-head { display: block; }
+      .section-head p { margin-top: 8px; }
+      h1 { font-size: 2.7rem; }
+      table, thead, tbody, tr, th, td { display: block; }
+      thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+      tr { padding: 12px; border-bottom: 1px solid var(--line); }
+      td { padding: 5px 0; border: 0; }
+      td::before { content: attr(data-label); display: block; color: var(--muted); font: 700 .7rem var(--mono); text-transform: uppercase; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#content">본문으로 이동</a>
+  <div class="shell">
+    <aside class="rail">
+      <a class="brand" href="./docs-index.html"><span class="brand-mark" aria-hidden="true"></span><span>Harness v2 Docs</span></a>
+      <nav aria-label="문서 목차">
+        <a href="#baseline">구현 기준</a>
+        <a href="#flow">전체 흐름</a>
+        <a href="#decisions">32개 결정</a>
+        <a href="#version">고정 버전</a>
+        <a href="#contract">Wrapper 계약</a>
+        <a href="#layout">코드 구조</a>
+        <a href="#plan">구현 순서</a>
+        <a href="#scope">하지 않는 것</a>
+      </nav>
+      <p class="rail-note">이 문서는 MemoryGraph Recall Wrapper 구현의 최신 기준이다.<br><br>기준일<br><code>2026-08-21</code></p>
+    </aside>
+
+    <main id="content">
+      <header id="baseline">
+        <p class="eyebrow">Implementation baseline · MemoryGraph</p>
+        <h1>Recall Wrapper<br>구현 기준</h1>
+        <p class="lede">지금까지 합의한 32개 결정, 고정할 MemoryGraph 버전, Wrapper의 입력·검색·정렬·출력·실패 정책을 한곳에 모았다. 구현 중 다른 문서와 충돌하면 이 문서의 Recall Wrapper 범위를 우선한다.</p>
+        <div class="status-strip" aria-label="핵심 수치">
+          <div><strong>32</strong><span>확정된 설계 결정</span></div>
+          <div><strong>v0.13.0</strong><span>고정할 정식 릴리스</span></div>
+          <div><strong>3–5</strong><span>Codex에 전달할 기억 수</span></div>
+          <div><strong>non-blocking</strong><span>Recall 실패 정책</span></div>
+        </div>
+      </header>
+
+      <section id="flow">
+        <div class="section-head"><div><p class="eyebrow">Data flow</p><h2>한 문장으로 보는 구조</h2></div><p>Codex는 MemoryGraph 내부 구조를 직접 알 필요가 없다. Hook이 작업 문맥을 Wrapper에 넘기면 Wrapper가 프로젝트 전용 DB에서 기억을 찾아 짧은 JSON으로 돌려준다.</p></div>
+        <div class="flow">
+          <svg viewBox="0 0 1000 225" role="img" aria-labelledby="flow-title flow-desc">
+            <title id="flow-title">MemoryGraph Recall Wrapper 데이터 흐름</title>
+            <desc id="flow-desc">start_work 이후 Hook이 Wrapper를 호출하고, Wrapper가 vendored MemoryGraph SQLiteBackend를 통해 프로젝트 전용 DB를 검색한 뒤 Context Packet을 Codex로 전달한다.</desc>
+            <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--muted)"/></marker></defs>
+            <rect class="node" x="20" y="55" width="150" height="105" rx="9"/><text x="95" y="91" text-anchor="middle" font-weight="700">start_work</text><text class="sub" x="95" y="116" text-anchor="middle">WI · Run · intent 확정</text><text class="sub" x="95" y="137" text-anchor="middle">PostToolUse 시작</text>
+            <path class="arrow" d="M170 108H218"/>
+            <rect class="node primary" x="220" y="45" width="175" height="125" rx="9"/><text x="307" y="82" text-anchor="middle" font-weight="700">harness-memory</text><text class="sub" x="307" y="107" text-anchor="middle">키워드 분리</text><text class="sub" x="307" y="128" text-anchor="middle">검색 · 병합 · 정렬</text><text class="sub" x="307" y="149" text-anchor="middle">JSON 변환</text>
+            <path class="arrow" d="M395 108H443"/>
+            <rect class="node memory" x="445" y="45" width="190" height="125" rx="9"/><text x="540" y="81" text-anchor="middle" font-weight="700">SQLiteBackend</text><text class="sub" x="540" y="107" text-anchor="middle">searchMemories()</text><text class="sub" x="540" y="128" text-anchor="middle">MemoryGraph v0.13.0</text><text class="sub" x="540" y="149" text-anchor="middle">vendor/memory-graph</text>
+            <path class="arrow" d="M635 108H683"/>
+            <rect class="node" x="685" y="55" width="150" height="105" rx="9"/><text x="760" y="91" text-anchor="middle" font-weight="700">memorygraph.db</text><text class="sub" x="760" y="116" text-anchor="middle">프로젝트 전용</text><text class="sub" x="760" y="137" text-anchor="middle">SQLite 파일</text>
+            <path class="arrow" d="M835 108H883"/>
+            <rect class="node primary" x="885" y="55" width="95" height="105" rx="9"/><text x="932" y="91" text-anchor="middle" font-weight="700">Codex</text><text class="sub" x="932" y="116" text-anchor="middle">상위 3–5개</text><text class="sub" x="932" y="137" text-anchor="middle">Context</text>
+            <text class="sub" x="500" y="207" text-anchor="middle">Recall 실패는 경고만 남기고 이미 시작한 Run과 본 작업은 계속한다.</text>
+          </svg>
+        </div>
+      </section>
+
+      <section id="decisions">
+        <div class="section-head"><div><p class="eyebrow">Decisions 01–32</p><h2>확정된 32개 결정</h2></div><p>각 항목은 구현자가 다시 선택하지 않아도 되는 기본값이다. 핵심 키워드는 바로 아래에 쉬운 뜻을 함께 적었다.</p></div>
+        <div class="decision-groups">
+          <article class="decision-group"><h3>A · 역할과 범위</h3><div class="decisions">
+            <div class="decision"><span class="num">01</span><div><strong>MemoryGraph는 장기 기억 정본이다.</strong><p><em>정본</em>은 같은 사실을 최종적으로 믿는 저장 위치다. 진행 상태는 State Store가 맡는다.</p></div></div>
+            <div class="decision"><span class="num">02</span><div><strong>Wrapper는 하네스와 MemoryGraph 사이의 어댑터다.</strong><p><em>Wrapper</em>는 외부 라이브러리의 복잡한 사용법을 우리 명령 하나로 감싸는 얇은 코드다.</p></div></div>
+            <div class="decision"><span class="num">03</span><div><strong>v1의 첫 범위는 Recall이다.</strong><p><em>Recall</em>은 현재 작업과 관련된 과거 기억을 찾아 Codex 문맥에 넣는 과정이다.</p></div></div>
+            <div class="decision"><span class="num">04</span><div><strong>후보 생성·최종 저장은 별도 흐름으로 유지한다.</strong><p>이번 Wrapper 구현에 Memory Candidate 평가나 관계 생성을 섞지 않는다.</p></div></div>
+            <div class="decision"><span class="num">05</span><div><strong>MemoryGraph 원본을 복제 구현하지 않는다.</strong><p>공식 구현을 재사용하고, 우리 정책만 Wrapper에 둔다.</p></div></div>
+            <div class="decision"><span class="num">06</span><div><strong>전역 설치는 개발 확인용일 뿐 정본 의존성이 아니다.</strong><p>다른 컴퓨터에서도 같은 코드를 쓰도록 프로젝트가 참조 버전을 보유한다.</p></div></div>
+          </div></article>
+
+          <article class="decision-group"><h3>B · 의존성과 버전</h3><div class="decisions">
+            <div class="decision"><span class="num">07</span><div><strong>공식 저장소를 Git submodule로 연결한다.</strong><p><em>Submodule</em>은 외부 Git 저장소의 특정 커밋을 프로젝트 안의 경로로 고정하는 방법이다.</p></div></div>
+            <div class="decision"><span class="num">08</span><div><strong>경로는 <code>vendor/memory-graph</code>다.</strong><p><em>vendor</em>는 프로젝트가 고정해서 사용하는 외부 소스 코드를 모으는 디렉터리다.</p></div></div>
+            <div class="decision"><span class="num">09</span><div><strong>브랜치가 아니라 정확한 커밋을 고정한다.</strong><p><code>main</code>이 바뀌어도 우리 빌드 결과가 갑자기 달라지지 않게 한다.</p></div></div>
+            <div class="decision"><span class="num">10</span><div><strong>Submodule의 목적은 재현성과 안정적인 import 경로다.</strong><p>저작권을 피하기 위한 우회가 아니다. 공식 MIT 라이선스와 고지를 그대로 유지한다.</p></div></div>
+            <div class="decision"><span class="num">11</span><div><strong>Runtime은 Bun을 사용한다.</strong><p><em>Runtime</em>은 TypeScript 코드를 실제로 실행하는 프로그램이다. MemoryGraph v0.13.0은 Bun ≥ 1.1을 요구한다.</p></div></div>
+            <div class="decision"><span class="num">12</span><div><strong>의존성 설치는 lockfile을 고정해 수행한다.</strong><p><code>bun install --frozen-lockfile</code>로 기록되지 않은 의존성 변경을 막는다.</p></div></div>
+          </div></article>
+
+          <article class="decision-group"><h3>C · 저장소와 연결 방식</h3><div class="decisions">
+            <div class="decision"><span class="num">13</span><div><strong>MemoryGraph backend는 SQLite를 사용한다.</strong><p><em>Backend</em>는 기억이 실제로 저장되고 검색되는 저장 엔진이다.</p></div></div>
+            <div class="decision"><span class="num">14</span><div><strong>기억 DB는 <code>.harness/memorygraph.db</code>다.</strong><p>이 프로젝트의 장기 기억만 담는 로컬 SQLite 파일이다.</p></div></div>
+            <div class="decision"><span class="num">15</span><div><strong>State DB와 MemoryGraph DB를 분리한다.</strong><p><code>state.db</code>는 현재 작업 상태, <code>memorygraph.db</code>는 재사용할 장기 지식을 저장한다.</p></div></div>
+            <div class="decision"><span class="num">16</span><div><strong>MemoryGraph DB 파일은 Git으로 추적하지 않는다.</strong><p>DB 본체와 <code>-wal</code>·<code>-shm</code> 보조 파일 모두 로컬 런타임 데이터다.</p></div></div>
+            <div class="decision"><span class="num">17</span><div><strong>FalkorDBLite는 초기 경로에서 제외한다.</strong><p>현재 환경의 저장·검색 호환성 문제가 있어 검증된 SQLite 경로를 우선한다.</p></div></div>
+            <div class="decision"><span class="num">18</span><div><strong>CLI 문자열 출력을 파싱하지 않는다.</strong><p>사람에게 보여주는 출력 형식은 바뀌기 쉬우므로 프로그램 데이터 계약으로 사용하지 않는다.</p></div></div>
+          </div></article>
+
+          <article class="decision-group"><h3>D · MemoryGraph API 경계</h3><div class="decisions">
+            <div class="decision"><span class="num">19</span><div><strong><code>SQLiteBackend</code>를 직접 사용한다.</strong><p>MemoryGraph의 SQLite 저장·조회 기능을 제공하는 클래스다.</p></div></div>
+            <div class="decision"><span class="num">20</span><div><strong>검색은 <code>searchMemories()</code>를 호출한다.</strong><p>검색어와 제한 수를 받아 Memory 객체 목록을 돌려주는 MemoryGraph 함수다.</p></div></div>
+            <div class="decision"><span class="num">21</span><div><strong>최상위 <code>ts/src/index.ts</code>는 import하지 않는다.</strong><p>가져오기만 해도 CLI <code>main()</code>이 실행되는 부작용이 있기 때문이다.</p></div></div>
+            <div class="decision"><span class="num">22</span><div><strong><code>ts/src/backends/sqlite.ts</code>를 직접 import한다.</strong><p>Wrapper가 사용하는 내부 모듈 경계를 한곳으로 제한한다.</p></div></div>
+            <div class="decision"><span class="num">23</span><div><strong>내부 import는 Wrapper 밖으로 노출하지 않는다.</strong><p>MemoryGraph 구조가 바뀌어도 Wrapper만 고치도록 우리 코드와 외부 코드를 분리한다.</p></div></div>
+            <div class="decision"><span class="num">24</span><div><strong>새 정식 태그가 나올 때만 업그레이드를 검토한다.</strong><p>MemoryGraph 자체 테스트와 우리 Wrapper 계약 테스트를 모두 통과한 뒤 커밋을 바꾼다.</p></div></div>
+          </div></article>
+
+          <article class="decision-group"><h3>E · Recall 실행과 결과 정책</h3><div class="decisions">
+            <div class="decision"><span class="num">25</span><div><strong>Recall은 <code>start_work()</code> 성공 직후 실행한다.</strong><p>전용 <code>PostToolUse</code> Hook에서 WI·Run·intent가 확정된 뒤 호출한다.</p></div></div>
+            <div class="decision"><span class="num">26</span><div><strong>입력은 짧은 키워드 목록이다.</strong><p>긴 자연어 문장보다 기술명·파일명·도구명처럼 구별되는 단어를 사용한다.</p></div></div>
+            <div class="decision"><span class="num">27</span><div><strong>Wrapper가 키워드를 정규화한다.</strong><p>공백 제거, 빈 값 제거, 중복 제거를 수행한 뒤 각 키워드를 독립 검색한다.</p></div></div>
+            <div class="decision"><span class="num">28</span><div><strong>키워드마다 <code>searchMemories()</code>를 호출한다.</strong><p>여러 단어를 하나의 연속 문장으로 LIKE 검색해 놓치는 문제를 피한다.</p></div></div>
+            <div class="decision"><span class="num">29</span><div><strong>결과는 Memory ID로 병합한다.</strong><p>같은 기억이 여러 검색에서 발견돼도 최종 결과에는 한 번만 넣는다.</p></div></div>
+            <div class="decision"><span class="num">30</span><div><strong>여러 키워드에 걸린 기억을 우선한다.</strong><p>1차 점수는 서로 다른 키워드 검색에서 발견된 횟수다. 동점은 중요도와 최신순으로 정렬한다.</p></div></div>
+            <div class="decision"><span class="num">31</span><div><strong>Codex에는 상위 3–5개만 짧게 전달한다.</strong><p>원본 전체가 아니라 ID·제목·요약·매칭 키워드만 담은 Context Packet을 사용한다.</p></div></div>
+            <div class="decision"><span class="num">32</span><div><strong>Recall 실패는 본 작업을 막지 않는다.</strong><p>경고와 오류 종류를 남기고 빈 기억 결과로 계속한다. 일부 키워드만 실패하면 성공한 결과를 사용한다.</p></div></div>
+          </div></article>
+        </div>
+      </section>
+
+      <section id="version">
+        <div class="section-head"><div><p class="eyebrow">Pinned release</p><h2>선택한 안정 버전</h2></div><p>여기서 <em>안정</em>은 오류가 전혀 없다는 뜻이 아니라, 정식 태그이고 우리가 사용할 SQLite 검색 경로를 실제 테스트로 재검증했다는 뜻이다.</p></div>
+        <div class="version">
+          <div class="pin"><span class="label">Recommended pin</span><strong>MemoryGraph v0.13.0</strong><code>67fc4f97816aa75823ae2dd4eff49f150cc6f1da</code></div>
+          <div class="reasons">
+            <div class="reason"><b>현재 최신 정식 릴리스</b><p>움직이는 <code>main</code> 대신 버전 의미와 재현성이 분명하다.</p></div>
+            <div class="reason"><b>현재 설계와 같은 세대</b><p>TypeScript/Bun의 <code>SQLiteBackend</code>와 <code>searchMemories()</code>를 제공한다.</p></div>
+            <div class="reason"><b>직접 재검증 완료</b><p>Bun 1.3.9에서 97/97 테스트와 TypeScript typecheck가 통과했다.</p></div>
+            <div class="reason"><b>태그 이후 변경은 v1 필수 기능이 아님</b><p>미출시 <code>main</code>의 offset·관계 탐색 보강은 초기 Recall에서 사용하지 않는다.</p></div>
+          </div>
+        </div>
+        <div class="principle" style="margin-top:18px"><p><strong>주의:</strong> <code>v0.13.0</code>은 1.0 이전이며 TypeScript 전환 첫 릴리스다. 그래서 내부 import를 Wrapper 한곳에 가두고 정확한 SHA를 고정한다. 공식 근거는 <a href="https://github.com/memory-graph/memory-graph/releases/tag/v0.13.0">릴리스</a>와 <a href="https://github.com/memory-graph/memory-graph/commit/67fc4f97816aa75823ae2dd4eff49f150cc6f1da">커밋</a>에서 확인한다.</p></div>
+      </section>
+
+      <section id="contract">
+        <div class="section-head"><div><p class="eyebrow">Public contract</p><h2>Wrapper 입·출력 계약</h2></div><p><em>계약</em>은 내부 구현이 바뀌어도 호출자가 믿을 수 있는 입력과 출력 규칙이다. 첫 구현은 아래 값을 기준으로 한다.</p></div>
+        <div class="contract">
+          <article><h3>외부 명령</h3><p>Hook과 사람이 공통으로 사용할 프로젝트 전용 CLI다.</p><pre><code>harness-memory recall \
+  "sqlite 외래키 상태저장소" \
+  --limit 5</code></pre></article>
+          <article><h3>내부 함수 입력</h3><p>문자열 CLI 입력은 경계에서 배열로 바꾸며, 핵심 함수는 명시적인 구조를 받는다.</p><pre><code>recallMemories({
+  keywords: ["sqlite", "외래키", "상태저장소"],
+  limit: 5
+})</code></pre></article>
+          <article class="wide"><h3>성공 JSON</h3><p>Codex에는 MemoryGraph 원본 객체 전체가 아니라 작업에 필요한 최소 필드만 반환한다.</p><pre><code>{
+  "ok": true,
+  "memories": [
+    {
+      "id": "mem_123",
+      "title": "SQLite 외래키 활성화",
+      "summary": "DB 연결 직후 PRAGMA foreign_keys = ON을 실행한다.",
+      "matched_keywords": ["sqlite", "외래키"]
+    }
+  ],
+  "warnings": []
+}</code></pre></article>
+          <article><h3>빈 결과</h3><p>검색 결과 없음은 오류가 아니다. 정상 응답의 빈 배열로 표현한다.</p><pre><code>{
+  "ok": true,
+  "memories": [],
+  "warnings": []
+}</code></pre></article>
+          <article><h3>검색 실패</h3><p>본 작업을 계속할 수 있도록 기계적으로 읽을 수 있는 경고를 반환한다.</p><pre><code>{
+  "ok": false,
+  "memories": [],
+  "warnings": ["memory_database_unavailable"]
+}</code></pre></article>
+        </div>
+
+        <h3 style="margin-top:30px">정렬 규칙</h3>
+        <div class="table-wrap"><table><thead><tr><th>순서</th><th>기준</th><th>쉬운 의미</th></tr></thead><tbody>
+          <tr><td data-label="순서">1</td><td data-label="기준"><code>matched_keywords.length</code> 내림차순</td><td data-label="쉬운 의미">더 많은 검색 키워드에 함께 걸린 기억을 먼저 둔다.</td></tr>
+          <tr><td data-label="순서">2</td><td data-label="기준">MemoryGraph 중요도 내림차순</td><td data-label="쉬운 의미">키워드 점수가 같으면 더 중요하게 저장된 기억을 우선한다.</td></tr>
+          <tr><td data-label="순서">3</td><td data-label="기준">생성·갱신 시각 내림차순</td><td data-label="쉬운 의미">앞의 조건까지 같으면 더 최근 기억을 우선한다.</td></tr>
+          <tr><td data-label="순서">4</td><td data-label="기준">Memory ID 오름차순</td><td data-label="쉬운 의미">완전히 동점일 때도 결과 순서가 실행마다 흔들리지 않게 한다.</td></tr>
+        </tbody></table></div>
+        <div class="principle" style="margin-top:18px"><p><strong>입력 기본값:</strong> 빈 키워드와 중복은 제거하고, 유효 키워드가 없으면 DB를 호출하지 않은 채 빈 성공 결과를 반환한다. <code>limit</code> 기본값은 5이며 구현에서는 1–10 범위로 제한한다.</p></div>
+      </section>
+
+      <section id="layout">
+        <div class="section-head"><div><p class="eyebrow">Module boundary</p><h2>권장 코드 구조</h2></div><p>CLI 입출력, 검색 정책, 외부 MemoryGraph 연결을 분리하면 테스트가 쉬워지고 upstream 변경도 한 파일에서 흡수할 수 있다.</p></div>
+        <div class="contract">
+          <article><h3><code>memory/client.ts</code></h3><p>Vendored <code>SQLiteBackend</code>를 import하고 연결·검색하는 유일한 파일. 외부 라이브러리 변경을 흡수하는 경계다.</p></article>
+          <article><h3><code>memory/recall.ts</code></h3><p>키워드 정규화, 반복 검색, ID 병합, 정렬, 제한을 수행하는 핵심 함수다.</p></article>
+          <article><h3><code>memory/cli.ts</code></h3><p><code>harness-memory recall</code> 인자를 읽고 항상 JSON을 stdout에 출력하는 얇은 명령 진입점이다.</p></article>
+          <article><h3><code>memory/types.ts</code></h3><p>입력·응답·경고 코드처럼 Wrapper가 공개하는 객체 구조를 정의한다.</p></article>
+          <article class="wide"><h3>예상 파일 트리</h3><pre><code>vendor/
+└── memory-graph/                  # Git submodule · v0.13.0 SHA 고정
+
+src/harness/memory/
+├── client.ts                     # SQLiteBackend 연결 경계
+├── recall.ts                     # 검색·병합·정렬 정책
+├── types.ts                      # Wrapper 입출력 타입
+└── cli.ts                        # harness-memory 명령
+
+tests/memory/
+├── recall.test.ts                # 단위 테스트
+└── recall-integration.test.ts    # 실제 SQLiteBackend 계약 테스트</code></pre></article>
+        </div>
+      </section>
+
+      <section id="plan">
+        <div class="section-head"><div><p class="eyebrow">Implementation order</p><h2>바로 이어갈 구현 순서</h2></div><p>각 단계가 독립적으로 검증되도록 Submodule부터 Hook 연결까지 한 방향으로 진행한다.</p></div>
+        <div class="milestones">
+          <div class="milestone"><b>Submodule 고정</b><span>공식 저장소를 추가하고 정확한 SHA를 기록한다.</span></div>
+          <div class="milestone"><b>Client 경계</b><span>프로젝트 DB 연결과 <code>searchMemories()</code> 호출을 만든다.</span></div>
+          <div class="milestone"><b>Recall 정책</b><span>정규화·검색·병합·정렬과 JSON 계약을 테스트한다.</span></div>
+          <div class="milestone"><b>CLI 제공</b><span><code>harness-memory recall</code> 명령과 실패 코드를 연결한다.</span></div>
+          <div class="milestone"><b>Hook 통합</b><span><code>start_work</code> PostToolUse가 호출하고 Context Packet을 주입한다.</span></div>
+        </div>
+        <h3 style="margin-top:34px">최소 검증 목록</h3>
+        <div class="table-wrap"><table><thead><tr><th>검증</th><th>통과 조건</th></tr></thead><tbody>
+          <tr><td data-label="검증">빈 입력</td><td data-label="통과 조건">DB 호출 없이 <code>ok: true</code>, 빈 목록을 반환한다.</td></tr>
+          <tr><td data-label="검증">중복 키워드</td><td data-label="통과 조건">한 번만 검색하고 결과의 매칭 키워드도 중복되지 않는다.</td></tr>
+          <tr><td data-label="검증">중복 기억</td><td data-label="통과 조건">여러 검색에서 나온 같은 Memory ID를 한 항목으로 병합한다.</td></tr>
+          <tr><td data-label="검증">결정적 정렬</td><td data-label="통과 조건">같은 입력과 DB 상태에서 항상 같은 순서가 나온다.</td></tr>
+          <tr><td data-label="검증">부분 실패</td><td data-label="통과 조건">성공한 키워드 결과를 반환하면서 경고를 함께 남긴다.</td></tr>
+          <tr><td data-label="검증">DB 장애</td><td data-label="통과 조건">Run을 취소하지 않고 구조화된 경고와 빈 목록을 반환한다.</td></tr>
+          <tr><td data-label="검증">실제 backend</td><td data-label="통과 조건">Vendored v0.13.0의 SQLite 저장 자료를 직접 검색한다.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="scope">
+        <div class="section-head"><div><p class="eyebrow">Explicitly out of scope</p><h2>첫 구현에서 하지 않는 것</h2></div><p>아래 항목은 버린 것이 아니라 Recall Wrapper의 첫 범위에서 분리한 후속 작업이다.</p></div>
+        <div class="not-doing">
+          <div><strong>Memory Candidate 최종 저장</strong><p>후보 평가·promote·reject는 Memory Finalize Skill에서 구현한다.</p></div>
+          <div><strong>관계 그래프 탐색</strong><p>초기 Recall은 텍스트 검색 결과만 사용하고 BFS 관계 확장은 하지 않는다.</p></div>
+          <div><strong>FalkorDBLite 지원</strong><p>SQLite 계약이 안정된 뒤 호환성 문제와 필요성을 다시 평가한다.</p></div>
+          <div><strong>전역·다중 프로젝트 기억 통합</strong><p>각 프로젝트의 <code>memorygraph.db</code>를 분리하며 공유 저장소는 설계하지 않는다.</p></div>
+          <div><strong>MemoryGraph 내부 코드 수정</strong><p>필요한 정책은 Wrapper에 두고 upstream fork는 만들지 않는다.</p></div>
+          <div><strong>Recall 실패로 작업 차단</strong><p>장기 기억은 보조 문맥이므로 상태 저장소처럼 필수 전제 조건으로 취급하지 않는다.</p></div>
+        </div>
+      </section>
+
+      <footer>Harness v2 · MemoryGraph Recall Wrapper 구현 기준 · 2026-08-21 · 상세 버전 검토: <code>research/memorygraph-version-selection.md</code></footer>
+    </main>
+  </div>
+</body>
+</html>

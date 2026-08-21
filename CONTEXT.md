@@ -87,7 +87,10 @@ Feature, WorkItem, Run, 검증 결과와 기억 후보의 현재 상태를 보�
 Run 중 발생한 모델·도구 호출, 오류와 실행 시간을 담는 상세 관측 기록이다. 상태 저장소에는 Trace 본문 대신 Run의 `trace_ref`만 저장한다.
 
 **Runtime Binding**  
-현재 Codex thread를 실행 중인 `work_item_id`와 `run_id`에 연결하는 짧게 살아 있는 로컬 JSON 포인터다. `.harness/runtime/<codex-thread-id>.json`에 둘 예정이며, 정본이 아니므로 Hook은 SQLite 상태를 다시 확인해야 한다. 아직 구현 전이다.
+현재 Codex 세션을 실행 중인 `work_item_id`와 `run_id`에 연결하는 짧게 살아 있는 로컬 JSON 포인터다. `.harness/runtime/bindings/<session-id>.json`에 저장하며, 정본이 아니므로 Hook은 SQLite 상태를 다시 확인해야 한다. `runtime_binding.py`가 원자적 저장·조회·삭제와 Run 소유 세션 검색을 제공한다.
+
+**expected_run_id**
+사용자가 중단 처리하기로 확인한 Run의 ID다. `recover_abandoned_work()`는 이 ID가 여전히 해당 WorkItem의 실행 중 Run일 때만 `interrupted`로 종료하여, 확인 도중 다른 세션의 상태가 바뀐 경우 잘못 덮어쓰지 않는다.
 
 ## 장기 기억
 

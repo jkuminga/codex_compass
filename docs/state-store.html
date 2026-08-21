@@ -636,12 +636,14 @@
         <pre><code>.harness/
   state.db               # 현재 상태와 State Event의 유일한 정본
   schema.sql             # 테이블, 제약, 인덱스, View 정의
+  runtime/
+    bindings/            # 세션별 session·turn·WorkItem·Run 임시 연결
   traces/                # Run별 상세 Trace
   artifacts/             # 로컬에 보관할 Artifact 원본
   exports/
     events.jsonl         # state_events에서 필요할 때 생성
     status.md            # DB에서 필요할 때 생성하는 현황</code></pre>
-        <p style="margin:15px 0 0;color:var(--muted);font-size:.84rem"><code>state.db</code>는 로컬 작업 데이터라 Git에서 제외한다. <code>schema.sql</code>은 재현 가능한 구조 정의이므로 Git으로 추적한다. <code>exports/</code>는 언제든 다시 만들 수 있는 파생물이다.</p>
+        <p style="margin:15px 0 0;color:var(--muted);font-size:.84rem"><code>state.db</code>와 <code>runtime/bindings/</code>는 로컬 작업 데이터라 Git에서 제외한다. Binding은 현재 Codex 세션이 어느 Run을 사용하는지 Hook에 알려 주는 임시 포인터이며 프로젝트 상태의 정본이 아니다. <code>schema.sql</code>은 재현 가능한 구조 정의이므로 Git으로 추적하고, <code>exports/</code>는 언제든 다시 만들 수 있는 파생물이다.</p>
       </section>
 
       <section id="connection">
@@ -652,6 +654,7 @@
         <pre><code>src/harness/
   state_store.py        # 모든 DB 연결·조회·변경·검증 함수
   mcp_server.py         # Codex 도구를 state_store.py 함수에 연결
+  runtime_binding.py    # 세션별 Binding 관리와 Run 소유자 확인
 
 .harness/
   schema.sql            # 테이블·제약·인덱스·View 정의
@@ -659,6 +662,7 @@
         <div class="principles" style="margin-top:24px">
           <div class="principle"><b><code>state_store.py</code></b><p><code>open_database()</code>, WorkItem·Run·Artifact·Evidence·Memory Candidate의 생성과 조회, 상태 전이와 완료 검증 등 DB 관련 함수를 모두 담는 단일 내부 모듈이다.</p></div>
           <div class="principle"><b><code>mcp_server.py</code></b><p>Codex에 도구 이름과 입력 형식을 공개하고 대응하는 <code>state_store.py</code> 함수를 호출하는 얇은 연결부다. SQL과 상태 규칙을 중복 구현하지 않는다.</p></div>
+          <div class="principle"><b><code>runtime_binding.py</code></b><p><code>.harness/runtime/bindings/&lt;session-id&gt;.json</code>을 원자적으로 생성·조회·삭제하고 Run의 소유 세션을 찾는다. 세션 소유권을 WorkItem이나 Run 테이블에 중복 저장하지 않으며 Hook은 Binding과 DB의 실제 상태를 함께 확인한다.</p></div>
           <div class="principle"><b>분리 시점</b><p>v1에서는 파일을 미리 나누지 않는다. 실제 구현이 커져 한 파일의 탐색과 변경이 불편해질 때만 도메인별 모듈로 분리한다.</p></div>
         </div>
         <p style="margin:18px 0 10px;color:var(--muted);font-size:.84rem"><strong>대표 DB 함수:</strong> <code>open_database()</code>, <code>create_work_item()</code>, <code>start_run()</code>, <code>finish_run()</code>, <code>change_work_item_status()</code>, <code>create_artifact()</code>, <code>link_evidence()</code>, <code>pass_criterion()</code>, <code>complete_work_item()</code>, <code>create_candidate()</code>. 각 함수는 SQL 실행뿐 아니라 자신이 변경하는 상태의 규칙도 함께 검사한다.</p>
@@ -697,6 +701,8 @@
         <details><summary>적합한 WorkItem이 아직 없다면?</summary><div>Codex가 독립적인 목표와 완료 조건을 가진 WorkItem을 즉시 만들 수 있다. 초기 설계처럼 Feature가 아직 없으면 <code>feature_id</code>를 비워 두며, 관련 기존 WorkItem이 있다면 새로 만들기보다 재사용한다.</div></details>
         <details><summary>WorkItem의 next_action은 언제 필요한가?</summary><div><code>backlog</code>에서는 없어도 되지만 대략적인 방향이 있다면 적을 수 있다. <code>ready</code>와 <code>in_progress</code>에는 지금 바로 할 행동을 반드시 적고, <code>blocked</code>에는 막힘을 해제하기 위한 행동을 적는다. <code>done</code>과 <code>cancelled</code>에서는 반드시 비워 둔다.</div></details>
         <details><summary>실행 중인 Run이 있는데 WorkItem 상태만 바꿀 수 있나?</summary><div>안 된다. 정상적인 작업 종료는 <code>finish_run()</code>이 Run과 WorkItem을 함께 변경한다. 별도 <code>change_work_item_status()</code>는 해당 WorkItem에 <code>running</code> Run이 있으면 <code>ready</code>, <code>blocked</code>, <code>done</code>, <code>cancelled</code>로의 변경을 거부한다.</div></details>
+        <details><summary>여러 Codex 세션이 동시에 작업할 수 있나?</summary><div>서로 다른 WorkItem은 세션별 Binding과 Run을 사용해 병렬 실행할 수 있다. 같은 WorkItem에는 DB가 running Run을 하나만 허용하므로 먼저 시작한 세션만 작업한다. 다른 세션은 새 Run이나 Binding을 만들지 않고 원래 세션에서 이어서 작업하라는 안내를 받는다.</div></details>
+        <details><summary>다른 세션이 비정상 종료돼 WorkItem이 잠기면?</summary><div>시간 만료나 자동 takeover로 추측하지 않는다. Codex가 충돌을 설명하고 “해당 세션이 이미 종료됐다면, 남은 Run을 <code>interrupted</code>로 종료하고 WI 잠금을 해제할까요?”라고 묻는다. 사용자가 명시적으로 동의하면 <code>recover_abandoned_work(work_item_id, expected_run_id)</code>가 조회 당시의 정확한 Run만 중단 처리하고 WorkItem을 기존 <code>next_action</code>이 있는 <code>ready</code>로 원자적으로 되돌린다. 이는 기존 Run의 정상 성공 종료나 재개가 아니다. 이후 현재 세션의 새 Run은 <code>start_work()</code>로 별도 생성한다.</div></details>
         <details><summary>실패하거나 아직 검증 중인 Artifact도 완료 근거가 되나?</summary><div>안 된다. <code>pass_criterion()</code>은 같은 WorkItem에서 나온 Evidence 중 <code>verification_status</code>가 <code>passed</code> 또는 <code>not_applicable</code>인 Artifact가 하나 이상 있을 때만 조건을 <code>passed</code>로 바꾼다. 과거의 실패 Artifact가 남아 있어도 별도의 유효한 Artifact가 있으면 통과할 수 있다.</div></details>
         <details><summary>Run 요약에 전체 작업 과정을 적나?</summary><div>아니다. 다음 Run이 이어서 일할 수 있는 짧은 결과만 적는다. 상세 도구 호출과 원본 출력은 <code>trace_ref</code>가 가리키는 Trace에서 찾는다.</div></details>
         <details><summary>성공한 Run 뒤에도 WorkItem을 계속할 수 있나?</summary><div>가능하다. <code>finish_work(outcome="progressed")</code>를 사용하면 Run은 <code>succeeded</code>로 끝나고 WorkItem은 새 <code>next_action</code>이 있는 <code>ready</code>로 돌아간다. WorkItem 전체가 끝났을 때만 <code>completed</code>로 <code>done</code> 처리한다.</div></details>

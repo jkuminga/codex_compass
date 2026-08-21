@@ -33,6 +33,7 @@ class ConflictError(StateStoreError):
 
 
 _UNSET = object()
+_SEARCHABLE_WORK_ITEM_STATUSES = frozenset({"backlog", "ready", "blocked"})
 
 
 def _utc_now() -> str:
@@ -558,6 +559,82 @@ def list_next_work_items(
             dict(row)
             for row in database.execute(
                 "SELECT * FROM next_work_items LIMIT ?", (max(0, limit),)
+            )
+        ]
+    finally:
+        database.close()
+
+
+def search_work_items(
+    terms: Sequence[str],
+    *,
+    statuses: Sequence[str] = ("backlog", "ready", "blocked"),
+    limit: int = 5,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """Find open WorkItems by weighted title, goal, and next-action matches."""
+
+    normalized_terms: list[str] = []
+    seen_terms: set[str] = set()
+    for term in terms:
+        stripped = term.strip()
+        key = stripped.casefold()
+        if stripped and key not in seen_terms:
+            normalized_terms.append(stripped)
+            seen_terms.add(key)
+    if not 2 <= len(normalized_terms) <= 5:
+        raise ConflictError("search terms must contain between 2 and 5 unique values")
+
+    normalized_statuses = tuple(dict.fromkeys(statuses))
+    if not normalized_statuses or not set(normalized_statuses).issubset(
+        _SEARCHABLE_WORK_ITEM_STATUSES
+    ):
+        raise ConflictError("search statuses must be backlog, ready, or blocked")
+    if not 1 <= limit <= 5:
+        raise ConflictError("search limit must be between 1 and 5")
+
+    score_parts: list[str] = []
+    score_parameters: list[str] = []
+    for term in normalized_terms:
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        score_parts.append(
+            """
+            CASE WHEN title LIKE ? ESCAPE '\\' THEN 3 ELSE 0 END
+            + CASE WHEN goal LIKE ? ESCAPE '\\' THEN 2 ELSE 0 END
+            + CASE WHEN COALESCE(next_action, '') LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END
+            """
+        )
+        score_parameters.extend((pattern, pattern, pattern))
+
+    status_placeholders = ", ".join("?" for _ in normalized_statuses)
+    score_expression = " + ".join(f"({part})" for part in score_parts)
+    database = open_database(database_path)
+    try:
+        return [
+            dict(row)
+            for row in database.execute(
+                f"""
+                SELECT *
+                FROM (
+                  SELECT work_items.*, ({score_expression}) AS match_score
+                  FROM work_items
+                  WHERE status IN ({status_placeholders})
+                ) AS matches
+                WHERE match_score > 0
+                ORDER BY
+                  match_score DESC,
+                  CASE priority
+                    WHEN 'urgent' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'normal' THEN 3
+                    WHEN 'low' THEN 4
+                  END,
+                  created_at,
+                  id
+                LIMIT ?
+                """,
+                (*score_parameters, *normalized_statuses, limit),
             )
         ]
     finally:
@@ -1213,6 +1290,213 @@ def get_running_run(
         )
     finally:
         database.close()
+
+
+def list_running_runs(
+    *,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """Return every active Run in deterministic start order for UPS checks."""
+
+    database = open_database(database_path)
+    try:
+        return [
+            dict(row)
+            for row in database.execute(
+                """
+                SELECT * FROM runs
+                WHERE status = 'running'
+                ORDER BY started_at, id
+                """
+            )
+        ]
+    finally:
+        database.close()
+
+
+def recover_stale_run(
+    work_item_id: str,
+    *,
+    expected_run_id: str,
+    actor: str,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, dict[str, Any]]:
+    """Recover the exact previous-turn Run already verified by the UPS Hook."""
+
+    now = _utc_now()
+    with _transaction(database_path) as database:
+        work_item = _require_row(
+            database,
+            "SELECT * FROM work_items WHERE id = ?",
+            (work_item_id,),
+            "WorkItem",
+        )
+        run = _require_row(
+            database,
+            "SELECT * FROM runs WHERE id = ?",
+            (expected_run_id,),
+            "Run",
+        )
+        if run["work_item_id"] != work_item_id:
+            raise ConflictError("expected Run does not belong to the WorkItem")
+        if run["status"] != "running" or work_item["status"] != "in_progress":
+            raise ConflictError("expected Run is no longer the active WorkItem Run")
+        active_run = database.execute(
+            "SELECT id FROM runs WHERE work_item_id = ? AND status = 'running'",
+            (work_item_id,),
+        ).fetchone()
+        if active_run is None or active_run["id"] != expected_run_id:
+            raise ConflictError("active Run changed before stale recovery")
+
+        summary = "이전 turn에서 finish_work 없이 종료된 Run을 정리했다."
+        termination_reason = "이전 turn에서 finish_work 없이 종료됨"
+        database.execute(
+            """
+            UPDATE runs
+            SET status = 'interrupted', ended_at = ?, summary = ?, termination_reason = ?
+            WHERE id = ?
+            """,
+            (now, summary, termination_reason, expected_run_id),
+        )
+        database.execute(
+            """
+            UPDATE work_items
+            SET status = 'ready', block_reason = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (now, work_item_id),
+        )
+        reason = "이전 turn의 미종료 Run을 UserPromptSubmit에서 정리함"
+        _append_state_event(
+            database,
+            entity_type="run",
+            entity_id=expected_run_id,
+            event_type="recovered",
+            actor=actor,
+            from_status="running",
+            to_status="interrupted",
+            run_id=expected_run_id,
+            reason=reason,
+            created_at=now,
+        )
+        _append_state_event(
+            database,
+            entity_type="work_item",
+            entity_id=work_item_id,
+            event_type="status_changed",
+            actor=actor,
+            from_status="in_progress",
+            to_status="ready",
+            run_id=expected_run_id,
+            reason=reason,
+            created_at=now,
+        )
+        return {
+            "run": _require_row(
+                database, "SELECT * FROM runs WHERE id = ?", (expected_run_id,), "Run"
+            ),
+            "work_item": _require_row(
+                database,
+                "SELECT * FROM work_items WHERE id = ?",
+                (work_item_id,),
+                "WorkItem",
+            ),
+        }
+
+
+def recover_abandoned_work(
+    work_item_id: str,
+    *,
+    expected_run_id: str,
+    actor: str,
+    reason: str,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, dict[str, Any]]:
+    """Recover one user-confirmed abandoned Run without guessing ownership.
+
+    ``expected_run_id`` is a compare-and-set guard: recovery succeeds only
+    while that exact Run is still the WorkItem's active Run. The interrupted
+    Run is retained as history and the WorkItem keeps its existing next action.
+    """
+
+    now = _utc_now()
+    with _transaction(database_path) as database:
+        work_item = _require_row(
+            database,
+            "SELECT * FROM work_items WHERE id = ?",
+            (work_item_id,),
+            "WorkItem",
+        )
+        run = _require_row(
+            database,
+            "SELECT * FROM runs WHERE id = ?",
+            (expected_run_id,),
+            "Run",
+        )
+        if run["work_item_id"] != work_item_id:
+            raise ConflictError("expected Run does not belong to the WorkItem")
+        if run["status"] != "running" or work_item["status"] != "in_progress":
+            raise ConflictError("expected Run is no longer the active WorkItem Run")
+        active_run = database.execute(
+            "SELECT id FROM runs WHERE work_item_id = ? AND status = 'running'",
+            (work_item_id,),
+        ).fetchone()
+        if active_run is None or active_run["id"] != expected_run_id:
+            raise ConflictError("active Run changed before recovery")
+
+        summary = "사용자 확인으로 중단된 세션의 Run을 복구했다."
+        termination_reason = "사용자 확인으로 중단된 세션의 Run을 복구함"
+        database.execute(
+            """
+            UPDATE runs
+            SET status = 'interrupted', ended_at = ?, summary = ?, termination_reason = ?
+            WHERE id = ?
+            """,
+            (now, summary, termination_reason, expected_run_id),
+        )
+        database.execute(
+            """
+            UPDATE work_items
+            SET status = 'ready', block_reason = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (now, work_item_id),
+        )
+        _append_state_event(
+            database,
+            entity_type="run",
+            entity_id=expected_run_id,
+            event_type="recovered",
+            actor=actor,
+            from_status="running",
+            to_status="interrupted",
+            run_id=expected_run_id,
+            reason=reason,
+            created_at=now,
+        )
+        _append_state_event(
+            database,
+            entity_type="work_item",
+            entity_id=work_item_id,
+            event_type="status_changed",
+            actor=actor,
+            from_status="in_progress",
+            to_status="ready",
+            run_id=expected_run_id,
+            reason=reason,
+            created_at=now,
+        )
+        return {
+            "run": _require_row(
+                database, "SELECT * FROM runs WHERE id = ?", (expected_run_id,), "Run"
+            ),
+            "work_item": _require_row(
+                database,
+                "SELECT * FROM work_items WHERE id = ?",
+                (work_item_id,),
+                "WorkItem",
+            ),
+        }
 
 
 def complete_work_item(

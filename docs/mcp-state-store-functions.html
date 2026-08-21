@@ -134,6 +134,7 @@
             <tr><td data-label="MCP 도구"><code>get_project_status</code></td><td data-label="설명">전체 진행률, 다음 작업과 최근 변경을 가져온다.</td><td data-label="주요 입력">표시 개수</td><td data-label="DB 함수"><div class="call-list"><code>get_project_progress()</code><code>list_next_work_items()</code><code>get_recent_activity()</code></div></td></tr>
             <tr><td data-label="MCP 도구"><code>get_work_context</code></td><td data-label="설명">작업 시작·재개에 필요한 상태와 완료 조건을 읽는다.</td><td data-label="주요 입력"><code>work_item_id</code></td><td data-label="DB 함수"><div class="call-list"><code>get_preflight_context()</code></div></td></tr>
             <tr><td data-label="MCP 도구"><code>get_postflight_status</code></td><td data-label="설명">종료 전에 검증 결과와 기억 후보 누락을 확인한다.</td><td data-label="주요 입력"><code>work_item_id</code></td><td data-label="DB 함수"><div class="call-list"><code>get_postflight_status()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>search_work_items</code></td><td data-label="설명">UPS 후보 3개가 맞지 않을 때 요청의 핵심 용어로 기존 미완료 WorkItem을 한 번 검색한다.</td><td data-label="주요 입력"><code>terms</code> 2~5개, 상태 목록, <code>limit=5</code></td><td data-label="DB 함수"><div class="call-list"><code>search_work_items()</code></div></td></tr>
 
             <tr class="group-row"><td colspan="4">계획</td></tr>
             <tr><td data-label="MCP 도구"><code>create_feature</code></td><td data-label="설명">여러 WorkItem을 묶는 큰 목표·기능·작업 영역을 만든다.</td><td data-label="주요 입력">제목, 목표, 우선순위</td><td data-label="DB 함수"><div class="call-list"><code>create_feature()</code></div></td></tr>
@@ -149,6 +150,7 @@
             <tr><td data-label="MCP 도구"><code>resolve_artifact</code></td><td data-label="설명">pending Artifact를 passed 또는 failed로 확정한다.</td><td data-label="주요 입력"><code>artifact_id</code>, 결과, 요약</td><td data-label="DB 함수"><div class="call-list"><code>resolve_artifact()</code></div></td></tr>
             <tr><td data-label="MCP 도구"><code>verify_criterion</code></td><td data-label="설명">Artifact를 완료 조건의 근거로 연결하고 판정한다.</td><td data-label="주요 입력">조건 ID, Artifact ID, 판정</td><td data-label="DB 함수"><div class="call-list"><code>link_evidence()</code><code>pass_criterion()</code><code>fail_criterion()</code></div></td></tr>
             <tr><td data-label="MCP 도구"><code>finish_work</code></td><td data-label="설명">Run과 WorkItem을 전체 완료·정상 진전·재시도·막힘·취소 결과로 함께 종료한다. <code>progressed</code>는 Run만 성공시키고 WorkItem을 ready로 이어간다.</td><td data-label="주요 입력"><code>run_id</code>, 결과, 요약, 다음 행동</td><td data-label="DB 함수"><div class="call-list"><code>complete_work_item()</code><code>finish_run()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>recover_abandoned_work</code></td><td data-label="설명">다른 세션이 끝났다고 사용자가 확인한 경우, 조회했던 정확한 Run만 중단 처리하고 WorkItem을 다시 실행 가능하게 만든다.</td><td data-label="주요 입력"><code>work_item_id</code>, <code>expected_run_id</code>, <code>user_confirmation="confirmed"</code></td><td data-label="DB 함수"><div class="call-list"><code>recover_abandoned_work()</code></div></td></tr>
 
             <tr class="group-row"><td colspan="4">장기 기억 후보</td></tr>
             <tr><td data-label="MCP 도구"><code>create_memory_candidate</code></td><td data-label="설명">발견한 기억 후보를 작업 도중 즉시 저장한다.</td><td data-label="주요 입력"><code>run_id</code>, 종류, 제목, 내용, 키워드</td><td data-label="DB 함수"><div class="call-list"><code>create_candidate()</code></div></td></tr>
@@ -174,23 +176,28 @@
             <tr><td data-label="영역">Feature</td><td data-label="함수"><code>get_feature()</code> · <code>list_features()</code></td><td data-label="설명">Feature와 계산된 진행률을 읽는다.</td><td data-label="주 사용자">조회 MCP</td></tr>
             <tr><td data-label="영역">WorkItem</td><td data-label="함수"><code>create_work_item()</code> · <code>revise_work_item()</code> · <code>delete_backlog_work_item()</code></td><td data-label="설명">실행 작업을 만들고 수정하며, 시작 전 후보만 삭제한다.</td><td data-label="주 사용자">계획 MCP</td></tr>
             <tr><td data-label="영역">WorkItem</td><td data-label="함수"><code>get_work_item()</code> · <code>list_next_work_items()</code></td><td data-label="설명">작업 상태와 우선순위가 높은 다음 작업을 읽는다.</td><td data-label="주 사용자">조회 MCP</td></tr>
+            <tr><td data-label="영역">WorkItem</td><td data-label="함수"><code>search_work_items()</code></td><td data-label="설명"><code>title</code>·<code>goal</code>·<code>next_action</code>을 파라미터 SQLite LIKE로 검색한다. 제목 3점·목표 2점·다음 행동 1점으로 정렬하고 최대 5개를 반환한다.</td><td data-label="주 사용자">검색 MCP</td></tr>
             <tr><td data-label="영역">WorkItem</td><td data-label="함수"><code>change_work_item_status()</code></td><td data-label="설명">허용된 규칙 안에서 작업 상태를 바꾼다.</td><td data-label="주 사용자">상태 변경 MCP</td></tr>
             <tr><td data-label="영역">완료 조건</td><td data-label="함수"><code>add_criterion()</code> · <code>revise_criterion()</code></td><td data-label="설명">Acceptance Criterion을 추가하거나 근거 연결 전에 수정한다.</td><td data-label="주 사용자">계획 MCP</td></tr>
             <tr><td data-label="영역">완료 조건</td><td data-label="함수"><code>pass_criterion()</code> · <code>fail_criterion()</code> · <code>waive_criterion()</code></td><td data-label="설명">완료 조건을 통과·실패·면제로 판정한다.</td><td data-label="주 사용자">검증 MCP</td></tr>
             <tr><td data-label="영역">Run</td><td data-label="함수"><code>start_run()</code> · <code>finish_run()</code> · <code>complete_work_item()</code></td><td data-label="설명">개별 실행을 시작하고 WorkItem과 함께 안전하게 종료한다.</td><td data-label="주 사용자">실행 MCP</td></tr>
             <tr><td data-label="영역">Run</td><td data-label="함수"><code>get_run()</code> · <code>get_running_run()</code></td><td data-label="설명">특정 Run이나 현재 실행 중인 Run을 읽는다.</td><td data-label="주 사용자">MCP·Hook</td></tr>
+            <tr><td data-label="영역">Run 복구</td><td data-label="함수"><code>recover_abandoned_work()</code></td><td data-label="설명"><code>expected_run_id</code>가 여전히 해당 WorkItem의 running Run인지 한 트랜잭션에서 확인한다. 맞으면 Run을 interrupted, WorkItem을 기존 <code>next_action</code>이 유지된 ready로 바꾸고 State Event를 남긴다.</td><td data-label="주 사용자">복구 MCP</td></tr>
             <tr><td data-label="영역">Artifact</td><td data-label="함수"><code>create_artifact()</code> · <code>resolve_artifact()</code> · <code>get_run_artifacts()</code></td><td data-label="설명">실행 결과를 등록·확정·조회한다.</td><td data-label="주 사용자">검증 MCP·Hook</td></tr>
             <tr><td data-label="영역">Evidence</td><td data-label="함수"><code>link_evidence()</code> · <code>get_criterion_evidence()</code></td><td data-label="설명">Artifact와 완료 조건의 증명 관계를 연결하고 읽는다.</td><td data-label="주 사용자">검증 MCP</td></tr>
             <tr><td data-label="영역">기억 후보</td><td data-label="함수"><code>create_candidate()</code> · <code>list_pending_candidates()</code></td><td data-label="설명">후보를 즉시 만들고 미검토 목록을 읽는다.</td><td data-label="주 사용자">기억 MCP·Skill</td></tr>
             <tr><td data-label="영역">기억 후보</td><td data-label="함수"><code>promote_candidate()</code> · <code>reject_candidate()</code></td><td data-label="설명">검토된 후보를 장기 기억 저장 또는 거절로 마감한다.</td><td data-label="주 사용자">기억 검토 Skill</td></tr>
             <tr><td data-label="영역">Hook 조회</td><td data-label="함수"><code>get_preflight_context()</code> · <code>get_postflight_status()</code></td><td data-label="설명">작업 전후에 필요한 상태만 작게 묶어 반환한다.</td><td data-label="주 사용자">Hook·MCP</td></tr>
             <tr><td data-label="영역">진행 조회</td><td data-label="함수"><code>get_project_progress()</code> · <code>get_recent_activity()</code></td><td data-label="설명">프로젝트 집계와 최근 State Event를 읽는다.</td><td data-label="주 사용자">조회 MCP</td></tr>
+            <tr class="group-row"><td colspan="4">구현 완료 Hook 지원 · Runtime Interface</td></tr>
+            <tr><td data-label="영역">UPS Run 복구</td><td data-label="함수"><code>list_running_runs()</code> · <code>recover_stale_run()</code></td><td data-label="설명">모든 running Run을 조회하고, 현재 세션의 이전 turn Binding과 정확히 일치하는 Run만 interrupted·ready로 원자적으로 복구한다. Run에는 종료 시각과 고정된 복구 요약·종료 이유를 함께 기록한다.</td><td data-label="주 사용자">UserPromptSubmit Hook</td></tr>
+            <tr><td data-label="영역">Runtime Binding</td><td data-label="함수"><code>save_binding()</code> · <code>load_binding()</code> · <code>delete_binding()</code> · <code>find_run_owner()</code></td><td data-label="설명">세션별 임시 파일로 session·turn·WorkItem·Run 연결을 관리하고 active WorkItem의 소유 세션을 찾는다. <code>recover_abandoned_work</code> 성공 후에는 복구된 Run을 가리키는 이전 Binding을 삭제한다. DB 함수는 아니며 <code>runtime_binding.py</code>에 둔다.</td><td data-label="주 사용자">UserPromptSubmit·Pre/PostToolUse·Stop</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <footer><a href="./docs-index.html">← 문서 허브</a> · 표의 18개 MCP 도구는 <code>src/harness/mcp_server.py</code>에 구현되어 있으며, 실제 상태 규칙은 <code>src/harness/state_store.py</code>가 책임진다.</footer>
+    <footer><a href="./docs-index.html">← 문서 허브</a> · 표의 20개 MCP 도구는 <code>src/harness/mcp_server.py</code>에 구현되어 있다. Hook 지원 DB 함수와 Runtime Binding 함수도 구현되었으며, Codex lifecycle에 연결할 Hook 어댑터는 다음 구현 범위다.</footer>
   </main>
   <script>
     const tabs = [...document.querySelectorAll('.tab')];

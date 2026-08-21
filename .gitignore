@@ -2,6 +2,10 @@
 .harness/state.db
 .harness/state.db-shm
 .harness/state.db-wal
+.harness/memorygraph.db
+.harness/memorygraph.db-shm
+.harness/memorygraph.db-wal
+.harness/runtime/
 
 # Python test caches.
 __pycache__/

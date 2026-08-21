@@ -33,6 +33,27 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.structured_content["next_work_items"], [])
         self.assertEqual(result.structured_content["recent_activity"], [])
 
+    async def test_codex_can_search_open_work_items_through_mcp(self) -> None:
+        work_item = state_store.create_work_item(
+            title="Recall 검색 도구",
+            kind="implementation",
+            goal="Memory recall 관련 WorkItem을 검색한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+
+        async with Client(create_server(self.database_path)) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool(
+                "search_work_items",
+                {"terms": ["recall", "memory"], "limit": 5},
+            )
+
+        self.assertIn("search_work_items", {tool.name for tool in tools.tools})
+        self.assertFalse(result.is_error)
+        self.assertEqual(result.structured_content["work_items"][0]["id"], work_item["id"])
+        self.assertGreater(result.structured_content["work_items"][0]["match_score"], 0)
+
     async def test_codex_can_plan_and_prepare_work_through_mcp(self) -> None:
         async with Client(create_server(self.database_path)) as client:
             feature_result = await client.call_tool(
@@ -261,6 +282,43 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "다음 정책을 검토한다.",
         )
 
+    async def test_codex_can_recover_user_confirmed_abandoned_work_through_mcp(self) -> None:
+        work_item = state_store.create_work_item(
+            title="중단 작업 복구",
+            kind="maintenance",
+            goal="사용자 확인 후 잠긴 작업을 복구한다.",
+            next_action="복구 흐름을 구현한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="복구 흐름을 구현한다.",
+            actor="planner",
+            reason="구현 준비 완료",
+            database_path=self.database_path,
+        )
+        run = state_store.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+
+        async with Client(create_server(self.database_path)) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool(
+                "recover_abandoned_work",
+                {
+                    "work_item_id": work_item["id"],
+                    "expected_run_id": run["id"],
+                    "user_confirmation": "confirmed",
+                },
+            )
+
+        self.assertIn("recover_abandoned_work", {tool.name for tool in tools.tools})
+        self.assertFalse(result.is_error)
+        self.assertEqual(result.structured_content["run"]["status"], "interrupted")
+        self.assertEqual(result.structured_content["work_item"]["status"], "ready")
+
     async def test_codex_can_capture_and_review_memory_candidates_through_mcp(self) -> None:
         work_item = state_store.create_work_item(
             title="기억 후보 MCP",
@@ -351,6 +409,7 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
 
         expected_tools = {
             "get_project_status",
+            "search_work_items",
             "get_work_context",
             "get_postflight_status",
             "create_feature",
@@ -364,6 +423,7 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "resolve_artifact",
             "verify_criterion",
             "finish_work",
+            "recover_abandoned_work",
             "create_memory_candidate",
             "list_memory_candidates",
             "promote_memory_candidate",

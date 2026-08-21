@@ -7,6 +7,7 @@ startup_timeout_sec = 20
 tool_timeout_sec = 30
 enabled_tools = [
   "get_project_status",
+  "search_work_items",
   "get_work_context",
   "get_postflight_status",
   "create_feature",
@@ -20,6 +21,7 @@ enabled_tools = [
   "resolve_artifact",
   "verify_criterion",
   "finish_work",
+  "recover_abandoned_work",
   "create_memory_candidate",
   "list_memory_candidates",
   "promote_memory_candidate",

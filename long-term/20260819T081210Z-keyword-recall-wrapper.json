@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "ltm_keyword_recall_wrapper",
+  "created_at": "2026-08-19T08:12:10Z",
+  "kind": "decision",
+  "title": "키워드별 MemoryGraph Recall 병합 전략",
+  "summary": "start_work 성공 후 PostToolUse가 공백 구분 키워드 문자열을 wrapper에 넘기며, wrapper는 키워드별 recall 결과를 기억 ID로 병합하고 반복 등장 횟수로 정렬해 상위 3~5개만 Codex에 전달한다.",
+  "problem": "MemoryGraph recall은 여러 단어가 담긴 query를 키워드별 OR 검색하지 않고 하나의 연속 문자열로 검색한다.",
+  "solution": "프로젝트 wrapper가 입력을 키워드로 분리해 각각 recall하고, 동일 기억을 ID로 중복 제거한 뒤 여러 키워드 검색에 등장한 횟수를 1차 관련도 점수로 사용한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/single-request-pipeline.html#memory-recall"
+    },
+    {
+      "type": "file",
+      "ref": "docs/long-term-memory.md"
+    }
+  ]
+}

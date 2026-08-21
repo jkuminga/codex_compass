@@ -40,6 +40,7 @@
 - 한 Run이 정상적으로 진전됐지만 WorkItem 전체가 남았다면 `progressed`로 종료한다. Run은 `succeeded`, WorkItem은 새 `next_action`이 있는 `ready`로 이어간다.
 - 답변으로 끝나는 일회성 질문에는 WorkItem과 Run을 만들지 않는다.
 - 프로젝트 작업은 관련 기존 WorkItem 재사용을 우선하며, 독립적인 새 목표일 때만 WorkItem을 만든다.
+- Runtime Binding은 세션별 임시 파일로 관리한다. 서로 다른 WorkItem은 여러 Codex 세션에서 병렬 실행할 수 있지만, 같은 WorkItem은 먼저 시작한 한 세션만 사용한다.
 - 하나의 Run에는 커밋, 테스트 결과, PR 등 여러 `Artifact`가 연결될 수 있다.
 - `Artifact`는 에이전트의 완료 주장이 아니라 실제로 검증 가능한 산출물이다.
 - MemoryGraph에는 모든 대화나 로그가 아니라 미래에 재사용할 결정·문제·해결·패턴만 저장한다.
@@ -50,15 +51,18 @@
 
 ## Codex 작업 lifecycle과 강제 방식
 
-Codex가 메인 코드 에이전트가 된다. 목표 구조에서는 필수 절차를 `AGENTS.md`의 긴 지시가 아니라 Codex Hook과 로컬 스크립트로 처리한다. 현재는 SQLite 상태 저장소와 MCP 도구까지 구현되었고, Hook·Trace·Runtime Binding·MemoryGraph Finalize Skill은 다음 구현 범위다.
+Codex가 메인 코드 에이전트가 된다. 목표 구조에서는 필수 절차를 `AGENTS.md`의 긴 지시가 아니라 Codex Hook과 로컬 스크립트로 처리한다. 현재는 SQLite 상태 저장소, MCP 도구, 세션별 Runtime Binding과 UPS Run 복구 DB 함수까지 구현되었다. Hook 어댑터·Trace·Stop Guard·MemoryGraph Finalize Skill은 다음 구현 범위다.
 
 ```text
 UserPromptSubmit
-  → 상태 DB 조회, 관련 기억 회상, 짧은 Context Packet 주입
+  → DB 건강 확인
+  → running Run 조회, 자기 세션의 이전 turn만 interrupted·ready로 복구
+  → running Run 재조회, 다른 세션 active WorkItem과 ready 후보를 Context Packet으로 주입
 
 Codex + MCP
   → 일회성 답변과 프로젝트 작업 구분
   → 기존 WorkItem 재사용 또는 독립적인 새 WorkItem 생성
+  → 다른 세션의 종료를 사용자가 확인하면 조회했던 Run만 안전하게 복구
   → 설계·조사·의사결정·구현·검증 프로젝트 작업이면 Run 시작
 
 PreToolUse
@@ -77,7 +81,7 @@ SessionEnd
   → trace flush·임시 파일 정리 등 보조 처리
 ```
 
-Hook은 `state_store.py`를 직접 사용하고, Codex는 MCP를 사용한다. Hook이 Run을 자동 생성·종료하지 않으며, 논리 판단이 필요한 상태 정리나 MemoryGraph 저장은 메인 Codex가 수행한다. `Stop` 검사를 통과하지 못한 경우에만 같은 Codex를 조건부로 한 번 더 실행한다.
+Hook은 `state_store.py`를 직접 사용하고, Codex는 MCP를 사용한다. Hook은 Run을 자동 생성하거나 성공으로 마감하지 않는다. 단, UserPromptSubmit은 현재 세션의 이전 turn Binding과 정확히 일치하는 미종료 Run만 기계적으로 `interrupted` 처리하고 WorkItem을 `ready`로 복구한다. 다른 세션의 Run은 자동으로 가져오거나 종료하지 않는다. 사용자가 해당 세션의 종료를 확인하면 Codex가 `recover_abandoned_work()`를 호출하며, 조회 당시의 Run ID가 그대로일 때만 복구된다. `Stop` 검사를 통과하지 못한 경우에만 같은 Codex를 조건부로 한 번 더 실행한다.
 
 요청 분류, Hook·MCP·Skill의 역할과 event별 호출은 [단일 Codex 요청 파이프라인](./single-request-pipeline.html)을 정본으로 참고한다.
 

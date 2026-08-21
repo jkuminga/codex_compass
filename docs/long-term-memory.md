@@ -21,12 +21,12 @@ MemoryGraph CLI는 전역으로 설치해 어느 프로젝트에서도 실행할
   ↓
 프로젝트 전용 wrapper
   ↓
-Harness_v2/.harness/memorygraph.falkor
+Harness_v2/.harness/memorygraph.db
 ```
 
-기본 전역 DB를 그대로 쓰면 여러 프로젝트의 기억이 섞일 수 있다. 이 하네스는 `MEMORY_FALKORDBLITE_PATH`를 프로젝트의 `.harness/memorygraph.falkor`로 설정한다.
+기본 전역 DB를 그대로 쓰면 여러 프로젝트의 기억이 섞일 수 있다. 이 하네스는 `MEMORY_BACKEND=sqlite`와 `MEMORY_SQLITE_PATH=<프로젝트 루트>/.harness/memorygraph.db`를 설정한다.
 
-`.harness/memorygraph.falkor`는 로컬 작업 데이터이며 v1에서는 Git으로 추적하지 않는다. 여러 기기나 팀 간 공유가 필요해지면 Cloud backend, 공유 DB, export/import 중 하나를 별도로 설계한다.
+`.harness/memorygraph.db`는 로컬 작업 데이터이며 v1에서는 Git으로 추적하지 않는다. 상태 저장소의 `.harness/state.db`와 같은 SQLite 기술을 사용하지만, MemoryGraph가 자체 스키마와 마이그레이션을 관리하는 별도 DB 파일이다. 여러 기기나 팀 간 공유가 필요해지면 Cloud backend, 공유 DB, export/import 중 하나를 별도로 설계한다.
 
 ## Wrapper의 역할
 
@@ -40,8 +40,10 @@ wrapper는 아래를 자동으로 처리한다.
 
 ```text
 1. 현재 Git 프로젝트 루트 확인
-2. 프로젝트 전용 MemoryGraph DB 경로 설정
-3. 전역 memorygraph CLI 실행
+2. MEMORY_BACKEND=sqlite 설정
+3. MEMORY_SQLITE_PATH를 .harness/memorygraph.db로 설정
+4. 상태 DB와 섞이지 않은 프로젝트 전용 MemoryGraph DB 확인
+5. 전역 memorygraph CLI 실행
 ```
 
 따라서 Codex는 어느 DB를 쓰는지 기억할 필요 없이 `harness-memory`만 사용한다.
@@ -66,17 +68,19 @@ wrapper는 아래를 자동으로 처리한다.
 
 ## 작업 시작: Hook이 자동으로 기억 회상
 
-`UserPromptSubmit` hook은 현재 WorkItem의 목표·태그·관련 파일을 바탕으로 `harness-memory recall`을 실행한다.
+`start_work()`가 성공한 직후의 전용 `PostToolUse` hook이 장기 기억 조회를 실행한다. 이때는 작업할 WorkItem과 새 Run이 이미 확정되어 있으므로, `UserPromptSubmit`처럼 아직 작업 대상이 정해지지 않은 시점보다 정확한 문맥을 사용할 수 있다.
 
 ```text
-현재 WorkItem 확인
+start_work 성공
   ↓
-관련 키워드 생성
+Runtime Binding 저장
   ↓
-harness-memory recall
+확정된 작업 문맥으로 장기 기억 조회
   ↓
 상위 3~5개 기억만 짧은 Context Packet으로 Codex에 전달
 ```
+
+내부 조회는 `harness-memory` wrapper가 MemoryGraph의 `recall`을 사용한다. Codex가 공백으로 구분한 짧은 키워드 문자열을 넘기면 wrapper가 키워드별로 `recall`을 실행하고, 같은 기억을 ID로 병합한 뒤 여러 키워드 검색에 반복해서 등장한 기억을 우선한다. 상위 3~5개만 Codex에 전달하며, 자세한 흐름은 [단일 Codex 요청 파이프라인의 장기 기억 Recall](./single-request-pipeline.html#memory-recall)을 따른다. 조회가 실패해도 이미 시작된 Run은 취소하지 않고 경고만 남긴 뒤 작업을 계속한다.
 
 예를 들어 결제 웹훅 작업이라면 `payment`, `webhook`, `order`, `idempotency` 같은 키워드로 검색한다.
 

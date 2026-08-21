@@ -36,6 +36,10 @@ Project
 
 사용자가 WorkItem ID를 프롬프트에 적는 흐름에 의존하지 않는다. `UserPromptSubmit` Hook은 실행 중인 WorkItem과 `ready` 후보를 짧게 제공하고, Codex가 사용자 요청과 각 목표를 비교한다.
 
+`UserPromptSubmit`은 후보를 만들기 전에 현재 세션 Binding의 이전 `turn_id`에 남은 `running` Run만 `interrupted`로 종료하고 해당 WorkItem을 기존 `next_action`이 있는 `ready`로 복구한다. 그 뒤 `running` Run을 다시 조회하므로, 남은 실행 중 WorkItem은 다른 세션 소유로 취급한다. 서로 다른 WorkItem은 병렬 실행할 수 있지만 같은 WorkItem에는 세션 하나만 접근한다. 다른 세션 소유라면 Codex는 새 Run을 만들지 않고 원래 세션에서 이어가도록 안내한다. 사용자가 원래 세션의 종료를 명시적으로 확인한 경우에만 `recover_abandoned_work(work_item_id, expected_run_id)`로 정확한 Run을 복구하고, 이후 `start_work()`로 현재 세션의 새 Run을 만든다.
+
+UPS의 후보 3개가 사용자 요청과 맞지 않으면 목록을 더 펼치지 않는다. Codex가 요청에서 핵심 용어 2~5개를 만들고 `search_work_items()`를 한 번 호출해 미완료 WorkItem의 제목·목표·다음 행동을 검색한다. 최대 5개 결과에도 적합한 목표가 없을 때만 새 WorkItem을 만든다.
+
 기존 WorkItem 재사용이 기본값이다. 다음 질문이 참이면 같은 WorkItem을 사용한다.
 
 > 기존 WorkItem을 완료하려면 이번 요청도 처리해야 하는가?

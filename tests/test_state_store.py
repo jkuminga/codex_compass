@@ -175,6 +175,71 @@ class StateStoreLifecycleTests(unittest.TestCase):
                 disposable["id"], database_path=self.database_path
             )
 
+    def test_work_items_are_searched_by_weighted_open_fields(self) -> None:
+        title_match = state_store.create_work_item(
+            title="Recall 정책 결정",
+            kind="decision",
+            goal="장기 기억을 불러오는 흐름을 정한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        goal_match = state_store.create_work_item(
+            title="장기 기억 흐름",
+            kind="decision",
+            goal="Recall 실행 위치를 결정한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        action_match = state_store.create_work_item(
+            title="기억 조회 준비",
+            kind="research",
+            goal="관련 문맥을 준비한다.",
+            next_action="Recall 결과를 확인한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        cancelled_match = state_store.create_work_item(
+            title="Recall 폐기 작업",
+            kind="maintenance",
+            goal="사용하지 않는 작업이다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            cancelled_match["id"],
+            "cancelled",
+            actor="planner",
+            reason="검색 대상에서 제외",
+            database_path=self.database_path,
+        )
+
+        results = state_store.search_work_items(
+            ["recall", "존재하지않는검색어"],
+            database_path=self.database_path,
+        )
+
+        self.assertEqual(
+            [item["id"] for item in results],
+            [title_match["id"], goal_match["id"], action_match["id"]],
+        )
+        self.assertEqual([item["match_score"] for item in results], [3, 2, 1])
+
+    def test_work_item_search_rejects_unbounded_or_unsupported_inputs(self) -> None:
+        invalid_calls = (
+            ({"terms": ["recall"]}, "between 2 and 5"),
+            ({"terms": ["a", "b", "c", "d", "e", "f"]}, "between 2 and 5"),
+            ({"terms": ["recall", "memory"], "statuses": ["done"]}, "statuses"),
+            ({"terms": ["recall", "memory"], "limit": 6}, "limit"),
+        )
+
+        for arguments, message in invalid_calls:
+            with self.subTest(arguments=arguments):
+                with self.assertRaisesRegex(state_store.ConflictError, message):
+                    state_store.search_work_items(
+                        **arguments,
+                        database_path=self.database_path,
+                    )
+
     def test_run_artifacts_and_completion_status_are_queryable(self) -> None:
         work_item = state_store.create_work_item(
             title="검증 흐름",
@@ -426,6 +491,124 @@ class StateStoreLifecycleTests(unittest.TestCase):
             work_item["id"], actor="codex", database_path=self.database_path
         )
         self.assertEqual(next_run["status"], "running")
+
+    def test_user_confirmed_abandoned_work_can_be_recovered(self) -> None:
+        work_item = state_store.create_work_item(
+            title="중단 세션 복구",
+            kind="maintenance",
+            goal="다른 세션이 남긴 실행 잠금을 안전하게 해제한다.",
+            next_action="복구 도구를 구현한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="복구 도구를 구현한다.",
+            actor="planner",
+            reason="구현 준비 완료",
+            database_path=self.database_path,
+        )
+        run = state_store.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+
+        result = state_store.recover_abandoned_work(
+            work_item["id"],
+            expected_run_id=run["id"],
+            actor="codex",
+            reason="사용자가 다른 세션의 중단을 확인함",
+            database_path=self.database_path,
+        )
+
+        self.assertEqual(result["run"]["status"], "interrupted")
+        self.assertEqual(
+            result["run"]["termination_reason"],
+            "사용자 확인으로 중단된 세션의 Run을 복구함",
+        )
+        self.assertEqual(result["work_item"]["status"], "ready")
+        self.assertEqual(
+            result["work_item"]["next_action"], "복구 도구를 구현한다."
+        )
+
+    def test_previous_turn_stale_run_can_be_listed_and_recovered(self) -> None:
+        work_item = state_store.create_work_item(
+            title="이전 turn 정리",
+            kind="maintenance",
+            goal="같은 세션의 미종료 Run을 다음 요청 전에 정리한다.",
+            next_action="UPS 복구 함수를 구현한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="UPS 복구 함수를 구현한다.",
+            actor="planner",
+            reason="구현 준비 완료",
+            database_path=self.database_path,
+        )
+        run = state_store.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+
+        running = state_store.list_running_runs(database_path=self.database_path)
+        self.assertEqual([item["id"] for item in running], [run["id"]])
+
+        result = state_store.recover_stale_run(
+            work_item["id"],
+            expected_run_id=run["id"],
+            actor="user_prompt_submit_hook",
+            database_path=self.database_path,
+        )
+
+        self.assertEqual(result["run"]["status"], "interrupted")
+        self.assertEqual(
+            result["run"]["termination_reason"],
+            "이전 turn에서 finish_work 없이 종료됨",
+        )
+        self.assertEqual(result["work_item"]["status"], "ready")
+        self.assertEqual(
+            result["work_item"]["next_action"], "UPS 복구 함수를 구현한다."
+        )
+        self.assertEqual(
+            state_store.list_running_runs(database_path=self.database_path), []
+        )
+
+    def test_abandoned_work_recovery_rejects_a_stale_run_id(self) -> None:
+        work_item = state_store.create_work_item(
+            title="복구 대상 검증",
+            kind="maintenance",
+            goal="잘못된 Run을 복구하지 않는다.",
+            next_action="정확한 Run을 확인한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="정확한 Run을 확인한다.",
+            actor="planner",
+            reason="검증 준비 완료",
+            database_path=self.database_path,
+        )
+        run = state_store.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+
+        with self.assertRaises(state_store.NotFoundError):
+            state_store.recover_abandoned_work(
+                work_item["id"],
+                expected_run_id="RUN-stale",
+                actor="codex",
+                reason="사용자가 복구를 확인함",
+                database_path=self.database_path,
+            )
+
+        self.assertEqual(
+            state_store.get_run(run["id"], database_path=self.database_path)["status"],
+            "running",
+        )
 
     def test_progressed_finish_requires_a_next_action_and_rolls_back(self) -> None:
         work_item = state_store.create_work_item(
