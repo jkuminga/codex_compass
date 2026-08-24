@@ -454,6 +454,19 @@ def authorize_tool_call(
             bindings_directory=bindings_directory,
         )
     except Exception as error:
+        if decision.reason_code == "complex_shell_requires_run":
+            return replace(
+                decision,
+                allowed=False,
+                reason_code=(
+                    f"warning:complex_command_retry:{type(error).__name__}"
+                ),
+                message=(
+                    "복합 Bash 명령이 안전 정책에 따라 중단되었습니다. "
+                    "조회가 목적이라면 읽기 전용 형태로 단순화하여 "
+                    "다시 시도하겠습니다."
+                ),
+            )
         return replace(
             decision,
             allowed=False,

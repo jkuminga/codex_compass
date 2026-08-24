@@ -106,6 +106,17 @@ class PreToolUseHookTests(unittest.TestCase):
         self.assertEqual(permission, "deny")
         self.assertIn("start_work()", reason)
 
+    def test_complex_read_retry_message_uses_warning_and_future_tense(self) -> None:
+        output = self.dispatch(
+            self.event("Bash", {"command": "rg TODO src 2>/dev/null"})
+        )
+
+        permission, reason = self.permission(output)
+        self.assertEqual(permission, "deny")
+        self.assertIn("warning:complex_command_retry", reason)
+        self.assertIn("다시 시도하겠습니다", reason)
+        self.assertNotIn("다시 실행했습니다", reason)
+
     def test_project_change_with_current_active_binding_is_allowed(self) -> None:
         self.create_active_binding()
 
