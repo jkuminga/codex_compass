@@ -75,6 +75,18 @@ class StartWorkPostToolUseHookTests(unittest.TestCase):
         result = post_tool_use.dispatch_post_tool_use(
             self.event(),
             recall_runner=recall,
+            started_status_reader=lambda _work_item_id, **_kwargs: {
+                "work_item": {
+                    "id": "WI-12",
+                    "title": "Recall Hook 구현",
+                    "status": "in_progress",
+                },
+                "progress": {
+                    "in_progress_count": 1,
+                    "ready_count": 2,
+                    "done_count": 7,
+                },
+            },
             bindings_directory=self.bindings_directory,
         )
 
@@ -92,11 +104,27 @@ class StartWorkPostToolUseHookTests(unittest.TestCase):
         self.assertEqual(context["run_id"], "RUN-34")
         self.assertEqual(context["memories"][0]["title"], "Recall 검색 규칙")
         self.assertNotIn("id", context["memories"][0])
+        message = result["systemMessage"]
+        self.assertIn("WI-12 · Recall Hook 구현", message)
+        self.assertIn("RUN-34 · running", message)
+        self.assertIn("Binding  : 연결됨", message)
+        self.assertIn("진행 중 1 / 준비 2 / 완료 7", message)
+        self.assertIn("관련 기억 1개 불러옴", message)
+        self.assertNotIn("session-1", message)
+        self.assertNotIn(str(self.bindings_directory), message)
 
     def test_recall_failure_does_not_remove_binding_or_block_codex(self) -> None:
         result = post_tool_use.dispatch_post_tool_use(
             self.event(),
             recall_runner=lambda _query: (_ for _ in ()).throw(RuntimeError("offline")),
+            started_status_reader=lambda _work_item_id, **_kwargs: {
+                "work_item": {"title": "Recall 실패 허용"},
+                "progress": {
+                    "in_progress_count": 1,
+                    "ready_count": 0,
+                    "done_count": 0,
+                },
+            },
             bindings_directory=self.bindings_directory,
         )
 
@@ -110,6 +138,42 @@ class StartWorkPostToolUseHookTests(unittest.TestCase):
         self.assertIn(
             "memory_recall_failed:unexpected_error", context["warnings"]
         )
+        self.assertIn("관련 기억 0개 불러옴 · 경고 1개", result["systemMessage"])
+
+    def test_started_status_reader_uses_the_state_store(self) -> None:
+        database_path = Path(self.temporary_directory.name) / "status.db"
+        state_store.initialize_database(database_path)
+        work_item = state_store.create_work_item(
+            title="사용자 시작 알림",
+            kind="implementation",
+            goal="현재 작업 상태를 짧게 보여준다.",
+            next_action="시작 알림을 만든다.",
+            actor="test",
+            database_path=database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="시작 알림을 만든다.",
+            actor="test",
+            reason="테스트 준비",
+            database_path=database_path,
+        )
+        state_store.start_run(
+            work_item["id"],
+            intent="시작 상태를 표시한다.",
+            recall_query="시작 상태 표시",
+            actor="test",
+            database_path=database_path,
+        )
+
+        status = post_tool_use.read_started_status(
+            work_item["id"], database_path=database_path
+        )
+
+        self.assertEqual(status["work_item"]["title"], "사용자 시작 알림")
+        self.assertEqual(status["progress"]["in_progress_count"], 1)
+        self.assertEqual(status["progress"]["ready_count"], 0)
 
     def test_malformed_start_work_response_returns_a_safe_warning(self) -> None:
         event = self.event()

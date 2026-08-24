@@ -19,6 +19,7 @@ DEFAULT_RECALL_LIMIT = 5
 DEFAULT_RECALL_TIMEOUT_SECONDS = 15
 
 RecallRunner = Callable[[str], dict[str, Any]]
+StartedStatusReader = Callable[..., Mapping[str, Any]]
 
 
 class HookInputError(ValueError):
@@ -122,10 +123,67 @@ def _context_packet(
     return json.dumps(packet, ensure_ascii=False, separators=(",", ":"))
 
 
+def read_started_status(
+    work_item_id: str,
+    *,
+    database_path: str | Path = state_store.DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Read the WorkItem label and compact project counts for the start notice."""
+
+    return {
+        "work_item": state_store.get_work_item(
+            work_item_id, database_path=database_path
+        ),
+        "progress": state_store.get_project_progress(database_path=database_path),
+    }
+
+
+def _started_system_message(
+    *,
+    work_item_id: str,
+    run_id: str,
+    started_status: Mapping[str, Any] | None,
+    recall_response: Mapping[str, Any],
+    warnings: list[str],
+) -> str:
+    """Build a small user-visible summary without session or filesystem details."""
+
+    work_item = started_status.get("work_item") if started_status else None
+    progress = started_status.get("progress") if started_status else None
+    title = work_item.get("title") if isinstance(work_item, Mapping) else None
+    work_item_label = work_item_id
+    if isinstance(title, str) and title.strip():
+        work_item_label = f"{work_item_id} · {title.strip()}"
+
+    lines = [
+        "Harness 작업 시작",
+        f"WorkItem : {work_item_label}",
+        f"Run      : {run_id} · running",
+        "Binding  : 연결됨",
+    ]
+    if isinstance(progress, Mapping):
+        lines.append(
+            "프로젝트 : "
+            f"진행 중 {progress.get('in_progress_count', 0)} / "
+            f"준비 {progress.get('ready_count', 0)} / "
+            f"완료 {progress.get('done_count', 0)}"
+        )
+
+    memories = recall_response.get("memories", [])
+    memory_count = len(memories) if isinstance(memories, list) else 0
+    unique_warnings = list(dict.fromkeys(warnings))
+    memory_status = f"관련 기억 {memory_count}개 불러옴"
+    if unique_warnings:
+        memory_status += f" · 경고 {len(unique_warnings)}개"
+    lines.append(f"장기기억 : {memory_status}")
+    return "\n".join(lines)
+
+
 def dispatch_post_tool_use(
     event: Mapping[str, Any],
     *,
     recall_runner: RecallRunner = run_recall,
+    started_status_reader: StartedStatusReader = read_started_status,
     database_path: str | Path = state_store.DEFAULT_DATABASE_PATH,
     bindings_directory: str | Path = runtime_binding.DEFAULT_BINDINGS_DIRECTORY,
 ) -> dict[str, Any] | None:
@@ -139,6 +197,7 @@ def dispatch_post_tool_use(
         return _dispatch_finish_work(event, bindings_directory=bindings_directory)
 
     warnings: list[str] = []
+    started_status: Mapping[str, Any] | None = None
     run_id = "unknown"
     intent = "start_work"
     try:
@@ -198,7 +257,16 @@ def dispatch_post_tool_use(
                 recall_response = {"ok": False, "memories": [], "warnings": []}
                 warnings.append("memory_recall_failed:unexpected_error")
 
-    return {
+            try:
+                started_status = started_status_reader(
+                    work_item_id, database_path=database_path
+                )
+            except Exception as status_error:
+                warnings.append(
+                    f"work_start_summary_failed:{type(status_error).__name__}"
+                )
+
+    output = {
         "continue": should_continue,
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
@@ -210,6 +278,19 @@ def dispatch_post_tool_use(
             ),
         },
     }
+    if should_continue:
+        combined_warnings = [
+            str(warning) for warning in recall_response.get("warnings", [])
+        ]
+        combined_warnings.extend(warnings)
+        output["systemMessage"] = _started_system_message(
+            work_item_id=work_item_id,
+            run_id=run_id,
+            started_status=started_status,
+            recall_response=recall_response,
+            warnings=combined_warnings,
+        )
+    return output
 
 
 def _dispatch_finish_work(
