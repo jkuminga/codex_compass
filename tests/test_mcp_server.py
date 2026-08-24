@@ -126,9 +126,16 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
         async with Client(create_server(self.database_path)) as client:
             run_result = await client.call_tool(
                 "start_work",
-                {"work_item_id": work_item["id"], "trace_ref": "trace://mcp/run-1"},
+                {
+                    "work_item_id": work_item["id"],
+                    "intent": "MCP 실행 흐름을 구현하고 검증한다.",
+                    "recall_query": "MCP 실행 검증",
+                    "trace_ref": "trace://mcp/run-1",
+                },
             )
             run = run_result.structured_content
+            self.assertEqual(run["intent"], "MCP 실행 흐름을 구현하고 검증한다.")
+            self.assertEqual(run["recall_query"], "MCP 실행 검증")
             artifact_result = await client.call_tool(
                 "record_artifact",
                 {
@@ -261,7 +268,12 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
 
         async with Client(create_server(self.database_path)) as client:
             run_result = await client.call_tool(
-                "start_work", {"work_item_id": work_item["id"]}
+                "start_work",
+                {
+                    "work_item_id": work_item["id"],
+                    "intent": "미완료 작업을 한 단계 진행한다.",
+                    "recall_query": "작업 진행 상태",
+                },
             )
             finish_result = await client.call_tool(
                 "finish_work",
@@ -300,7 +312,11 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             database_path=self.database_path,
         )
         run = state_store.start_run(
-            work_item["id"], actor="codex", database_path=self.database_path
+            work_item["id"],
+            intent="중단된 MCP 작업을 시작한다.",
+            recall_query="MCP 중단 복구",
+            actor="codex",
+            database_path=self.database_path,
         )
 
         async with Client(create_server(self.database_path)) as client:
@@ -337,7 +353,11 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             database_path=self.database_path,
         )
         run = state_store.start_run(
-            work_item["id"], actor="codex", database_path=self.database_path
+            work_item["id"],
+            intent="장기 기억 후보를 기록한다.",
+            recall_query="장기 기억 후보",
+            actor="codex",
+            database_path=self.database_path,
         )
 
         async with Client(create_server(self.database_path)) as client:

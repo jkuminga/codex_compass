@@ -145,7 +145,7 @@
             <tr><td data-label="MCP 도구"><code>manage_criterion</code></td><td data-label="설명">완료 조건을 추가·수정하거나 명시적으로 면제한다.</td><td data-label="주요 입력">작업 또는 조건 ID, 행동, 설명</td><td data-label="DB 함수"><div class="call-list"><code>add_criterion()</code><code>revise_criterion()</code><code>waive_criterion()</code></div></td></tr>
 
             <tr class="group-row"><td colspan="4">실행·검증</td></tr>
-            <tr><td data-label="MCP 도구"><code>start_work</code></td><td data-label="설명">설계·조사·구현 등을 수행할 ready WorkItem을 시작하고 Run을 만든다.</td><td data-label="주요 입력"><code>work_item_id</code>, Trace 참조</td><td data-label="DB 함수"><div class="call-list"><code>start_run()</code></div></td></tr>
+            <tr><td data-label="MCP 도구"><code>start_work</code></td><td data-label="설명">설계·조사·구현 등을 수행할 ready WorkItem을 시작하고 Run을 만든다.</td><td data-label="주요 입력"><code>work_item_id</code>, 사람이 읽는 <code>intent</code>, 공백 구분 검색어 <code>recall_query</code>, 선택적 Trace 참조</td><td data-label="DB 함수"><div class="call-list"><code>start_run()</code></div></td></tr>
             <tr><td data-label="MCP 도구"><code>record_artifact</code></td><td data-label="설명">파일·테스트·빌드 같은 실행 결과를 등록한다.</td><td data-label="주요 입력"><code>run_id</code>, 종류, 위치, 결과</td><td data-label="DB 함수"><div class="call-list"><code>create_artifact()</code></div></td></tr>
             <tr><td data-label="MCP 도구"><code>resolve_artifact</code></td><td data-label="설명">pending Artifact를 passed 또는 failed로 확정한다.</td><td data-label="주요 입력"><code>artifact_id</code>, 결과, 요약</td><td data-label="DB 함수"><div class="call-list"><code>resolve_artifact()</code></div></td></tr>
             <tr><td data-label="MCP 도구"><code>verify_criterion</code></td><td data-label="설명">Artifact를 완료 조건의 근거로 연결하고 판정한다.</td><td data-label="주요 입력">조건 ID, Artifact ID, 판정</td><td data-label="DB 함수"><div class="call-list"><code>link_evidence()</code><code>pass_criterion()</code><code>fail_criterion()</code></div></td></tr>
@@ -197,7 +197,7 @@
       </div>
     </section>
 
-    <footer><a href="./docs-index.html">← 문서 허브</a> · 표의 20개 MCP 도구는 <code>src/harness/mcp_server.py</code>에 구현되어 있다. Hook 지원 DB 함수와 Runtime Binding 함수도 구현되었으며, Codex lifecycle에 연결할 Hook 어댑터는 다음 구현 범위다.</footer>
+    <footer><a href="./docs-index.html">← 문서 허브</a> · 표의 20개 MCP 도구는 <code>src/harness/mcp_server.py</code>에 구현되어 있다. Hook 지원 DB 함수와 Runtime Binding 함수, <code>start_work</code> 전용 PostToolUse 어댑터도 구현되어 있다. 나머지 Codex lifecycle Hook은 다음 범위다.</footer>
   </main>
   <script>
     const tabs = [...document.querySelectorAll('.tab')];

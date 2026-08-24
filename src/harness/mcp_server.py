@@ -299,16 +299,23 @@ def create_server(
     @server.tool(name="start_work")
     def start_work(
         work_item_id: str,
+        intent: str,
+        recall_query: str,
         trace_ref: str | None = None,
     ) -> dict[str, Any]:
         """Start one ready WorkItem and create its single active Run.
 
         Call only after get_work_context has confirmed the goal, next action,
-        and Acceptance Criteria. A WorkItem cannot have two active Runs.
+        and Acceptance Criteria. ``intent`` is a short natural-language summary
+        of this Run. ``recall_query`` is two to five space-separated search
+        keywords chosen by Codex; the Hook uses it without inferring keywords.
+        A WorkItem cannot have two active Runs.
         """
 
         return state_store.start_run(
             work_item_id,
+            intent=intent,
+            recall_query=recall_query,
             trace_ref=trace_ref,
             actor="codex",
             database_path=database_path,

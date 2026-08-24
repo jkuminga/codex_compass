@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS acceptance_criteria (
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
   work_item_id TEXT NOT NULL REFERENCES work_items(id),
+  intent TEXT NOT NULL DEFAULT 'legacy run'
+    CHECK (length(trim(intent)) > 0),
+  recall_query TEXT NOT NULL DEFAULT 'legacy'
+    CHECK (length(trim(recall_query)) > 0),
   status TEXT NOT NULL DEFAULT 'running'
     CHECK (status IN ('running', 'succeeded', 'failed', 'interrupted', 'cancelled')),
   started_at TEXT NOT NULL CHECK (length(trim(started_at)) > 0),

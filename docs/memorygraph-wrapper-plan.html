@@ -327,18 +327,25 @@ src/harness/memory/
 
 tests/memory/
 ├── recall.test.ts                # 단위 테스트
-└── recall-integration.test.ts    # 실제 SQLiteBackend 계약 테스트</code></pre></article>
+└── recall-integration.test.ts    # 실제 SQLiteBackend 계약 테스트
+
+src/harness/hooks/
+└── post_tool_use.py              # start_work 분류·Binding·Recall·Context Packet
+
+.codex/hooks.json                 # start_work PostToolUse matcher
+bin/harness-post-tool-use         # Hook 명령 진입점
+tests/test_post_tool_use_hook.py  # Hook 분기·실패·출력 계약 테스트</code></pre></article>
         </div>
       </section>
 
       <section id="plan">
-        <div class="section-head"><div><p class="eyebrow">Implementation status</p><h2>현재 구현 상태</h2></div><p>Recall Wrapper와 독립 실행 CLI까지 구현하고 검증했다. 남은 단계는 <code>start_work</code> 전용 PostToolUse Hook 연결이다.</p></div>
+        <div class="section-head"><div><p class="eyebrow">Implementation status</p><h2>현재 구현 상태</h2></div><p>Recall Wrapper, 독립 실행 CLI와 <code>start_work</code> 전용 PostToolUse Hook까지 구현하고 검증했다.</p></div>
         <div class="milestones">
           <div class="milestone"><b>Submodule 고정 · 완료</b><span>공식 저장소와 정확한 SHA가 Git에 기록됐다.</span></div>
           <div class="milestone"><b>Client 경계 · 완료</b><span>프로젝트 DB 연결과 <code>searchMemories()</code> 호출을 구현했다.</span></div>
           <div class="milestone"><b>Recall 정책 · 완료</b><span>정규화·검색·병합·결정적 정렬을 테스트했다.</span></div>
           <div class="milestone"><b>CLI 제공 · 완료</b><span><code>bin/harness-memory recall</code>이 JSON 계약을 제공한다.</span></div>
-          <div class="milestone pending"><b>Hook 통합 · 다음</b><span><code>start_work</code> PostToolUse가 호출하고 Context Packet을 주입한다.</span></div>
+          <div class="milestone"><b>Hook 통합 · 완료</b><span><code>start_work</code> PostToolUse가 Binding을 저장하고 Context Packet을 주입한다.</span></div>
         </div>
         <h3 style="margin-top:34px">최소 검증 목록</h3>
         <div class="table-wrap"><table><thead><tr><th>검증</th><th>통과 조건</th></tr></thead><tbody>

@@ -1,0 +1,32 @@
+{
+  "description": "Prepare WorkItem context and maintain Runtime Bindings across Codex Turns.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/bin/harness-user-prompt-submit\"",
+            "timeout": 20,
+            "statusMessage": "Preparing project work context",
+            "additionalContextLimit": 1800
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^mcp__harness_state__(start|finish)_work$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/bin/harness-post-tool-use\"",
+            "timeout": 20,
+            "statusMessage": "Updating the active Run binding",
+            "additionalContextLimit": 1000
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -39,6 +39,12 @@ WorkItem이 `blocked`인 이유다. 막힌 상태에서만 기록하고, 다시 
 **Run**  
 하나의 WorkItem을 진전시키기 위한 한 번의 Codex 작업 실행이다. 하나의 WorkItem에는 여러 Run이 쌓일 수 있지만 동시에 `running`인 Run은 하나만 허용한다.
 
+**intent**<br>
+이번 Run에서 하려는 일을 사람이 이해할 수 있는 짧은 자연어 문장으로 기록한 값이다. `start_work()`를 호출할 때 Codex가 만든다.
+
+**recall_query**<br>
+이번 Run과 관련된 장기 기억을 찾기 위한 공백 구분 핵심어 문자열이다. `start_work()`가 `intent`와 별도로 받고, PostToolUse Hook은 단어를 추측하지 않고 그대로 Recall Wrapper에 전달한다.
+
 **Run status**  
 Run 자체의 실행 결과다. `running`, `succeeded`, `failed`, `interrupted`, `cancelled` 중 하나다.
 
@@ -122,6 +128,9 @@ Codex에 상태 저장소의 기능을 도구로 노출하는 인터페이스다
 
 **PostToolUse**  
 각 도구 실행 직후 결과를 Trace에 기록하고, `start_work`·`finish_work`에 맞춰 Runtime Binding을 관리하며, 기계적으로 식별 가능한 검증 결과를 Artifact로 등록하는 Hook이다.
+
+**additionalContext**<br>
+Hook이 Codex의 다음 추론에 추가하는 짧은 문자열이다. `start_work` 전용 PostToolUse는 Recall 결과에서 기억의 제목·요약·매칭 키워드만 추려 JSON Context Packet으로 넣는다.
 
 **Stop Guard**  
 Codex가 종료하려 할 때 실행 중인 Run, 미해결 검증과 기억 후보가 남았는지 검사하는 Hook이다. 결과를 대신 판단하거나 Run을 자동 종료하지 않고, 누락이 있으면 같은 Codex에 한 번만 정리를 요청한다.

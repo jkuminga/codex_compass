@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import state_store
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BINDINGS_DIRECTORY = PROJECT_ROOT / ".harness" / "runtime" / "bindings"
@@ -181,3 +183,27 @@ def find_run_owner(
     if len(owners) > 1:
         raise BindingConflictError("Run is referenced by more than one session Binding")
     return owners[0] if owners else None
+
+
+def validate_active_binding(
+    *,
+    session_id: str,
+    current_turn_id: str,
+    database_path: str | Path = state_store.DEFAULT_DATABASE_PATH,
+    bindings_directory: str | Path = DEFAULT_BINDINGS_DIRECTORY,
+) -> dict[str, dict[str, Any]]:
+    """Validate the current Turn's Binding against the authoritative DB state."""
+
+    _validate_identifier(current_turn_id, "current_turn_id")
+    binding = load_binding(session_id, bindings_directory=bindings_directory)
+    if binding is None:
+        raise BindingConflictError("current session has no Runtime Binding")
+    if binding["turn_id"] != current_turn_id:
+        raise BindingConflictError("Runtime Binding belongs to a different Turn")
+
+    active_run = state_store.validate_active_run(
+        binding["work_item_id"],
+        expected_run_id=binding["run_id"],
+        database_path=database_path,
+    )
+    return {"binding": binding, "active_run": active_run}

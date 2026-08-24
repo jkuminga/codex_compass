@@ -36,9 +36,9 @@
   <section id="status">
     <div class="section-head"><h2>현재 구현 상태</h2><p>이 문서는 목표 파이프라인의 정본이다. 이미 동작하는 부분과 다음에 구현할 부분을 구분한다.</p></div>
     <div class="three">
-      <article class="lane agent"><h3>구현됨</h3><p>SQLite 상태 저장소, MCP 도구, 세션별 Runtime Binding, UPS Run 조회·복구 함수.</p></article>
-      <article class="lane hook"><h3>다음 구현</h3><p>Hook 어댑터, Trace와 Stop Guard.</p></article>
-      <article class="lane skill"><h3>다음 구현</h3><p>MemoryGraph Finalize Skill과 후보 승격·거절 절차.</p></article>
+      <article class="lane agent"><h3>작업 시작 · 구현됨</h3><p>UserPromptSubmit, <code>$work-start</code> 스킬, SQLite·MCP, 세션별 Runtime Binding, <code>start_work</code>·<code>finish_work</code> 전용 PostToolUse와 Recall Wrapper.</p></article>
+      <article class="lane hook"><h3>다음 구현</h3><p>PreToolUse의 도구 분류와 <code>validate_active_binding()</code> 기반 변경 허용·차단.</p></article>
+      <article class="lane skill"><h3>후속 구현</h3><p>일반 PostToolUse·Stop Guard·Trace 연결과 MemoryGraph Finalize Skill.</p></article>
     </div>
   </section>
 
@@ -54,48 +54,46 @@
   <section id="prompt-packet">
     <div class="section-head"><h2>UserPromptSubmit은 미종료 작업을 정리하고 후보를 공급한다</h2><p>사용자 프롬프트가 제출되면 모델보다 먼저 실행되는 Hook이다. 이전 turn에서 확실히 남은 Run만 기계적으로 복구한 뒤, 의미를 판단하지 않고 작은 <strong>State Context Packet</strong>을 Codex 문맥에 추가한다.</p></div>
     <div class="binding">
-      <div><h3>State Context Packet</h3><p>이번 요청이 어떤 WorkItem과 이어지는지 Codex가 빠르게 비교하도록 주는 짧은 상태 묶음이다. 전체 DB를 덤프하지 않고 복구 결과, 다른 세션의 활성 작업과 실행 가능한 후보만 담는다.</p><ol><li><code>check_database_health()</code>로 SQLite를 읽을 수 있는지 확인한다. 실패하면 복구·상태 조회는 중단하고 경고를 전달하며, 이후 PreToolUse가 프로젝트 변경을 막는다.</li><li><code>list_running_runs()</code>로 모든 <code>running</code> Run을 조회한다.</li><li>현재 세션의 Binding이 같은 <code>session_id</code>, 이전 <code>turn_id</code>, 같은 <code>run_id</code>를 가리킬 때만 <code>recover_stale_run()</code>으로 복구한다. 함수는 Run을 <code>interrupted</code>로 끝내면서 종료 시각, 고정된 복구 요약·종료 이유를 기록하고, WorkItem을 기존 <code>next_action</code>이 있는 <code>ready</code>로 바꾼 뒤 Binding을 삭제한다.</li><li><code>list_running_runs()</code>를 다시 호출해 남은 Run을 <code>active_work_items</code>로 만든다. 다른 세션 소유이거나 Binding이 없는 Run은 자동 변경하지 않는다.</li><li><code>get_project_progress()</code>로 복구가 반영된 진행량을 조회한다.</li><li><code>list_next_work_items(limit=3)</code>로 복구된 항목을 포함한 <code>ready</code> 후보 최대 3개를 priority가 높은 순서, 같으면 오래 기다린 순서로 가져온다.</li></ol></div>
+      <div><h3>State Context Packet</h3><p>이번 요청이 어떤 WorkItem과 이어지는지 Codex가 빠르게 비교하도록 주는 짧은 상태 묶음이다. 전체 DB를 덤프하지 않고 복구 결과, 다른 세션의 활성 작업과 실행 가능한 후보만 담는다.</p><ol><li><code>check_database_health()</code>로 SQLite를 읽을 수 있는지 확인한다. 실패하면 복구·상태 조회는 중단하고 경고를 전달하며, 이후 PreToolUse가 프로젝트 변경을 막는다.</li><li>현재 <code>session_id</code>의 Binding을 읽고 <code>list_running_runs()</code>로 모든 <code>running</code> Run을 조회한다.</li><li>Binding이 정확한 running Run을 가리키고 <code>binding.turn_id != current_turn_id</code>일 때만 <code>recover_stale_run()</code>으로 복구한다. <code>turn_id</code>는 순서 없는 식별자이므로 대소 비교하지 않는다.</li><li>Binding의 Run이 running 목록에 없으면 <code>get_run()</code>으로 확인한다. 이미 종료됐거나 존재하지 않으면 <code>finish_work</code> PostToolUse가 놓친 포인터이므로 <code>delete_binding(expected_run_id=...)</code>으로 현재 세션 Binding만 정리한다.</li><li><code>list_running_runs()</code>를 다시 호출해 남은 Run을 <code>active_work_items</code>로 만든다. 다른 세션 소유이거나 Binding이 없는 Run은 자동 변경하지 않는다.</li><li><code>get_project_progress()</code>로 복구가 반영된 진행량을 조회한다.</li><li><code>list_next_work_items(limit=3)</code>로 복구된 항목을 포함한 <code>ready</code> 후보 최대 3개를 priority가 높은 순서, 같으면 오래 기다린 순서로 가져온다.</li></ol></div>
       <pre><code>{
-  "recovered_runs": [
-    {
-      "run_id": "RUN-11",
-      "work_item_id": "WI-12",
-      "status": "interrupted"
-    }
-  ],
+  "type": "work_selection_context",
+  "schema_version": 1,
+  "db_ok": true,
+  "recovered_runs": [],
   "active_work_items": [
     {
-      "id": "WI-20",
+      "work_item_id": "WI-20",
       "run_id": "RUN-19",
-      "owner_session_id": "session-B",
-      "title": "Hook 정책 구현"
+      "title": "Hook 정책 구현",
+      "goal": "Run 없는 변경을 차단한다",
+      "intent": "PreToolUse 정책 구현",
+      "ownership": "other_session"
     }
   ],
-  "recovery_warnings": [],
-  "project": {
-    "in_progress": 0,
-    "ready": 2,
-    "blocked": 1
-  },
   "ready_candidates": [
     {
-      "id": "WI-12",
+      "work_item_id": "WI-12",
       "title": "Run 생성 정책 확정",
-      "kind": "decision",
       "goal": "단일 요청의 Run 시작 규칙을 확정한다",
-      "next_action": "WorkItem 매칭 기준을 문서화한다"
+      "next_action": "WorkItem 매칭 기준을 문서화한다",
+      "priority": "high"
     }
-  ]
+  ],
+  "project_progress": { "ready_count": 2 },
+  "warnings": []
 }</code></pre>
     </div>
     <div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>Hook이 하는 일</th><th>Hook이 하지 않는 일</th><th>이유</th></tr></thead><tbody>
       <tr><td data-label="Hook이 하는 일"><code>list_running_runs()</code>로 미종료 Run을 찾고, 현재 세션의 이전 turn 소유가 확인된 항목만 <code>recover_stale_run()</code>으로 복구</td><td data-label="Hook이 하지 않는 일">다른 세션 또는 Binding 없는 Run의 자동 종료</td><td data-label="이유">다른 세션의 정상 실행을 실수로 중단하면 안 된다.</td></tr>
+      <tr><td data-label="Hook이 하는 일">현재 세션 Binding이 종료됐거나 존재하지 않는 Run을 가리키면 <code>expected_run_id</code> 조건으로 Binding만 삭제</td><td data-label="Hook이 하지 않는 일">다른 세션의 오래된 Binding 추측 삭제</td><td data-label="이유"><code>finish_work</code> PostToolUse 누락은 복구하되 병렬 세션의 소유권은 침범하지 않는다.</td></tr>
       <tr><td data-label="Hook이 하는 일">복구 후 running Run을 재조회해 <code>active_work_items</code>를 만들고, 진행량과 <code>ready</code> 후보 최대 3개를 제공</td><td data-label="Hook이 하지 않는 일">사용자 요청의 의미 분류</td><td data-label="이유">Hook에는 추론 능력이 없고 입력만으로 답이 정해지는 처리만 맡는다.</td></tr>
       <tr><td data-label="Hook이 하는 일">DB 건강 검사 실패를 경고하고 상태 패킷을 실패 상태로 반환</td><td data-label="Hook이 하지 않는 일">불완전한 DB 상태로 복구·변경 계속</td><td data-label="이유">단순 답변과 읽기는 계속할 수 있지만 프로젝트 변경은 PreToolUse에서 fail-closed로 막아야 한다.</td></tr>
       <tr><td data-label="Hook이 하는 일">후보 순서와 필드를 기계적으로 제한</td><td data-label="Hook이 하지 않는 일">WorkItem 선택·생성 또는 Run 시작</td><td data-label="이유">후보가 이번 요청과 같은 목표인지는 Codex가 판단해야 한다.</td></tr>
-      <tr><td data-label="Hook이 하는 일">DB 장애 시 짧은 경고를 주고 빈 후보로 계속</td><td data-label="Hook이 하지 않는 일">프롬프트에 WorkItem ID가 있다고 가정</td><td data-label="이유">사용자는 보통 내부 ID를 모르며, ID가 적혀 있어도 현재 목표와 상태를 다시 확인해야 한다.</td></tr>
+      <tr><td data-label="Hook이 하는 일">DB 장애 시 <code>db_ok: false</code>, 빈 목록과 짧은 경고를 반환</td><td data-label="Hook이 하지 않는 일">부분 조회 결과로 프로젝트 작업 계속</td><td data-label="이유">일회성 답변은 가능하지만 상태를 기록할 수 없는 프로젝트 변경은 중단해야 한다.</td></tr>
       <tr><td data-label="Hook이 하는 일">후보가 없다는 사실을 그대로 전달</td><td data-label="Hook이 하지 않는 일">후보가 없다는 이유만으로 새 WorkItem 생성</td><td data-label="이유">일회성 질문일 수도 있고, 상위 3개 밖에 관련 작업이 있을 수도 있다.</td></tr>
     </tbody></table></div>
+    <div class="callout"><p><strong>UPS 출력 계약:</strong> Hook은 JSON을 <code>&lt;work-selection-context&gt;</code>로 감싸고 “이 패킷으로 <code>$work-start</code>를 실행하라”는 짧은 지시만 함께 보낸다. WorkItem 판단 규칙의 단일 원본은 <code>.agents/skills/work-start/SKILL.md</code>이며 AGENTS.md에는 패킷이나 스킬이 없을 때 변경을 중단하는 최소 안전 규칙만 둔다.</p></div>
+    <div class="callout"><p><strong>실패는 대체 실행하지 않는다.</strong> UPS가 실패하면 <code>db_ok: false</code>, 빈 상태 목록과 짧은 <code>warnings</code>를 반환한다. 패킷이 없거나 DB가 비정상이면 Codex는 일회성 질문에는 답할 수 있지만 프로젝트 작업은 시작하지 않는다. <code>$work-start</code>가 UPS 조회·복구를 대신 호출하지 않는다.</p></div>
     <div class="callout"><p><strong>선택 전 제한:</strong> 아직 WorkItem이 정해지지 않았으므로 UserPromptSubmit은 <code>get_work_context()</code>나 <code>start_work()</code>를 호출하지 않는다. Acceptance Criteria와 최근 Run처럼 큰 문맥은 후보가 선택된 뒤에만 읽는다.</p></div>
   </section>
 
@@ -123,18 +121,18 @@
     </div>
 
     <div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>결정 결과</th><th>Codex 호출 순서</th><th>최종 상태</th></tr></thead><tbody>
-      <tr><td data-label="결정 결과">기존 WorkItem</td><td data-label="Codex 호출 순서"><code>get_work_context(id)</code> → 목표·<code>next_action</code>·Acceptance Criteria 확인 → <code>start_work(id)</code></td><td data-label="최종 상태">WorkItem <code>in_progress</code> · 새 Run <code>running</code></td></tr>
-      <tr><td data-label="결정 결과">다른 세션 소유 WorkItem</td><td data-label="Codex 호출 순서">충돌 안내 → “해당 세션이 이미 종료됐다면, 남은 Run을 중단 처리하고 WI 잠금을 해제할까요?” 질문 → 명시적 동의 시 <code>recover_abandoned_work(work_item_id, expected_run_id, "confirmed")</code> → <code>get_work_context(id)</code> → <code>start_work(id)</code></td><td data-label="최종 상태">기존 Run <code>interrupted</code> · WorkItem <code>ready</code> 복구 후 현재 세션의 새 Run 시작</td></tr>
-      <tr><td data-label="결정 결과">새 WorkItem</td><td data-label="Codex 호출 순서"><code>create_work_item(...)</code> → 목표 중심 Acceptance Criteria와 구체적인 <code>next_action</code> 확인 → <code>change_work_item_state(ready)</code> → <code>get_work_context(id)</code> → <code>start_work(id)</code></td><td data-label="최종 상태">WorkItem <code>in_progress</code> · 새 Run <code>running</code></td></tr>
+      <tr><td data-label="결정 결과">기존 WorkItem</td><td data-label="Codex 호출 순서"><code>get_work_context(id)</code> → 목표·<code>next_action</code>·Acceptance Criteria 확인 → <code>start_work(id, intent, recall_query)</code></td><td data-label="최종 상태">WorkItem <code>in_progress</code> · 새 Run <code>running</code></td></tr>
+      <tr><td data-label="결정 결과">다른 세션 소유 WorkItem</td><td data-label="Codex 호출 순서">충돌 안내 → “해당 세션이 이미 종료됐다면, 남은 Run을 중단 처리하고 WI 잠금을 해제할까요?” 질문 → 명시적 동의 시 <code>recover_abandoned_work(work_item_id, expected_run_id, "confirmed")</code> → <code>get_work_context(id)</code> → <code>start_work(id, intent, recall_query)</code></td><td data-label="최종 상태">기존 Run <code>interrupted</code> · WorkItem <code>ready</code> 복구 후 현재 세션의 새 Run 시작</td></tr>
+      <tr><td data-label="결정 결과">새 WorkItem</td><td data-label="Codex 호출 순서"><code>create_work_item(...)</code> → 목표 중심 Acceptance Criteria와 구체적인 <code>next_action</code> 확인 → <code>change_work_item_state(ready)</code> → <code>get_work_context(id)</code> → <code>start_work(id, intent, recall_query)</code></td><td data-label="최종 상태">WorkItem <code>in_progress</code> · 새 Run <code>running</code></td></tr>
       <tr><td data-label="결정 결과">일회성 답변</td><td data-label="Codex 호출 순서">상태 변경 MCP를 호출하지 않음</td><td data-label="최종 상태">DB 변경 없음</td></tr>
     </tbody></table></div>
-    <div class="callout"><p><strong>Recall 위치와 방식 확정:</strong> MemoryGraph 장기 기억 조회는 <code>start_work()</code>가 성공한 직후, 이 도구 전용 <code>PostToolUse</code>에서 실행한다. Hook은 공백으로 구분된 키워드 문자열을 wrapper에 넘기고, wrapper는 키워드마다 MemoryGraph <code>recall</code>을 호출한 뒤 결과를 병합한다. 조회 실패는 이미 생성된 Run을 취소하지 않으며 경고만 남기고 작업을 계속한다.</p></div>
+    <div class="callout"><p><strong>Recall 위치와 방식 확정:</strong> MemoryGraph 장기 기억 조회는 <code>start_work()</code>가 성공한 직후, 이 도구 전용 <code>PostToolUse</code>에서 실행한다. Codex는 자연어 작업 요약인 <code>intent</code>와 공백으로 구분한 검색어 <code>recall_query</code>를 함께 전달한다. Hook은 검색어를 다시 추측하지 않고 wrapper에 그대로 넘긴다. Wrapper는 키워드별 결과를 병합하며, 조회 실패는 이미 생성된 Run을 취소하지 않고 경고만 주입한다.</p></div>
   </section>
 
   <section id="flow">
     <div class="section-head"><h2>프로젝트 작업의 전체 흐름</h2><p>설계·조사·의사결정·구현·검증에 공통으로 적용한다. 단계를 누르면 실제 책임을 확인할 수 있다.</p></div>
     <div class="pipeline">
-      <article class="step hook active" data-detail="DB 건강을 확인하고 running Run을 조회한다. 현재 세션의 이전 turn 소유가 확인된 항목만 interrupted로 복구한 뒤 running Run을 재조회해 다른 세션의 active WorkItem, 프로젝트 진행량과 ready 후보 최대 3개를 주입한다."><b>1. UserPromptSubmit</b><span>복구 → 재조회 → 상태 패킷</span></article>
+      <article class="step hook active" data-detail="DB 건강과 현재 세션 Binding을 확인한다. 다른 turn_id의 running Run은 interrupted로 복구하고, 이미 종료된 Run을 가리키는 Binding은 fallback으로 삭제한다. 그 뒤 running Run을 재조회해 다른 세션의 active WorkItem, 프로젝트 진행량과 ready 후보 최대 3개를 주입한다."><b>1. UserPromptSubmit</b><span>Binding 정리 → 복구 → 상태 패킷</span></article>
       <article class="step agent" data-detail="Codex가 일회성 답변인지 프로젝트 작업인지 먼저 구분한다. 프로젝트 작업이면 goal과 next_action을 비교해 기존 WorkItem 재사용을 우선한다. UPS 후보가 맞지 않으면 핵심 용어로 search_work_items를 한 번 호출하고, 결과에도 적합한 목표가 없을 때만 새로 만든다."><b>2. 요청 분류·매칭</b><span>답변 · 재사용 · 검색 1회 · 생성</span></article>
       <article class="step agent" data-detail="기존 WorkItem은 get_work_context 후 start_work를 호출한다. 새 목표는 create_work_item, ready 전환, get_work_context, start_work 순으로 준비한다. start_work 성공 직후 전용 PostToolUse가 Runtime Binding을 저장하고 MemoryGraph 장기 기억 조회를 실행한다."><b>3. 작업 시작</b><span>Context → start_work → Recall</span></article>
       <article class="step hook" data-detail="도구 이름과 입력을 정책표로 분류한다. 명확한 조회는 허용하고, 작업 준비 도구는 Run 없이 허용하며, 프로젝트 변경과 불명확한 호출은 유효한 활성 Run을 요구한다. 위험 호출은 별도로 거부한다."><b>4. PreToolUse</b><span>도구 분류 · 상태 검사</span></article>
@@ -142,10 +140,10 @@
       <article class="step hook" data-detail="도구 결과를 Trace에 기록한다. 테스트·린트·빌드·커밋처럼 기계적으로 식별 가능한 결과만 Artifact로 자동 등록한다."><b>6. PostToolUse</b><span>Trace · Artifact 기록</span></article>
       <article class="step agent" data-detail="Codex가 Artifact가 어떤 Acceptance Criterion을 증명하는지 판단하고 verify_criterion을 호출한다."><b>7. 검증 연결</b><span>verify_criterion</span></article>
       <article class="step skill" data-detail="pending 후보가 있을 때 MemoryGraph Skill로 가치·중복·관계를 검토한다. 저장 후 promote, 제외 시 reject 처리한다."><b>8. 기억 Finalize</b><span>promote · reject</span></article>
-      <article class="step agent" data-detail="get_postflight_status로 누락을 확인한 뒤 finish_work를 호출한다. WorkItem 전체가 끝나면 completed, 이번 세션 목표만 달성하고 계속 이어가면 progressed로 종료한다."><b>9. 종료 준비</b><span>postflight → finish_work</span></article>
+      <article class="step agent" data-detail="get_postflight_status로 누락을 확인한 뒤 finish_work를 호출한다. 성공 직후 전용 PostToolUse가 종료된 run_id와 현재 세션 Binding을 비교하고 expected_run_id 조건으로 삭제한다."><b>9. 종료 준비</b><span>finish_work → Binding 삭제</span></article>
       <article class="step hook" data-detail="Run이나 완료 조건 처리가 남았는지만 검사한다. 마감을 대신하지 않고 누락 시 같은 Codex를 한 번 계속한다."><b>10. Stop Guard</b><span>통과 또는 1회 계속</span></article>
     </div>
-    <div class="inspector"><b id="inspect-title">1. UserPromptSubmit</b><p id="inspect-detail">DB 건강을 확인하고 running Run을 조회한다. 현재 세션의 이전 turn 소유가 확인된 항목만 interrupted로 복구한 뒤 running Run을 재조회해 다른 세션의 active WorkItem, 프로젝트 진행량과 ready 후보 최대 3개를 주입한다.</p></div>
+    <div class="inspector"><b id="inspect-title">1. UserPromptSubmit</b><p id="inspect-detail">DB 건강과 현재 세션 Binding을 확인한다. 다른 turn_id의 running Run은 interrupted로 복구하고, 이미 종료된 Run을 가리키는 Binding은 fallback으로 삭제한다. 그 뒤 running Run을 재조회해 다른 세션의 active WorkItem, 프로젝트 진행량과 ready 후보 최대 3개를 주입한다.</p></div>
   </section>
 
   <section id="memory-recall">
@@ -153,7 +151,7 @@
     <div class="recall-chain" aria-label="키워드 기반 Recall 병합 흐름">
       <div class="recall-box"><b>1 · 한 문자열 입력</b><p>Codex가 이번 작업을 나타내는 짧은 기술 키워드를 공백으로 구분해 전달한다.</p><div class="term-list"><code>pretooluse</code><code>bash</code><code>hook</code></div></div>
       <div class="recall-arrow" aria-hidden="true">→</div>
-      <div class="recall-box"><b>2 · Wrapper가 분리·호출</b><p><code>harness-memory</code>가 중복과 빈 값을 제거하고 각 키워드로 <code>memorygraph recall</code>을 한 번씩 실행한다.</p></div>
+      <div class="recall-box"><b>2 · Wrapper가 분리·검색</b><p><code>harness-memory</code>가 중복과 빈 값을 제거하고 각 키워드로 vendored MemoryGraph의 <code>searchMemories()</code>를 한 번씩 실행한다.</p></div>
       <div class="recall-arrow" aria-hidden="true">→</div>
       <div class="recall-box"><b>3 · ID 병합·정렬</b><p>같은 기억이 여러 검색에 나오면 하나로 합친다. 서로 다른 키워드 검색에 많이 등장한 기억을 먼저 두고 상위 3~5개만 Context Packet으로 전달한다.</p></div>
     </div>
@@ -165,7 +163,7 @@
     </tbody></table></div>
 
     <div class="binding" style="margin-top:18px">
-      <div><h3>Wrapper</h3><p>Hook과 MemoryGraph CLI 사이에 두는 프로젝트 전용 어댑터다. <code>MEMORY_BACKEND=sqlite</code>와 <code>MEMORY_SQLITE_PATH=.harness/memorygraph.db</code>를 설정하고, 입력 파싱, 여러 Recall 실행, 결과 중복 제거와 정렬을 담당한다. 이 DB는 프로젝트 진행 상태를 보관하는 <code>.harness/state.db</code>와 분리한다. Codex는 중간 결과를 보지 않고 최종 Context Packet만 받는다.</p></div>
+      <div><h3>Wrapper</h3><p>Hook과 vendored MemoryGraph 코드 사이에 두는 프로젝트 전용 어댑터다. 기본적으로 <code>.harness/memorygraph.db</code>를 열고, 입력 파싱, 키워드별 검색, 결과 중복 제거와 정렬을 담당한다. 이 DB는 프로젝트 진행 상태를 보관하는 <code>.harness/state.db</code>와 분리한다. Codex는 중간 결과를 보지 않고 최종 Context Packet만 받는다.</p></div>
       <pre><code>입력: "pretooluse bash hook"
 
 recall("pretooluse") → A
@@ -183,7 +181,7 @@ recall("hook")       → A, C
       <tr><td data-label="규칙">상위 3~5개만 전달</td><td data-label="쉬운 의미">전체 기억과 각 Recall의 원본 출력을 모델 문맥에 넣지 않아 토큰을 제한한다.</td></tr>
       <tr><td data-label="규칙">일부 키워드 Recall 실패는 나머지 결과로 계속</td><td data-label="쉬운 의미">모든 조회가 실패한 경우에만 경고하고, 어느 경우에도 시작된 Run을 되돌리지 않는다.</td></tr>
     </tbody></table></div>
-    <div class="callout"><p><strong>구현 전 확인:</strong> Wrapper가 기억 ID를 안전하게 병합하려면 MemoryGraph에서 기계적으로 읽을 수 있는 안정적인 출력이 필요하다. 현재 CLI가 JSON 출력을 제공하지 않는다면 사람이 읽는 문자열을 억지로 파싱하지 말고, MemoryGraph 라이브러리 API를 호출하거나 얇은 JSON 어댑터를 추가한다.</p></div>
+    <div class="callout"><p><strong>구현된 경계:</strong> Wrapper는 vendored MemoryGraph의 SQLiteBackend API를 직접 호출하고 안정적인 JSON을 만든다. Hook은 그 JSON에서 Codex에 필요한 제목·요약·매칭 키워드만 추려 <code>additionalContext</code>에 넣는다.</p></div>
   </section>
 
   <section id="pretool-policy">
@@ -192,7 +190,7 @@ recall("hook")       → A, C
       <tr><td data-label="우선순위">1</td><td data-label="분류">명시적 위험</td><td data-label="대표 호출"><code>rm -rf</code>, <code>git reset --hard</code>, <code>git clean -fd</code>, <code>git push --force</code>, 저장소 밖 변경</td><td data-label="기계적 처리">v1에서는 활성 Run과 관계없이 거부한다. 일회성 허가 수단을 설계하기 전에는 Hook 우회 실행을 제공하지 않는다.</td></tr>
       <tr><td data-label="우선순위">2</td><td data-label="분류">명확한 조회</td><td data-label="대표 호출">조회 전용 MCP, 아래 Bash 조회 허용 목록</td><td data-label="기계적 처리">Run 없이 허용한다.</td></tr>
       <tr><td data-label="우선순위">3</td><td data-label="분류">작업 준비</td><td data-label="대표 호출"><code>create_work_item</code>, <code>start_work</code> 계열 MCP</td><td data-label="기계적 처리">Run을 만들기 위한 호출이므로 활성 Run 없이 허용한다. 입력과 상태 전이의 유효성은 MCP·DB 함수가 검사한다.</td></tr>
-      <tr><td data-label="우선순위">4</td><td data-label="분류">프로젝트 변경</td><td data-label="대표 호출"><code>apply_patch</code>, 변경·종료·기록 MCP, 테스트·빌드·Git 쓰기 Bash</td><td data-label="기계적 처리">Runtime Binding이 가리키는 Run이 DB에서 실제 <code>running</code>이고 WorkItem이 <code>in_progress</code>일 때만 허용한다.</td></tr>
+      <tr><td data-label="우선순위">4</td><td data-label="분류">프로젝트 변경</td><td data-label="대표 호출"><code>apply_patch</code>, 변경·종료·기록 MCP, 테스트·빌드·Git 쓰기 Bash</td><td data-label="기계적 처리"><code>validate_active_binding(session_id, current_turn_id)</code>이 현재 Turn의 Binding과 DB의 <code>running</code> Run·<code>in_progress</code> WorkItem을 모두 확인한 경우에만 허용한다.</td></tr>
       <tr><td data-label="우선순위">5</td><td data-label="분류">미등록·불명확</td><td data-label="대표 호출">처음 보는 MCP, Python·Node 스크립트, 복합 Bash</td><td data-label="기계적 처리">변경 가능 호출로 간주하여 활성 Run을 요구한다.</td></tr>
     </tbody></table></div>
 
@@ -208,8 +206,20 @@ recall("hook")       → A, C
 1. 위험 호출인가?               → 거부
 2. 조회 허용 목록인가?          → 허용
 3. WorkItem·Run 준비 호출인가?  → 허용
-4. Binding과 DB 상태가 유효한가? → 허용
+4. validate_active_binding() 성공? → 허용
 5. 나머지                      → 거부하고 Run 시작 안내</code></pre>
+    </div>
+    <div class="binding" style="margin-top:18px">
+      <div><h3>프로젝트 변경 전 활성 Binding 검증</h3><p><code>validate_active_binding()</code>은 Runtime Binding을 상태의 정본으로 믿지 않고 현재 Turn과 SQLite의 실제 실행 상태를 한 번에 교차 확인하는 Hook 전용 함수다.</p><ul><li>현재 세션의 Binding 파일이 존재해야 한다.</li><li><code>binding.turn_id == current_turn_id</code>여야 한다.</li><li>Binding의 <code>run_id</code>와 <code>work_item_id</code>가 DB에서 서로 연결되어 있어야 한다.</li><li>Run은 <code>running</code>, WorkItem은 <code>in_progress</code>여야 한다.</li><li>검증은 프로젝트 변경으로 분류된 도구에만 실행하며 조회 도구에는 DB를 열지 않는다.</li></ul></div>
+      <pre><code>validate_active_binding(
+  session_id,
+  current_turn_id
+)
+
+Binding 없음                 → 거부
+다른 turn_id                → 거부
+DB Run·WorkItem 상태 불일치 → 거부
+모든 값 일치                → 허용</code></pre>
     </div>
     <div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>경계 상황</th><th>확정 정책</th><th>쉬운 의미</th></tr></thead><tbody>
       <tr><td data-label="경계 상황">Binding 없음·불일치</td><td data-label="확정 정책">조회와 <code>create_work_item</code>·<code>start_work</code>만 허용하고, 나머지 변경은 거부한다.</td><td data-label="쉬운 의미">현재 요청과 연결된 Run을 모르면 파일이나 상태를 바꾸지 않는다.</td></tr>
@@ -219,7 +229,7 @@ recall("hook")       → A, C
       <tr><td data-label="경계 상황">위험 명령 예외</td><td data-label="확정 정책">v1은 예외 없이 거부한다. 이후 필요해지면 사용자 승인으로 생성되는 1회성 Permit을 별도 설계한다.</td><td data-label="쉬운 의미">초기 구현에서는 위험 명령을 자동으로 풀어 주지 않는다.</td></tr>
     </tbody></table></div>
     <div class="binding" style="margin-top:18px">
-      <div><h3>정책 코드의 단일 위치</h3><p>도구 목록과 판정 규칙은 <code>src/harness/hook_policy.py</code> 한 곳에 둔다. Hook 실행 파일은 JSON 입력을 읽고 이 모듈을 호출하는 얇은 어댑터만 담당한다.</p><ul><li>조회·작업 준비·활성 Run 필요 MCP 집합</li><li>Bash 조회 허용 목록과 위험 패턴</li><li>경로 정규화와 보호 경로 검사</li><li><code>classify_tool_call()</code>: 호출을 조회·준비·변경·위험으로 분류</li><li><code>authorize_tool_call()</code>: Binding과 DB 상태까지 확인해 최종 허용·거부</li></ul></div>
+      <div><h3>정책 코드의 단일 위치</h3><p>도구 목록과 판정 규칙은 <code>src/harness/hook_policy.py</code> 한 곳에 둔다. Hook 실행 파일은 JSON 입력을 읽고 이 모듈을 호출하는 얇은 어댑터만 담당한다.</p><ul><li>조회·작업 준비·활성 Run 필요 MCP 집합</li><li>Bash 조회 허용 목록과 위험 패턴</li><li>경로 정규화와 보호 경로 검사</li><li><code>classify_tool_call()</code>: 호출을 조회·준비·변경·위험으로 분류</li><li><code>authorize_tool_call()</code>: 변경 호출이면 <code>validate_active_binding()</code>으로 현재 Turn의 Binding과 DB 상태를 확인해 최종 허용·거부</li></ul></div>
       <pre><code>PreToolUse JSON
   → hook adapter
   → hook_policy.classify_tool_call()
@@ -241,16 +251,17 @@ recall("hook")       → A, C
   <section id="matrix">
     <div class="section-head"><h2>단계별 Interface 호출표</h2><p>MCP 도구는 Codex 전용이다. Hook·CLI·테스트 같은 내부 시스템은 <code>state_store.py</code>를 직접 사용한다.</p></div>
     <div class="table-wrap"><table><thead><tr><th>시점</th><th>주체</th><th>호출</th><th>이유</th></tr></thead><tbody>
-      <tr><td data-label="시점">요청 직전</td><td data-label="주체"><span class="owner hook">UserPromptSubmit</span></td><td data-label="호출"><code>check_database_health()</code> → <code>list_running_runs()</code> → 자기 세션의 이전 turn만 <code>recover_stale_run()</code> → <code>list_running_runs()</code> 재조회 → <code>get_project_progress()</code> → <code>list_next_work_items(limit=3)</code></td><td data-label="이유">복구 후 다시 조회해야 다른 세션의 실제 active WorkItem과 복구된 ready 후보가 모순 없이 전달된다. <code>list_running_runs()</code>와 <code>recover_stale_run()</code>은 구현 완료된 Hook 전용 DB Interface다.</td></tr>
+      <tr><td data-label="시점">요청 직전</td><td data-label="주체"><span class="owner hook">UserPromptSubmit</span></td><td data-label="호출"><code>check_database_health()</code> → 현재 Binding·<code>list_running_runs()</code> 비교 → 다른 <code>turn_id</code>의 자기 Run만 <code>recover_stale_run()</code> → 종료 Run Binding fallback 삭제 → <code>list_running_runs()</code> 재조회 → 진행량·후보 조회</td><td data-label="이유">정상 종료 Hook이 놓친 현재 세션 Binding까지 정리한 후 재조회해야 active WorkItem과 ready 후보가 모순 없이 전달된다. 다른 세션 Binding은 건드리지 않는다.</td></tr>
       <tr><td data-label="시점">작업 분류·선택</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출">일회성 답변은 호출 없음; UPS 후보가 맞지 않으면 <code>search_work_items</code>를 한 번 호출; 유력 후보는 <code>get_work_context</code>로 상세 확인</td><td data-label="이유">상위 목록을 반복 확대하지 않고 사용자 요청의 핵심 목표로 기존 미완료 WorkItem을 찾는다.</td></tr>
       <tr><td data-label="시점">Run 준비</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출">기존 작업은 <code>start_work</code>; 새 목표는 <code>create_work_item</code> → <code>change_work_item_state(ready)</code> → <code>get_work_context</code> → <code>start_work</code></td><td data-label="이유">새 WorkItem도 목표·다음 행동·완료 조건을 다시 읽은 뒤 Run을 시작한다.</td></tr>
       <tr><td data-label="시점"><code>start_work</code> 성공 직후</td><td data-label="주체"><span class="owner hook">전용 PostToolUse</span></td><td data-label="호출">Runtime Binding 저장 → MemoryGraph 장기 기억 조회</td><td data-label="이유">WorkItem과 Run이 확정된 뒤 정확한 작업 문맥으로 관련 기억만 불러온다. 조회 실패는 Run을 되돌리지 않는다.</td></tr>
-      <tr><td data-label="시점">도구 직전</td><td data-label="주체"><span class="owner hook">PreToolUse</span></td><td data-label="호출">도구 정책 목록 분류 → Binding 확인 → 필요 시 <code>get_running_run()</code> → 허용·거부</td><td data-label="이유">조회와 작업 준비는 열어 두고, 프로젝트 변경은 활성 Run 안에서만 실행한다.</td></tr>
+      <tr><td data-label="시점">도구 직전</td><td data-label="주체"><span class="owner hook">PreToolUse</span></td><td data-label="호출">도구 정책 목록 분류 → 변경 호출이면 <code>validate_active_binding(session_id, current_turn_id)</code> → 허용·거부</td><td data-label="이유">조회와 작업 준비는 열어 두고, 프로젝트 변경은 현재 Turn의 Binding과 DB의 활성 Run이 모두 일치할 때만 실행한다.</td></tr>
       <tr><td data-label="시점">도구 직후</td><td data-label="주체"><span class="owner hook">PostToolUse</span></td><td data-label="호출"><code>create_artifact()</code>, Trace 결과 기록</td><td data-label="이유">명확한 결과를 추가 토큰 없이 수집한다.</td></tr>
       <tr><td data-label="시점">작업 도중</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>record_artifact</code>, <code>resolve_artifact</code>, <code>create_memory_candidate</code></td><td data-label="이유">자동 인식하지 못한 결과와 기억 가치는 문맥 판단이 필요하다.</td></tr>
       <tr><td data-label="시점">검증 후</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>verify_criterion</code></td><td data-label="이유">어떤 Artifact가 어느 Criterion의 Evidence인지 이해해야 한다.</td></tr>
       <tr><td data-label="시점">기억 검토</td><td data-label="주체"><span class="owner skill">Memory Skill</span></td><td data-label="호출"><code>list_memory_candidates</code>, MemoryGraph 저장, <code>promote_memory_candidate</code>/<code>reject_memory_candidate</code></td><td data-label="이유">중복·가치·관계 평가는 반복 가능한 추론 절차다.</td></tr>
       <tr><td data-label="시점">종료 직전</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>get_postflight_status</code> → <code>finish_work</code></td><td data-label="이유">전체 완료·정상 진전·재시도·막힘·중단 중 outcome을 Codex가 판단한다.</td></tr>
+      <tr><td data-label="시점"><code>finish_work</code> 성공 직후</td><td data-label="주체"><span class="owner hook">전용 PostToolUse</span></td><td data-label="호출">도구 응답의 종료 Run ID 확인 → <code>delete_binding(session_id, expected_run_id)</code></td><td data-label="이유">종료된 Run의 Binding을 즉시 제거하되, Binding이 다른 Run으로 바뀌었으면 삭제하지 않는다. 실패하면 다음 UPS가 현재 세션에서만 fallback 정리한다.</td></tr>
       <tr><td data-label="시점">종료 시도</td><td data-label="주체"><span class="owner hook">Stop</span></td><td data-label="호출"><code>get_running_run()</code>, <code>get_postflight_status()</code></td><td data-label="이유">마감 대신 누락만 검사한다.</td></tr>
       <tr><td data-label="시점">세션 종료</td><td data-label="주체"><span class="owner hook">SessionEnd</span></td><td data-label="호출">Trace flush, 임시 파일 정리</td><td data-label="이유">늦게 실행돼도 안전한 보조 처리만 둔다.</td></tr>
     </tbody></table></div>
@@ -259,7 +270,7 @@ recall("hook")       → A, C
   <section id="binding">
     <div class="section-head"><h2>Hook이 현재 Run과 소유 세션을 찾는 방법</h2><p>DB에 Codex 세션 필드를 넣지 않고 세션별 Runtime Binding을 별도로 둔다. 서로 다른 WorkItem은 병렬로 실행할 수 있지만, 하나의 WorkItem은 한 세션만 소유한다.</p></div>
     <div class="binding">
-      <div><h3>Runtime Binding</h3><p>Codex의 현재 세션·요청을 WorkItem·Run과 연결하는 임시 포인터다. <code>session_id</code>는 대화 세션, <code>turn_id</code>는 그 안의 이번 사용자 요청을 구분한다. 프로젝트 상태의 정본은 아니며 실제 상태는 항상 SQLite에서 다시 확인한다.</p><ul><li><code>.harness/runtime/bindings/&lt;session-id&gt;.json</code>에 세션마다 별도 저장하며 Git에서 제외</li><li><code>runtime_binding.py</code>의 <code>save_binding()</code>이 임시 파일과 원자적 교체를 사용하고 파일 권한을 제한</li><li><code>load_binding()</code>·<code>find_run_owner()</code>는 손상된 구조와 안전하지 않은 ID를 거부</li><li><code>delete_binding(expected_run_id=...)</code>은 Binding이 다른 Run으로 바뀌었으면 삭제를 거부</li><li><code>start_work</code>가 성공한 경우에만 전용 PostToolUse가 Hook 입력의 세션·turn과 도구 결과의 WorkItem·Run ID로 생성</li><li>Pre/PostToolUse와 Stop은 현재 Hook 입력의 <code>session_id</code>·<code>turn_id</code>가 Binding과 모두 일치할 때만 사용</li><li><code>finish_work</code> 성공을 본 PostToolUse가 해당 세션 Binding을 삭제</li><li><code>recover_abandoned_work</code> 성공을 본 PostToolUse는 복구된 <code>run_id</code>를 가리키는 이전 세션 Binding을 찾아 삭제</li><li>같은 세션의 다음 turn에서 남아 있으면 UPS가 미종료 Run으로 복구</li><li>다른 세션 Binding은 사용자 확인 없는 자동 변경이나 takeover에 사용하지 않으며, 만료 시간과 Lease도 사용하지 않음</li></ul></div>
+      <div><h3>Runtime Binding</h3><p>Codex의 현재 세션·요청을 WorkItem·Run과 연결하는 임시 포인터다. <code>session_id</code>는 대화 세션, <code>turn_id</code>는 그 안의 이번 사용자 요청을 구분한다. 프로젝트 상태의 정본은 아니며 실제 상태는 항상 SQLite에서 다시 확인한다.</p><ul><li><code>.harness/runtime/bindings/&lt;session-id&gt;.json</code>에 세션마다 별도 저장하며 Git에서 제외</li><li><code>runtime_binding.py</code>의 <code>save_binding()</code>이 임시 파일과 원자적 교체를 사용하고 파일 권한을 제한</li><li><code>load_binding()</code>·<code>find_run_owner()</code>는 손상된 구조와 안전하지 않은 ID를 거부</li><li><code>validate_active_binding()</code>은 현재 <code>turn_id</code>가 일치하고 DB의 Run·WorkItem이 각각 <code>running</code>·<code>in_progress</code>인 경우에만 성공</li><li><code>delete_binding(expected_run_id=...)</code>은 Binding이 다른 Run으로 바뀌었으면 삭제를 거부</li><li><code>start_work</code>가 성공한 경우에만 전용 PostToolUse가 Hook 입력의 세션·turn과 도구 결과의 WorkItem·Run ID로 생성</li><li>Pre/PostToolUse와 Stop은 현재 Hook 입력의 <code>session_id</code>·<code>turn_id</code>가 Binding과 모두 일치할 때만 사용</li><li><code>finish_work</code> 성공을 본 PostToolUse가 해당 세션 Binding을 삭제</li><li><code>recover_abandoned_work</code> 성공을 본 PostToolUse는 복구된 <code>run_id</code>를 가리키는 이전 세션 Binding을 찾아 삭제</li><li>같은 세션의 다음 turn에서 남아 있으면 UPS가 미종료 Run으로 복구</li><li>다른 세션 Binding은 사용자 확인 없는 자동 변경이나 takeover에 사용하지 않으며, 만료 시간과 Lease도 사용하지 않음</li></ul></div>
       <pre><code>.harness/runtime/
   bindings/
     &lt;session-id&gt;.json
@@ -272,19 +283,23 @@ recall("hook")       → A, C
   "updated_at": "2026-08-14T07:00:00Z"
 }</code></pre>
     </div>
+    <div class="callout"><p><strong>Binding 생성 실패 보상:</strong> <code>start_work</code> 성공 뒤 Binding 저장이 실패하면 내부 함수 <code>recover_unbound_run(work_item_id, expected_run_id)</code>이 방금 생성된 정확한 Run만 <code>interrupted</code>로 정리하고 WorkItem을 기존 <code>next_action</code>이 유지된 <code>ready</code>로 되돌린다. 이 경우 Recall과 프로젝트 작업은 시작하지 않는다.</p></div>
     <div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>병렬 상황</th><th>처리</th><th>결과</th></tr></thead><tbody>
       <tr><td data-label="병렬 상황">세션 A와 B가 서로 다른 WorkItem 선택</td><td data-label="처리">각 세션이 자기 Binding과 Run을 생성</td><td data-label="결과">병렬 실행 허용</td></tr>
       <tr><td data-label="병렬 상황">세션 B가 세션 A의 active WorkItem 선택</td><td data-label="처리"><code>start_work</code>를 호출하지 않고 세션 A에서 이어가도록 안내한다. 세션 A가 종료됐다고 사용자가 확인할 때만 미종료 Run의 중단 처리와 잠금 해제 여부를 묻는다.</td><td data-label="결과">확인 전에는 새 Run·Binding 없이 기존 상태 유지</td></tr>
       <tr><td data-label="병렬 상황">사용자가 다른 세션의 종료를 확인</td><td data-label="처리">Codex가 조회 당시의 <code>expected_run_id</code>와 <code>user_confirmation="confirmed"</code>를 넣어 <code>recover_abandoned_work()</code> 호출</td><td data-label="결과">정확히 같은 Run이 아직 running일 때만 interrupted·ready로 복구; 이후 <code>start_work()</code>로 새 Run 시작</td></tr>
     </tbody></table></div>
-    <div class="callout"><p><strong>정본이 아니다.</strong> Hook은 Binding의 세션·요청 ID가 현재 Hook 입력과 같은지 확인한 뒤, <code>state_store.py</code>로 실제 WorkItem이 <code>in_progress</code>이고 Run이 <code>running</code>인지 다시 확인한다. 하나라도 다르면 프로젝트 변경을 거부한다. 복구 도구의 <code>expected_run_id</code>는 사용자가 확인한 사이 대상 Run이 바뀌었으면 복구를 거부하는 비교 조건이다. DB의 “WorkItem당 running Run 하나” 제약은 같은 WorkItem의 이중 실행을 막는 최종 안전장치다. Binding 모듈은 구현되었고 이를 lifecycle 이벤트에 연결할 Hook 어댑터는 아직 구현 전이다.</p></div>
+    <div class="callout"><p><strong>정본이 아니다.</strong> Hook은 Binding의 세션·요청 ID가 현재 Hook 입력과 같은지 확인한 뒤, <code>state_store.py</code>로 실제 WorkItem이 <code>in_progress</code>이고 Run이 <code>running</code>인지 다시 확인한다. 하나라도 다르면 프로젝트 변경을 거부한다. <code>finish_work</code> 성공 직후 전용 PostToolUse가 현재 세션 Binding을 즉시 삭제하고, 누락되면 다음 UPS가 종료된 Run을 확인해 같은 <code>expected_run_id</code> 조건으로 fallback 삭제한다. 두 경로 모두 다른 세션 Binding은 건드리지 않는다.</p></div>
   </section>
 
   <section id="failure">
     <div class="section-head"><h2>실패와 예외 처리</h2><p>Hook이 결과 의미를 추측해 상태를 자동 마감하지 않는 것이 공통 원칙이다.</p></div>
     <details open><summary>활성 Run 없이 파일을 수정하려 하면?</summary><div>설계 문서를 포함한 저장소 변경은 프로젝트 작업이므로 먼저 WorkItem을 선택하거나 만들고 <code>start_work</code>를 호출해야 한다. PreToolUse는 Run 없는 변경 도구를 차단할 수 있다. 단순 질문과 프로젝트 조사 모두 읽기 도구를 쓸 수 있으므로, 읽기 전용 작업의 Run 필요 여부는 Codex가 AGENTS 지침에 따라 분류한다.</div></details>
+    <details><summary><code>start_work</code>는 성공했지만 Binding 저장이 실패하면?</summary><div>PostToolUse가 <code>recover_unbound_run()</code>으로 방금 생성된 정확한 Run만 <code>interrupted</code>로 정리하고 WorkItem을 <code>ready</code>로 되돌린다. Recall을 실행하지 않고 Codex에 프로젝트 작업 중단을 전달한다. 보상 처리까지 실패하면 유효한 Binding이 없으므로 이후 변경은 PreToolUse가 차단한다.</div></details>
+    <details><summary>UPS 패킷이 없거나 <code>db_ok</code>가 false라면?</summary><div>일회성 질문에는 답할 수 있지만 WorkItem 선택·생성, <code>start_work</code>와 프로젝트 변경은 중단한다. Codex나 <code>$work-start</code>가 UPS의 DB 건강 검사와 stale Run 복구를 대신 실행하지 않는다.</div></details>
     <details><summary>Binding이 없거나 DB 상태를 확인하지 못하면?</summary><div>조회 도구와 WorkItem·Run 준비 도구는 허용한다. 파일·DB 상태를 바꾸는 호출은 거부하며, 기존 running Run을 추측해서 자동 연결하지 않는다. UPS 복구도 현재 세션의 이전 turn Binding으로 소유를 확인할 수 있을 때만 실행하고, 확인할 수 없으면 <code>recovery_warnings</code>로 Codex에 알린다.</div></details>
-    <details><summary>이전 turn의 running Run을 발견하면?</summary><div><code>list_running_runs()</code>로 찾은 뒤 Runtime Binding이 현재 세션의 이전 <code>turn_id</code>와 해당 Run을 함께 가리키는지 확인한다. 일치하면 <code>recover_stale_run()</code>이 Run을 <code>interrupted</code>로 종료하면서 종료 시각, “이전 turn에서 finish_work 없이 종료됨”이라는 기계적 요약과 종료 이유를 남긴다. WorkItem은 기존 <code>next_action</code>을 유지한 채 <code>ready</code>로 돌리고 오래된 Binding을 삭제한다. Codex는 현재 요청과 복구된 WorkItem의 목표를 비교해 같은 WorkItem에 새 Run을 만들지 판단한다.</div></details>
+    <details><summary><code>finish_work</code>는 성공했지만 Binding 삭제 Hook이 실패하면?</summary><div>성공한 Run·WorkItem의 DB 상태는 되돌리지 않는다. 다음 Turn의 UPS가 현재 세션 Binding의 <code>run_id</code>를 조회해 Run이 이미 종료됐거나 존재하지 않으면 <code>delete_binding(expected_run_id=...)</code>으로 Binding만 정리한다. 다른 세션 Binding은 fallback으로 삭제하지 않는다.</div></details>
+    <details><summary>다른 turn ID의 running Run을 발견하면?</summary><div><code>list_running_runs()</code>로 찾은 뒤 Runtime Binding이 현재 세션에 속하고, <code>binding.turn_id != current_turn_id</code>이며, 해당 Run을 가리키는지 확인한다. 세 조건이 모두 맞으면 <code>recover_stale_run()</code>이 Run을 <code>interrupted</code>로 종료하면서 종료 시각, “다른 turn에서 finish_work 없이 종료됨”이라는 기계적 요약과 종료 이유를 남긴다. <code>turn_id</code>는 순서 없는 식별자이므로 대소 비교하지 않는다. WorkItem은 기존 <code>next_action</code>을 유지한 채 <code>ready</code>로 돌리고 오래된 Binding을 삭제한다. Codex는 현재 요청과 복구된 WorkItem의 목표를 비교해 같은 WorkItem에 새 Run을 만들지 판단한다.</div></details>
     <details><summary>다른 세션이 같은 WorkItem을 작업 중이면?</summary><div>현재 세션은 새 Run과 Binding을 만들지 않고 원래 세션에서 이어가도록 안내한다. 사용자가 원래 세션이 종료됐다고 알려주면 Codex가 “남은 Run을 <code>interrupted</code>로 종료하고 WI 잠금을 해제할까요?”라고 확인한다. 이 동작은 기존 Run의 정상 성공 종료나 재개가 아니며, 명시적인 동의 전에는 상태를 변경하지 않는다.</div></details>
     <details><summary>다른 세션이 사라져 WorkItem이 계속 잠겨 있으면?</summary><div>사용자는 CLI 명령이나 세션 ID를 알 필요가 없다. Codex가 충돌 정보의 WorkItem ID와 Run ID를 보관해 두었다가 명시적 동의 후 <code>recover_abandoned_work()</code>를 호출한다. 함수는 <code>expected_run_id</code>가 여전히 해당 WorkItem의 running Run일 때만 기존 Run을 <code>interrupted</code>, WorkItem을 기존 <code>next_action</code>이 유지된 <code>ready</code>로 원자적으로 복구한다. 그 뒤 Codex가 <code>start_work()</code>를 별도로 호출해 현재 세션의 새 Run을 만든다. Lease·시간 만료·자동 takeover는 사용하지 않는다.</div></details>
     <details><summary>위험 명령이 정말 필요하면?</summary><div>v1에서는 활성 Run이나 사용자 요청만으로 예외를 만들지 않는다. 실제 필요 사례가 생기면 사용자 승인을 한 번만 소비하는 Permit 구조를 별도로 설계한다.</div></details>

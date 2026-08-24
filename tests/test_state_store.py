@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +14,68 @@ class StateStoreLifecycleTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
+
+    def start_run(self, work_item_id: str, **arguments: object) -> dict[str, object]:
+        """Start a test Run with the required intent and recall search terms."""
+
+        return state_store.start_run(
+            work_item_id,
+            intent="테스트 작업을 수행한다.",
+            recall_query="테스트 상태 저장소",
+            **arguments,
+        )
+
+    def test_initialize_database_adds_recall_fields_to_an_existing_runs_table(self) -> None:
+        legacy_path = Path(self.temporary_directory.name) / "legacy.db"
+        database = sqlite3.connect(legacy_path)
+        database.execute(
+            "CREATE TABLE runs (id TEXT PRIMARY KEY, work_item_id TEXT NOT NULL, "
+            "status TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT, "
+            "summary TEXT, termination_reason TEXT, trace_ref TEXT)"
+        )
+        database.commit()
+        database.close()
+
+        state_store.initialize_database(legacy_path)
+
+        database = state_store.open_database(legacy_path)
+        columns = {
+            row["name"]: row for row in database.execute("PRAGMA table_info(runs)")
+        }
+        database.close()
+        self.assertEqual(columns["intent"]["notnull"], 1)
+        self.assertEqual(columns["recall_query"]["notnull"], 1)
+
+    def test_database_health_reports_foreign_keys_and_complete_schema(self) -> None:
+        health = state_store.check_database_health(self.database_path)
+
+        self.assertTrue(health["ok"])
+        self.assertTrue(health["foreign_keys_enabled"])
+        self.assertEqual(health["foreign_key_violations"], [])
+        self.assertEqual(health["missing_tables"], [])
+        self.assertEqual(health["missing_views"], [])
+
+    def test_database_health_rejects_missing_required_tables(self) -> None:
+        empty_database_path = Path(self.temporary_directory.name) / "empty.db"
+
+        health = state_store.check_database_health(empty_database_path)
+
+        self.assertFalse(health["ok"])
+        self.assertTrue(health["foreign_keys_enabled"])
+        self.assertIn("runs", health["missing_tables"])
+        self.assertIn("work_items", health["missing_tables"])
+
+    def test_database_health_rejects_missing_required_views(self) -> None:
+        database = state_store.open_database(self.database_path)
+        database.execute("DROP VIEW project_progress")
+        database.commit()
+        database.close()
+
+        health = state_store.check_database_health(self.database_path)
+
+        self.assertFalse(health["ok"])
+        self.assertEqual(health["missing_tables"], [])
+        self.assertEqual(health["missing_views"], ["project_progress"])
 
     def test_work_item_can_run_produce_evidence_and_finish(self) -> None:
         feature = state_store.create_feature(
@@ -40,12 +103,14 @@ class StateStoreLifecycleTests(unittest.TestCase):
             database_path=self.database_path,
         )
 
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"],
             trace_ref="trace://run-1",
             actor="codex",
             database_path=self.database_path,
         )
+        self.assertEqual(run["intent"], "테스트 작업을 수행한다.")
+        self.assertEqual(run["recall_query"], "테스트 상태 저장소")
         artifact = state_store.create_artifact(
             run["id"],
             kind="test_run",
@@ -258,7 +323,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
             reason="검증 준비 완료",
             database_path=self.database_path,
         )
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
         artifact = state_store.create_artifact(
@@ -335,7 +400,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
             reason="수집 준비 완료",
             database_path=self.database_path,
         )
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
         candidate = state_store.create_candidate(
@@ -423,7 +488,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
             reason="준비 완료",
             database_path=self.database_path,
         )
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
 
@@ -467,7 +532,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
             reason="설계 시작 준비",
             database_path=self.database_path,
         )
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
 
@@ -487,7 +552,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
         self.assertEqual(
             result["work_item"]["next_action"], "두 번째 설계 쟁점을 검토한다."
         )
-        next_run = state_store.start_run(
+        next_run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
         self.assertEqual(next_run["status"], "running")
@@ -509,7 +574,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
             reason="구현 준비 완료",
             database_path=self.database_path,
         )
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
 
@@ -548,12 +613,21 @@ class StateStoreLifecycleTests(unittest.TestCase):
             reason="구현 준비 완료",
             database_path=self.database_path,
         )
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
 
         running = state_store.list_running_runs(database_path=self.database_path)
         self.assertEqual([item["id"] for item in running], [run["id"]])
+        self.assertEqual(running[0]["work_item_title"], "이전 turn 정리")
+        self.assertEqual(
+            running[0]["work_item_goal"],
+            "같은 세션의 미종료 Run을 다음 요청 전에 정리한다.",
+        )
+        self.assertEqual(
+            running[0]["work_item_next_action"], "UPS 복구 함수를 구현한다."
+        )
+        self.assertEqual(running[0]["work_item_priority"], "normal")
 
         result = state_store.recover_stale_run(
             work_item["id"],
@@ -575,6 +649,147 @@ class StateStoreLifecycleTests(unittest.TestCase):
             state_store.list_running_runs(database_path=self.database_path), []
         )
 
+    def test_list_running_runs_orders_joined_context_and_excludes_finished_runs(
+        self,
+    ) -> None:
+        specifications = (
+            (
+                "first",
+                "첫 번째 활성 작업",
+                "첫 번째 목표를 완료한다.",
+                "첫 번째 행동을 수행한다.",
+                "high",
+            ),
+            (
+                "second",
+                "두 번째 활성 작업",
+                "두 번째 목표를 완료한다.",
+                "두 번째 행동을 수행한다.",
+                "urgent",
+            ),
+            (
+                "finished",
+                "종료된 작업",
+                "종료된 목표를 완료한다.",
+                "종료 전 행동을 수행한다.",
+                "low",
+            ),
+        )
+        work_items: dict[str, dict[str, object]] = {}
+        runs: dict[str, dict[str, object]] = {}
+        for key, title, goal, next_action, priority in specifications:
+            work_item = state_store.create_work_item(
+                title=title,
+                kind="maintenance",
+                goal=goal,
+                priority=priority,
+                next_action=next_action,
+                actor="planner",
+                database_path=self.database_path,
+            )
+            state_store.change_work_item_status(
+                work_item["id"],
+                "ready",
+                next_action=next_action,
+                actor="planner",
+                reason="조회 테스트 준비 완료",
+                database_path=self.database_path,
+            )
+            run = self.start_run(
+                work_item["id"],
+                run_id=f"RUN-{key}",
+                actor="codex",
+                database_path=self.database_path,
+            )
+            work_items[key] = work_item
+            runs[key] = run
+
+        state_store.recover_stale_run(
+            work_items["finished"]["id"],
+            expected_run_id=runs["finished"]["id"],
+            actor="user_prompt_submit_hook",
+            database_path=self.database_path,
+        )
+        database = state_store.open_database(self.database_path)
+        database.execute(
+            "UPDATE runs SET started_at = ? WHERE id = ?",
+            ("2026-08-24T00:00:02Z", runs["first"]["id"]),
+        )
+        database.execute(
+            "UPDATE runs SET started_at = ? WHERE id = ?",
+            ("2026-08-24T00:00:01Z", runs["second"]["id"]),
+        )
+        database.commit()
+        database.close()
+
+        running = state_store.list_running_runs(database_path=self.database_path)
+
+        self.assertEqual(
+            [item["id"] for item in running],
+            [runs["second"]["id"], runs["first"]["id"]],
+        )
+        self.assertEqual(
+            [item["work_item_title"] for item in running],
+            ["두 번째 활성 작업", "첫 번째 활성 작업"],
+        )
+        self.assertEqual(
+            [item["work_item_goal"] for item in running],
+            ["두 번째 목표를 완료한다.", "첫 번째 목표를 완료한다."],
+        )
+        self.assertEqual(
+            [item["work_item_next_action"] for item in running],
+            ["두 번째 행동을 수행한다.", "첫 번째 행동을 수행한다."],
+        )
+        self.assertEqual(
+            [item["work_item_priority"] for item in running],
+            ["urgent", "high"],
+        )
+
+    def test_recover_unbound_run_interrupts_only_the_expected_active_run(self) -> None:
+        work_item = state_store.create_work_item(
+            title="Binding 실패 보상",
+            kind="maintenance",
+            goal="소유자 없는 Run을 남기지 않는다.",
+            next_action="실패한 Binding 생성을 보상한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="실패한 Binding 생성을 보상한다.",
+            actor="planner",
+            reason="보상 테스트 준비",
+            database_path=self.database_path,
+        )
+        run = self.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+
+        result = state_store.recover_unbound_run(
+            work_item["id"],
+            expected_run_id=run["id"],
+            actor="post_tool_use_hook",
+            database_path=self.database_path,
+        )
+
+        self.assertEqual(result["run"]["status"], "interrupted")
+        self.assertEqual(
+            result["run"]["termination_reason"], "Runtime Binding 생성 실패"
+        )
+        self.assertEqual(result["work_item"]["status"], "ready")
+        self.assertEqual(
+            result["work_item"]["next_action"], "실패한 Binding 생성을 보상한다."
+        )
+
+        with self.assertRaises(state_store.ConflictError):
+            state_store.recover_unbound_run(
+                work_item["id"],
+                expected_run_id=run["id"],
+                actor="post_tool_use_hook",
+                database_path=self.database_path,
+            )
+
     def test_abandoned_work_recovery_rejects_a_stale_run_id(self) -> None:
         work_item = state_store.create_work_item(
             title="복구 대상 검증",
@@ -592,7 +807,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
             reason="검증 준비 완료",
             database_path=self.database_path,
         )
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
 
@@ -627,7 +842,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
             reason="조사 준비 완료",
             database_path=self.database_path,
         )
-        run = state_store.start_run(
+        run = self.start_run(
             work_item["id"], actor="codex", database_path=self.database_path
         )
 

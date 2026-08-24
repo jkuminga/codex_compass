@@ -34,6 +34,27 @@ class ConflictError(StateStoreError):
 
 _UNSET = object()
 _SEARCHABLE_WORK_ITEM_STATUSES = frozenset({"backlog", "ready", "blocked"})
+_REQUIRED_TABLES = frozenset(
+    {
+        "features",
+        "work_items",
+        "acceptance_criteria",
+        "runs",
+        "artifacts",
+        "criterion_evidence",
+        "state_events",
+        "memory_candidates",
+    }
+)
+_REQUIRED_VIEWS = frozenset(
+    {
+        "feature_progress",
+        "project_progress",
+        "work_item_verification",
+        "next_work_items",
+        "recent_activity",
+    }
+)
 
 
 def _utc_now() -> str:
@@ -87,11 +108,31 @@ def initialize_database(
     database = open_database(database_path)
     try:
         database.executescript(Path(schema_path).read_text())
+        _migrate_run_recall_fields(database)
+        database.commit()
     except (OSError, sqlite3.Error) as error:
         raise StateStoreError(f"database initialization failed: {error}") from error
     finally:
         database.close()
     return check_database_health(database_path)
+
+
+def _migrate_run_recall_fields(database: sqlite3.Connection) -> None:
+    """Add Run intent fields to state databases created by older harness versions."""
+
+    columns = {
+        row["name"] for row in database.execute("PRAGMA table_info(runs)")
+    }
+    if "intent" not in columns:
+        database.execute(
+            "ALTER TABLE runs ADD COLUMN intent TEXT NOT NULL DEFAULT 'legacy run' "
+            "CHECK (length(trim(intent)) > 0)"
+        )
+    if "recall_query" not in columns:
+        database.execute(
+            "ALTER TABLE runs ADD COLUMN recall_query TEXT NOT NULL DEFAULT 'legacy' "
+            "CHECK (length(trim(recall_query)) > 0)"
+        )
 
 
 @contextmanager
@@ -152,18 +193,48 @@ def _append_state_event(
 def check_database_health(
     database_path: str | Path = DEFAULT_DATABASE_PATH,
 ) -> dict[str, Any]:
-    """Report SQLite structural integrity and foreign-key violations."""
+    """Report integrity, foreign-key enforcement, and required DB objects."""
 
     database = open_database(database_path)
     try:
         integrity = [row[0] for row in database.execute("PRAGMA integrity_check")]
+        foreign_keys_enabled = (
+            database.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        )
         foreign_key_violations = [
             dict(row) for row in database.execute("PRAGMA foreign_key_check")
         ]
+        schema_objects = {
+            (row["type"], row["name"])
+            for row in database.execute(
+                """
+                SELECT type, name
+                FROM sqlite_master
+                WHERE type IN ('table', 'view')
+                """
+            )
+        }
+        actual_tables = {
+            name for object_type, name in schema_objects if object_type == "table"
+        }
+        actual_views = {
+            name for object_type, name in schema_objects if object_type == "view"
+        }
+        missing_tables = sorted(_REQUIRED_TABLES - actual_tables)
+        missing_views = sorted(_REQUIRED_VIEWS - actual_views)
         return {
-            "ok": integrity == ["ok"] and not foreign_key_violations,
+            "ok": (
+                integrity == ["ok"]
+                and foreign_keys_enabled
+                and not foreign_key_violations
+                and not missing_tables
+                and not missing_views
+            ),
             "integrity": integrity,
+            "foreign_keys_enabled": foreign_keys_enabled,
             "foreign_key_violations": foreign_key_violations,
+            "missing_tables": missing_tables,
+            "missing_views": missing_views,
         }
     finally:
         database.close()
@@ -862,12 +933,19 @@ def change_work_item_status(
 def start_run(
     work_item_id: str,
     *,
+    intent: str,
+    recall_query: str,
     actor: str,
     trace_ref: str | None = None,
     run_id: str | None = None,
     database_path: str | Path = DEFAULT_DATABASE_PATH,
 ) -> dict[str, Any]:
-    """Move a ready WorkItem to in_progress and create its single running Run."""
+    """Create a Run with its human intent and machine recall keywords."""
+
+    if not intent.strip():
+        raise ConflictError("Run intent is required")
+    if not recall_query.strip():
+        raise ConflictError("Run recall_query is required")
 
     identifier = run_id or _generate_id("RUN")
     now = _utc_now()
@@ -887,10 +965,11 @@ def start_run(
         )
         database.execute(
             """
-            INSERT INTO runs (id, work_item_id, status, started_at, trace_ref)
-            VALUES (?, ?, 'running', ?, ?)
+            INSERT INTO runs (
+              id, work_item_id, intent, recall_query, status, started_at, trace_ref
+            ) VALUES (?, ?, ?, ?, 'running', ?, ?)
             """,
-            (identifier, work_item_id, now, trace_ref),
+            (identifier, work_item_id, intent.strip(), recall_query.strip(), now, trace_ref),
         )
         _append_state_event(
             database,
@@ -1292,11 +1371,42 @@ def get_running_run(
         database.close()
 
 
+def validate_active_run(
+    work_item_id: str,
+    *,
+    expected_run_id: str,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Validate that a Binding still points to the WorkItem's active Run."""
+
+    database = open_database(database_path)
+    try:
+        row = database.execute(
+            """
+            SELECT run.*, work_item.status AS work_item_status
+            FROM runs AS run
+            JOIN work_items AS work_item ON work_item.id = run.work_item_id
+            WHERE run.id = ?
+              AND run.work_item_id = ?
+              AND run.status = 'running'
+              AND work_item.status = 'in_progress'
+            """,
+            (expected_run_id, work_item_id),
+        ).fetchone()
+        if row is None:
+            raise ConflictError(
+                "Runtime Binding does not point to an active Run and WorkItem"
+            )
+        return dict(row)
+    finally:
+        database.close()
+
+
 def list_running_runs(
     *,
     database_path: str | Path = DEFAULT_DATABASE_PATH,
 ) -> list[dict[str, Any]]:
-    """Return every active Run in deterministic start order for UPS checks."""
+    """Return active Runs with the WorkItem fields needed by UPS matching."""
 
     database = open_database(database_path)
     try:
@@ -1304,9 +1414,16 @@ def list_running_runs(
             dict(row)
             for row in database.execute(
                 """
-                SELECT * FROM runs
-                WHERE status = 'running'
-                ORDER BY started_at, id
+                SELECT
+                  run.*,
+                  work_item.title AS work_item_title,
+                  work_item.goal AS work_item_goal,
+                  work_item.next_action AS work_item_next_action,
+                  work_item.priority AS work_item_priority
+                FROM runs AS run
+                JOIN work_items AS work_item ON work_item.id = run.work_item_id
+                WHERE run.status = 'running'
+                ORDER BY run.started_at, run.id
                 """
             )
         ]
@@ -1394,6 +1511,103 @@ def recover_stale_run(
         return {
             "run": _require_row(
                 database, "SELECT * FROM runs WHERE id = ?", (expected_run_id,), "Run"
+            ),
+            "work_item": _require_row(
+                database,
+                "SELECT * FROM work_items WHERE id = ?",
+                (work_item_id,),
+                "WorkItem",
+            ),
+        }
+
+
+def recover_unbound_run(
+    work_item_id: str,
+    *,
+    expected_run_id: str,
+    actor: str,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, dict[str, Any]]:
+    """Compensate for a start_work Run whose Runtime Binding was not saved.
+
+    ``expected_run_id`` is a compare-and-set guard. It ensures the Hook only
+    interrupts the exact Run it just created and never a replacement Run.
+    """
+
+    now = _utc_now()
+    with _transaction(database_path) as database:
+        work_item = _require_row(
+            database,
+            "SELECT * FROM work_items WHERE id = ?",
+            (work_item_id,),
+            "WorkItem",
+        )
+        run = _require_row(
+            database,
+            "SELECT * FROM runs WHERE id = ?",
+            (expected_run_id,),
+            "Run",
+        )
+        if run["work_item_id"] != work_item_id:
+            raise ConflictError("expected Run does not belong to the WorkItem")
+        if run["status"] != "running" or work_item["status"] != "in_progress":
+            raise ConflictError("expected Run is no longer the active WorkItem Run")
+        active_run = database.execute(
+            "SELECT id FROM runs WHERE work_item_id = ? AND status = 'running'",
+            (work_item_id,),
+        ).fetchone()
+        if active_run is None or active_run["id"] != expected_run_id:
+            raise ConflictError("active Run changed before Binding compensation")
+
+        summary = "start_work 이후 Runtime Binding 생성에 실패해 Run을 정리했다."
+        termination_reason = "Runtime Binding 생성 실패"
+        database.execute(
+            """
+            UPDATE runs
+            SET status = 'interrupted', ended_at = ?, summary = ?, termination_reason = ?
+            WHERE id = ?
+            """,
+            (now, summary, termination_reason, expected_run_id),
+        )
+        database.execute(
+            """
+            UPDATE work_items
+            SET status = 'ready', block_reason = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (now, work_item_id),
+        )
+        reason = "Runtime Binding 생성 실패를 보상 처리함"
+        _append_state_event(
+            database,
+            entity_type="run",
+            entity_id=expected_run_id,
+            event_type="recovered",
+            actor=actor,
+            from_status="running",
+            to_status="interrupted",
+            run_id=expected_run_id,
+            reason=reason,
+            created_at=now,
+        )
+        _append_state_event(
+            database,
+            entity_type="work_item",
+            entity_id=work_item_id,
+            event_type="status_changed",
+            actor=actor,
+            from_status="in_progress",
+            to_status="ready",
+            run_id=expected_run_id,
+            reason=reason,
+            created_at=now,
+        )
+        return {
+            "run": _require_row(
+                database,
+                "SELECT * FROM runs WHERE id = ?",
+                (expected_run_id,),
+                "Run",
             ),
             "work_item": _require_row(
                 database,
