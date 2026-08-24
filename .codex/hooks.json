@@ -1,5 +1,5 @@
 {
-  "description": "Prepare WorkItem context and maintain Runtime Bindings across Codex Turns.",
+  "description": "Prepare WorkItem context, protect project changes, and maintain Runtime Bindings across Codex Turns.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -10,6 +10,18 @@
             "timeout": 20,
             "statusMessage": "Preparing project work context",
             "additionalContextLimit": 1800
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/bin/harness-pre-tool-use\"",
+            "timeout": 10,
+            "statusMessage": "Checking project work authorization"
           }
         ]
       }

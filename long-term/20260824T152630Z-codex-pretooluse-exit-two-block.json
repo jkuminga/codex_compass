@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "ltm_codex_pretooluse_exit_two_block",
+  "created_at": "2026-08-24T15:26:30Z",
+  "kind": "technology",
+  "title": "Codex PreToolUse는 종료 코드 2를 차단 신호로 사용",
+  "summary": "Codex PreToolUse Hook은 stderr에 사유를 쓰고 종료 코드 2로 끝나면 도구를 차단한다. Codex CLI 0.149.1에서 Bash와 apply_patch 모두 실제 차단됨을 확인했다.",
+  "problem": "일반 종료 코드 1, 잘못된 JSON, 시간 초과는 fail-open이어서 원래 도구가 실행된다.",
+  "solution": "실제 정책 Hook 앞에 감시 래퍼를 두고 내부 비정상 종료, 출력 JSON 검증 실패, 내부 제한 시간 초과를 stderr 사유와 종료 코드 2로 변환한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "https://learn.chatgpt.com/docs/hooks#pretooluse"
+    },
+    {
+      "type": "test",
+      "ref": "Codex CLI 0.149.1 별도 세션에서 exit 2 Hook으로 touch와 apply_patch 차단 확인"
+    },
+    {
+      "type": "file",
+      "ref": "src/harness/hooks/pre_tool_use_guard.py"
+    },
+    {
+      "type": "test",
+      "ref": "tests/test_pre_tool_use_guard.py"
+    }
+  ]
+}

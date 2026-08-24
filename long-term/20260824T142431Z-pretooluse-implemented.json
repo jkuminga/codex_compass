@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "ltm_pretooluse_implemented",
+  "created_at": "2026-08-24T14:24:31Z",
+  "kind": "project_progress",
+  "title": "PreToolUse 정책과 Hook 구현 완료",
+  "summary": "단일 PreToolUse Hook이 apply_patch, Bash, Harness MCP, 외부 MCP와 미등록 도구를 기계적으로 분류하고, 변경 호출은 현재 Turn의 Runtime Binding과 SQLite 활성 Run이 일치할 때만 허용하도록 구현했다.",
+  "solution": "정책은 src/harness/hook_policy.py에 모으고 JSON Adapter는 src/harness/hooks/pre_tool_use.py에 분리했다. Hook 설정은 matcher 없이 등록했으며 Python 82개와 MemoryGraph 8개 테스트를 통과했다. 실제 Codex의 차단 집행과 실패 모드는 재시작 및 Hook 신뢰 후 통합 검증이 남아 있다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "src/harness/hook_policy.py"
+    },
+    {
+      "type": "file",
+      "ref": "src/harness/hooks/pre_tool_use.py"
+    },
+    {
+      "type": "test",
+      "ref": "uv run python -m unittest discover -s tests -p 'test_*.py' -v"
+    },
+    {
+      "type": "test",
+      "ref": "bun test tests/memory"
+    }
+  ]
+}
