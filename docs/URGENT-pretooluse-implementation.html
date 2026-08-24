@@ -285,10 +285,11 @@ runtime_binding.validate_active_binding()</code></pre>
         </article>
         <article class="panel primary">
           <h3>확정된 감시 래퍼 규칙</h3>
-          <p><strong>감시 래퍼:</strong> 실제 정책 Hook을 자식 프로세스로 실행하고, 정상적인 allow·deny JSON만 Codex에 전달하는 얇은 보호 계층이다.</p>
+          <p><strong>감시 래퍼:</strong> 실제 정책 Hook을 자식 프로세스로 실행한다. 빈 stdout은 일반 허용으로 전달하고, JSON 출력은 유효한 deny 응답만 Codex에 전달하는 얇은 보호 계층이다.</p>
           <ul>
             <li>Codex의 바깥쪽 Hook 제한 시간은 <code>10초</code>, 래퍼의 자식 제한 시간은 <code>7초</code>로 둔다.</li>
-            <li>자식이 정상 종료하고 <code>PreToolUse</code>의 allow·deny JSON 계약을 만족할 때만 출력을 전달한다.</li>
+            <li>자식이 종료 코드 <code>0</code>과 빈 stdout을 반환하면 일반 허용으로 처리하고 Codex에도 아무것도 출력하지 않는다.</li>
+            <li>자식이 JSON을 출력하면 <code>PreToolUse</code>의 deny 계약을 만족할 때만 전달한다. <code>permissionDecision: "allow"</code>는 <code>updatedInput</code> 재작성 전용이므로 일반 허용에 사용하지 않는다.</li>
             <li>자식 시작 실패, 비정상 종료, 잘못된 JSON, 잘못된 응답 구조, 내부 시간 초과는 stderr 사유와 종료 코드 <code>2</code>로 변환한다.</li>
             <li>DB 오류는 조회 호출에는 영향을 주지 않되, 변경 호출에서는 <code>deny</code>로 바꾼다.</li>
             <li>사용자 결정에 따라 감시 래퍼 프로세스 자체가 강제 종료되는 경우는 v1 실패 범위에서 제외한다.</li>

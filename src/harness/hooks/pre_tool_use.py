@@ -22,14 +22,15 @@ def _required_string(payload: Mapping[str, Any], field: str) -> str:
     return value.strip()
 
 
-def _hook_output(decision: hook_policy.ToolDecision) -> dict[str, Any]:
+def _hook_output(decision: hook_policy.ToolDecision) -> dict[str, Any] | None:
     """Map one policy decision to Codex's current PreToolUse output schema."""
 
+    if decision.allowed:
+        return None
     return {
-        "continue": True,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "allow" if decision.allowed else "deny",
+            "permissionDecision": "deny",
             "permissionDecisionReason": (
                 f"[{decision.reason_code}] {decision.message}"
             ),
@@ -38,7 +39,7 @@ def _hook_output(decision: hook_policy.ToolDecision) -> dict[str, Any]:
 
 
 def _fail_closed(reason_code: str, message: str) -> dict[str, Any]:
-    return _hook_output(
+    output = _hook_output(
         hook_policy.ToolDecision(
             classification="dangerous",
             allowed=False,
@@ -46,6 +47,8 @@ def _fail_closed(reason_code: str, message: str) -> dict[str, Any]:
             message=message,
         )
     )
+    assert output is not None
+    return output
 
 
 def dispatch_pre_tool_use(
@@ -54,7 +57,7 @@ def dispatch_pre_tool_use(
     project_root: str | Path = hook_policy.PROJECT_ROOT,
     database_path: str | Path = state_store.DEFAULT_DATABASE_PATH,
     bindings_directory: str | Path = runtime_binding.DEFAULT_BINDINGS_DIRECTORY,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     """Classify a tool call and fail closed on every handled policy error."""
 
     try:
@@ -80,7 +83,7 @@ def dispatch_pre_tool_use(
 
 
 def main() -> int:
-    """Read one Hook event from stdin and always emit valid allow/deny JSON."""
+    """Read one Hook event and emit only a valid deny; silence means allow."""
 
     try:
         payload = json.load(sys.stdin)
@@ -105,8 +108,9 @@ def main() -> int:
                 bindings_directory=os.environ.get("HARNESS_BINDINGS_DIRECTORY")
                 or runtime_binding.DEFAULT_BINDINGS_DIRECTORY,
             )
-    json.dump(result, sys.stdout, ensure_ascii=False, separators=(",", ":"))
-    sys.stdout.write("\n")
+    if result is not None:
+        json.dump(result, sys.stdout, ensure_ascii=False, separators=(",", ":"))
+        sys.stdout.write("\n")
     return 0
 
 

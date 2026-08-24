@@ -235,7 +235,8 @@ DB Run·WorkItem 상태 불일치 → 거부
   → hook adapter
   → hook_policy.classify_tool_call()
   → hook_policy.authorize_tool_call()
-  → allow 또는 deny JSON</code></pre>
+  → 허용: exit 0 + 빈 stdout
+  → 거부: deny JSON 또는 exit 2</code></pre>
     </div>
     <div class="callout"><p><strong>책임 경계:</strong> PreToolUse는 호출 가능 여부만 판단한다. MCP 입력 검증과 WorkItem·Run 상태 전이는 <code>state_store.py</code>가 담당하며, Hook 정책은 Codex 샌드박스·권한 체계를 대신하는 보안 경계가 아니다.</p></div>
   </section>

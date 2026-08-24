@@ -92,8 +92,7 @@ class PreToolUseHookTests(unittest.TestCase):
         )
         for event in cases:
             with self.subTest(tool_name=event["tool_name"]):
-                permission, _ = self.permission(self.dispatch(event))
-                self.assertEqual(permission, "allow")
+                self.assertIsNone(self.dispatch(event))
 
     def test_project_change_without_binding_is_denied(self) -> None:
         output = self.dispatch(
@@ -117,9 +116,7 @@ class PreToolUseHookTests(unittest.TestCase):
             )
         )
 
-        permission, reason = self.permission(output)
-        self.assertEqual(permission, "allow")
-        self.assertIn("active_binding_valid", reason)
+        self.assertIsNone(output)
 
     def test_different_turn_and_finished_run_are_denied(self) -> None:
         work_item, run = self.create_active_binding()
@@ -170,7 +167,7 @@ class PreToolUseHookTests(unittest.TestCase):
             bindings_directory=self.bindings_directory,
         )
 
-        self.assertEqual(self.permission(read)[0], "allow")
+        self.assertIsNone(read)
         change_permission, change_reason = self.permission(change)
         self.assertEqual(change_permission, "deny")
         self.assertIn("active_binding_invalid:OperationalError", change_reason)
@@ -254,6 +251,20 @@ class PreToolUseHookTests(unittest.TestCase):
         permission, reason = self.permission(output)
         self.assertEqual(permission, "deny")
         self.assertIn("active_binding_invalid:RuntimeBindingError", reason)
+
+    def test_cli_read_only_allow_has_empty_stdout(self) -> None:
+        command = Path(__file__).resolve().parents[1] / "bin" / "harness-pre-tool-use"
+        completed = subprocess.run(
+            [str(command)],
+            input=json.dumps(self.event("Bash", {"command": "git status"})),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout, "")
+        self.assertEqual(completed.stderr, "")
 
     def test_project_hook_registers_one_matcherless_pretooluse_entry(self) -> None:
         hooks_path = Path(__file__).resolve().parents[1] / ".codex" / "hooks.json"

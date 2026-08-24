@@ -30,9 +30,11 @@ def _block(reason_code: str) -> int:
     return CODEX_BLOCK_EXIT_CODE
 
 
-def _validated_output(stdout: bytes) -> dict[str, Any]:
+def _validated_output(stdout: bytes) -> dict[str, Any] | None:
     """Parse and validate the exact policy response the guard may forward."""
 
+    if not stdout.strip():
+        return None
     try:
         payload = json.loads(stdout)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -45,8 +47,8 @@ def _validated_output(stdout: bytes) -> dict[str, Any]:
         raise GuardOutputError("hookSpecificOutput must be an object")
     if specific.get("hookEventName") != "PreToolUse":
         raise GuardOutputError("hookEventName must be PreToolUse")
-    if specific.get("permissionDecision") not in {"allow", "deny"}:
-        raise GuardOutputError("permissionDecision must be allow or deny")
+    if specific.get("permissionDecision") != "deny":
+        raise GuardOutputError("permissionDecision must be deny")
     reason = specific.get("permissionDecisionReason")
     if not isinstance(reason, str) or not reason.strip():
         raise GuardOutputError("permissionDecisionReason must be non-empty")
@@ -110,8 +112,9 @@ def run_guard(
     except GuardOutputError as error:
         return _block(f"invalid_child_output:{type(error).__name__}")
 
-    json.dump(payload, sys.stdout, ensure_ascii=False, separators=(",", ":"))
-    sys.stdout.write("\n")
+    if payload is not None:
+        json.dump(payload, sys.stdout, ensure_ascii=False, separators=(",", ":"))
+        sys.stdout.write("\n")
     return 0
 
 

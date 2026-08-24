@@ -25,29 +25,48 @@ class PreToolUseGuardTests(unittest.TestCase):
             )
         return result, stdout.getvalue(), stderr.getvalue()
 
-    def valid_output_source(self, decision: str) -> str:
+    def valid_deny_source(self) -> str:
         output = {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
-                "permissionDecision": decision,
-                "permissionDecisionReason": f"test {decision}",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": "test deny",
             }
         }
         return f"import json; print(json.dumps({output!r}))"
 
-    def test_valid_allow_and_deny_are_forwarded(self) -> None:
-        for decision in ("allow", "deny"):
-            with self.subTest(decision=decision):
-                result, stdout, stderr = self.run_guard(
-                    self.valid_output_source(decision)
-                )
+    def test_empty_stdout_is_forwarded_as_normal_allow(self) -> None:
+        result, stdout, stderr = self.run_guard("pass")
 
-                self.assertEqual(result, 0)
-                self.assertEqual(
-                    json.loads(stdout)["hookSpecificOutput"]["permissionDecision"],
-                    decision,
-                )
-                self.assertEqual(stderr, "")
+        self.assertEqual(result, 0)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr, "")
+
+    def test_valid_deny_is_forwarded(self) -> None:
+        result, stdout, stderr = self.run_guard(self.valid_deny_source())
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            json.loads(stdout)["hookSpecificOutput"]["permissionDecision"],
+            "deny",
+        )
+        self.assertEqual(stderr, "")
+
+    def test_allow_json_without_rewrite_is_rejected(self) -> None:
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": "unsupported ordinary allow",
+            }
+        }
+        result, stdout, stderr = self.run_guard(
+            f"import json; print(json.dumps({output!r}))"
+        )
+
+        self.assertEqual(result, pre_tool_use_guard.CODEX_BLOCK_EXIT_CODE)
+        self.assertEqual(stdout, "")
+        self.assertIn("invalid_child_output", stderr)
 
     def test_child_exit_one_becomes_codex_block_exit_two(self) -> None:
         result, stdout, stderr = self.run_guard("raise SystemExit(1)")
