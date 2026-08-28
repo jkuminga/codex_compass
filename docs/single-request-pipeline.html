@@ -243,7 +243,7 @@ DB Run·WorkItem 상태 불일치 → 거부
   </section>
 
   <section id="posttool-policy">
-    <div class="section-head"><h2>PostToolUse와 Artifact 기록 정책</h2><p>PostToolUse는 <code>start_work()</code>·<code>finish_work()</code> 수명주기만 처리한다. 일반 도구 결과는 그 의미를 직접 읽은 Codex가 판단하여 <code>record_artifact()</code> MCP로 저장한다. 상세 기준은 <a href="./URGENT-posttooluse-implementation.html">[긴급] PostToolUse·Artifact 기록 전략</a>을 따른다.</p></div>
+    <div class="section-head"><h2>PostToolUse와 Artifact 기록 정책</h2><p>PostToolUse는 <code>start_work()</code>·<code>finish_work()</code> 수명주기만 처리한다. 일반 도구 결과는 그 의미를 직접 읽은 Codex가 판단하여 <code>record_artifact()</code> MCP로 저장한다.</p></div>
     <div class="table-wrap"><table><thead><tr><th>대상</th><th>처리</th><th>쉬운 의미</th></tr></thead><tbody>
       <tr><td data-label="대상"><code>start_work()</code>·<code>finish_work()</code></td><td data-label="처리">각 도구 전용 PostToolUse가 Binding 저장·Recall 또는 종료 Run의 Binding 삭제를 수행한다.</td><td data-label="쉬운 의미">작업 시작과 종료에 꼭 필요한 기계적인 뒤처리만 Hook이 맡는다.</td></tr>
       <tr><td data-label="대상">테스트·lint·빌드·커밋</td><td data-label="처리">Codex가 실제 실행 완료와 결과를 확인한다. 현재 Run의 검증 가능한 산출물이면 <code>record_artifact()</code>를 호출한다.</td><td data-label="쉬운 의미">명령과 결과를 모두 본 모델이 저장 가치를 판단한다.</td></tr>
