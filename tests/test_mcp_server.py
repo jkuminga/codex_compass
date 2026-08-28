@@ -306,6 +306,90 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "다음 정책을 검토한다.",
         )
 
+    async def test_codex_can_finish_each_non_success_outcome_through_mcp(
+        self,
+    ) -> None:
+        cases = (
+            ("retry_needed", "failed", "ready", "다음 Run에서 다시 검증한다.", None),
+            (
+                "blocked",
+                "interrupted",
+                "blocked",
+                "권한 승인 후 재개한다.",
+                "권한 승인 대기",
+            ),
+            ("interrupted", "interrupted", "ready", "중단 지점부터 재개한다.", None),
+            ("cancelled", "cancelled", "cancelled", None, None),
+        )
+
+        async with Client(create_server(self.database_path)) as client:
+            for index, (
+                outcome,
+                expected_run_status,
+                expected_work_item_status,
+                next_action,
+                block_reason,
+            ) in enumerate(cases, start=1):
+                with self.subTest(outcome=outcome):
+                    work_item = state_store.create_work_item(
+                        title=f"종료 결과 {outcome}",
+                        kind="implementation",
+                        goal=f"{outcome} 종료 결과를 검증한다.",
+                        next_action="종료 결과를 검증한다.",
+                        actor="planner",
+                        database_path=self.database_path,
+                    )
+                    state_store.change_work_item_status(
+                        work_item["id"],
+                        "ready",
+                        next_action="종료 결과를 검증한다.",
+                        actor="planner",
+                        reason="종료 검증 준비 완료",
+                        database_path=self.database_path,
+                    )
+                    run_result = await client.call_tool(
+                        "start_work",
+                        {
+                            "work_item_id": work_item["id"],
+                            "intent": f"{outcome} 종료 흐름을 검증한다.",
+                            "recall_query": f"종료 결과 {index}",
+                        },
+                    )
+                    finish_result = await client.call_tool(
+                        "finish_work",
+                        {
+                            "run_id": run_result.structured_content["id"],
+                            "outcome": outcome,
+                            "summary": f"{outcome} 상태로 종료했다.",
+                            "reason": f"{outcome} 조건을 확인했다.",
+                            "termination_reason": f"{outcome} 종료 사유",
+                            "next_action": next_action,
+                            "block_reason": block_reason,
+                        },
+                    )
+
+                    self.assertFalse(finish_result.is_error)
+                    self.assertEqual(
+                        finish_result.structured_content["run"]["status"],
+                        expected_run_status,
+                    )
+                    self.assertEqual(
+                        finish_result.structured_content["run"]["termination_reason"],
+                        f"{outcome} 종료 사유",
+                    )
+                    self.assertEqual(
+                        finish_result.structured_content["work_item"]["status"],
+                        expected_work_item_status,
+                    )
+                    self.assertEqual(
+                        finish_result.structured_content["work_item"]["next_action"],
+                        next_action,
+                    )
+                    self.assertEqual(
+                        finish_result.structured_content["work_item"]["block_reason"],
+                        block_reason,
+                    )
+
     async def test_codex_can_recover_user_confirmed_abandoned_work_through_mcp(self) -> None:
         work_item = state_store.create_work_item(
             title="중단 작업 복구",
