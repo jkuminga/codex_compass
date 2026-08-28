@@ -345,7 +345,10 @@ def create_server(
         """Register a file, test, build, commit, or other verifiable Run result.
 
         Store only a short summary and URI; keep full output in the referenced
-        file, Trace, Git, or CI system.
+        file, Trace, Git, or CI system. Repeated test, lint, and build executions
+        use ``command:<command-family>:<YYYYMMDDTHHMMSSZ>`` so each attempt has
+        its own Artifact. Add a 6-12 character lowercase suffix only when two
+        executions start in the same second.
         """
 
         return state_store.create_artifact(

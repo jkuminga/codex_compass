@@ -114,7 +114,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
         artifact = state_store.create_artifact(
             run["id"],
             kind="test_run",
-            uri="trace://tests/1",
+            uri="command:unittest:20260827T081800Z",
             verification_status="passed",
             summary="전체 생명주기 테스트 통과",
             actor="codex",
@@ -329,7 +329,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
         artifact = state_store.create_artifact(
             run["id"],
             kind="test_run",
-            uri="trace://tests/pending",
+            uri="command:unittest:20260827T081900Z",
             verification_status="pending",
             summary="테스트 실행 중",
             actor="codex",
@@ -382,6 +382,105 @@ class StateStoreLifecycleTests(unittest.TestCase):
         )
         self.assertTrue(verification["can_complete"])
         self.assertEqual(verification["issues"], [])
+
+    def test_execution_artifact_uris_distinguish_retries_and_reject_duplicates(
+        self,
+    ) -> None:
+        work_item = state_store.create_work_item(
+            title="반복 검증 결과",
+            kind="verification",
+            goal="실패와 재실행 성공을 별도 Artifact로 보존한다.",
+            next_action="같은 테스트를 수정 전후로 실행한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="같은 테스트를 수정 전후로 실행한다.",
+            actor="planner",
+            reason="검증 준비 완료",
+            database_path=self.database_path,
+        )
+        run = self.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+
+        failed = state_store.create_artifact(
+            run["id"],
+            kind="test_run",
+            uri="command:pytest:20260827T082100Z",
+            verification_status="failed",
+            summary="수정 전 테스트 실패",
+            actor="codex",
+            database_path=self.database_path,
+        )
+        passed = state_store.create_artifact(
+            run["id"],
+            kind="test_run",
+            uri="command:pytest:20260827T082130Z",
+            verification_status="passed",
+            summary="수정 후 테스트 통과",
+            actor="codex",
+            database_path=self.database_path,
+        )
+
+        self.assertNotEqual(failed["id"], passed["id"])
+        attempts = {
+            artifact["uri"]: artifact["verification_status"]
+            for artifact in state_store.get_run_artifacts(
+                run["id"], database_path=self.database_path
+            )
+        }
+        self.assertEqual(
+            attempts,
+            {
+                "command:pytest:20260827T082100Z": "failed",
+                "command:pytest:20260827T082130Z": "passed",
+            },
+        )
+        with self.assertRaises(state_store.ConflictError):
+            state_store.create_artifact(
+                run["id"],
+                kind="test_run",
+                uri="command:pytest:20260827T082130Z",
+                verification_status="passed",
+                summary="같은 실행 결과 중복",
+                actor="codex",
+                database_path=self.database_path,
+            )
+
+        invalid_uris = (
+            "trace://tests/latest",
+            "command:pytest:20261327T082130Z",
+            "command:Pytest:20260827T082130Z",
+        )
+        for kind in ("test_run", "lint_run", "build_run"):
+            for uri in invalid_uris:
+                with self.subTest(kind=kind, uri=uri):
+                    with self.assertRaises(state_store.ConflictError):
+                        state_store.create_artifact(
+                            run["id"],
+                            kind=kind,
+                            uri=uri,
+                            verification_status="failed",
+                            summary="잘못된 실행 URI",
+                            actor="codex",
+                            database_path=self.database_path,
+                        )
+
+        suffixed = state_store.create_artifact(
+            run["id"],
+            kind="lint_run",
+            uri="command:ruff-check:20260827T082200Z-a1b2c3",
+            verification_status="passed",
+            summary="같은 초 실행을 접미사로 구분",
+            actor="codex",
+            database_path=self.database_path,
+        )
+        self.assertEqual(
+            suffixed["uri"], "command:ruff-check:20260827T082200Z-a1b2c3"
+        )
 
     def test_memory_candidates_have_a_small_explicit_lifecycle(self) -> None:
         work_item = state_store.create_work_item(

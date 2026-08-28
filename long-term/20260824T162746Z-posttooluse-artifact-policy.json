@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "ltm_posttooluse_artifact_policy",
+  "created_at": "2026-08-24T16:27:46Z",
+  "kind": "decision",
+  "title": "PostToolUse는 수명주기 전용, Artifact는 Codex가 명시 저장",
+  "summary": "PostToolUse는 start_work와 finish_work의 Binding·Recall 수명주기만 처리한다. 일반 테스트, lint, 빌드, 커밋 결과는 Codex가 의미를 판단해 record_artifact MCP로 저장하며 범용 셸 파서와 자동 Artifact Hook은 만들지 않는다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/URGENT-posttooluse-implementation.html"
+    },
+    {
+      "type": "file",
+      "ref": "docs/single-request-pipeline.html"
+    }
+  ]
+}

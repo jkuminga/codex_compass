@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "ltm_artifact_execution_uri",
+  "created_at": "2026-08-27T07:14:48Z",
+  "kind": "decision",
+  "title": "반복 실행 Artifact는 UTC 시각으로 구분",
+  "summary": "테스트, lint, 빌드처럼 반복 실행되는 Artifact의 URI에는 실행 시작 UTC 시각을 붙여 실패와 재실행 성공을 별개 결과로 저장한다. 파일은 저장소 상대 경로, 커밋은 실제 SHA를 사용한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/URGENT-posttooluse-implementation.html"
+    }
+  ]
+}

@@ -136,12 +136,22 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             run = run_result.structured_content
             self.assertEqual(run["intent"], "MCP 실행 흐름을 구현하고 검증한다.")
             self.assertEqual(run["recall_query"], "MCP 실행 검증")
-            artifact_result = await client.call_tool(
+            invalid_artifact_result = await client.call_tool(
                 "record_artifact",
                 {
                     "run_id": run["id"],
                     "kind": "test_run",
                     "uri": "trace://mcp/tests-1",
+                    "verification_status": "failed",
+                    "summary": "실행 시각이 없는 잘못된 URI",
+                },
+            )
+            artifact_result = await client.call_tool(
+                "record_artifact",
+                {
+                    "run_id": run["id"],
+                    "kind": "test_run",
+                    "uri": "command:mcp-tests:20260827T082000Z",
                     "verification_status": "passed",
                     "summary": "MCP 실행 테스트 통과",
                 },
@@ -170,6 +180,8 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertFalse(run_result.is_error)
+        self.assertTrue(invalid_artifact_result.is_error)
+        self.assertFalse(artifact_result.is_error)
         self.assertEqual(verify_result.structured_content["criterion"]["status"], "passed")
         self.assertTrue(
             postflight_result.structured_content["verification"]["can_complete"]

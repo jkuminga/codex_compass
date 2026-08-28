@@ -31,14 +31,14 @@
     <div><p class="eyebrow">Harness v2 · canonical lifecycle</p><h1>단일 Codex 요청 파이프라인</h1><p class="lede">한 번의 사용자 요청을 상태 조회, WorkItem 실행, 검증, 장기 기억 후보와 종료까지 연결하는 기준 흐름이다. Hook·Codex MCP·Skill은 서로 대신하지 않고 각자 잘하는 일만 맡는다.</p></div>
     <aside class="rule"><strong>핵심 규칙</strong><p>Hook은 Run을 자동 생성하거나 성공으로 마감하지 않는다. 단, UserPromptSubmit은 현재 세션의 이전 turn에서 남은 것이 확실한 Run만 <code>interrupted</code>로 기계적으로 복구한다. Codex는 의미를 판단해 MCP로 새 Run을 시작하고 정상 결과를 종료한다.</p></aside>
   </header>
-  <nav><a href="#status">구현 상태</a><a href="#classification">요청 분류</a><a href="#prompt-packet">상태 패킷</a><a href="#workitem-decision">WorkItem 결정</a><a href="#flow">전체 흐름</a><a href="#memory-recall">장기 기억 Recall</a><a href="#pretool-policy">PreToolUse 정책</a><a href="#ownership">역할 분리</a><a href="#matrix">호출표</a><a href="#binding">Runtime Binding</a><a href="#failure">실패 처리</a></nav>
+  <nav><a href="#status">구현 상태</a><a href="#classification">요청 분류</a><a href="#prompt-packet">상태 패킷</a><a href="#workitem-decision">WorkItem 결정</a><a href="#flow">전체 흐름</a><a href="#memory-recall">장기 기억 Recall</a><a href="#pretool-policy">PreToolUse 정책</a><a href="#posttool-policy">PostToolUse 정책</a><a href="#ownership">역할 분리</a><a href="#matrix">호출표</a><a href="#binding">Runtime Binding</a><a href="#failure">실패 처리</a></nav>
 
   <section id="status">
     <div class="section-head"><h2>현재 구현 상태</h2><p>이 문서는 목표 파이프라인의 정본이다. 이미 동작하는 부분과 다음에 구현할 부분을 구분한다.</p></div>
     <div class="three">
       <article class="lane agent"><h3>작업 시작 · 구현됨</h3><p>UserPromptSubmit, <code>$work-start</code> 스킬, SQLite·MCP, 세션별 Runtime Binding, <code>start_work</code>·<code>finish_work</code> 전용 PostToolUse와 Recall Wrapper.</p></article>
-      <article class="lane hook"><h3>다음 구현</h3><p>PreToolUse의 도구 분류와 <code>validate_active_binding()</code> 기반 변경 허용·차단.</p></article>
-      <article class="lane skill"><h3>후속 구현</h3><p>일반 PostToolUse·Stop Guard·Trace 연결과 MemoryGraph Finalize Skill.</p></article>
+      <article class="lane hook"><h3>작업 보호 · 구현됨</h3><p>PreToolUse의 도구 분류, <code>validate_active_binding()</code> 기반 변경 허용·차단과 실패 감시 Guard.</p></article>
+      <article class="lane skill"><h3>다음 구현</h3><p>Codex의 Artifact 판단·기록 지침. 이후 Stop Guard·Trace 연결과 MemoryGraph Finalize Skill을 구현한다.</p></article>
     </div>
   </section>
 
@@ -137,7 +137,7 @@
       <article class="step agent" data-detail="기존 WorkItem은 get_work_context 후 start_work를 호출한다. 새 목표는 create_work_item, ready 전환, get_work_context, start_work 순으로 준비한다. start_work 성공 직후 전용 PostToolUse가 Runtime Binding을 저장하고 MemoryGraph 장기 기억 조회를 실행한다."><b>3. 작업 시작</b><span>Context → start_work → Recall</span></article>
       <article class="step hook" data-detail="도구 이름과 입력을 정책표로 분류한다. 명확한 조회는 허용하고, 작업 준비 도구는 Run 없이 허용하며, 프로젝트 변경과 불명확한 호출은 유효한 활성 Run을 요구한다. 위험 호출은 별도로 거부한다."><b>4. PreToolUse</b><span>도구 분류 · 상태 검사</span></article>
       <article class="step agent" data-detail="Codex가 설계·조사·문서·코드·테스트 등 WorkItem 목표에 필요한 작업을 수행한다. 재사용할 지식이 생기면 create_memory_candidate를 즉시 호출한다."><b>5. 실제 작업</b><span>설계 · 조사 · 구현 · 검증</span></article>
-      <article class="step hook" data-detail="도구 결과를 Trace에 기록한다. 테스트·린트·빌드·커밋처럼 기계적으로 식별 가능한 결과만 Artifact로 자동 등록한다."><b>6. PostToolUse</b><span>Trace · Artifact 기록</span></article>
+      <article class="step hook" data-detail="단순 셸 호출 중 테스트·lint·빌드·커밋처럼 종료 코드로 기계적으로 판정할 수 있는 결과만 현재 Binding을 재검증한 뒤 Artifact로 자동 등록한다. Trace 연결과 Criterion Evidence 판단은 이 단계에서 하지 않는다."><b>6. PostToolUse</b><span>확실한 Artifact만 기록</span></article>
       <article class="step agent" data-detail="Codex가 Artifact가 어떤 Acceptance Criterion을 증명하는지 판단하고 verify_criterion을 호출한다."><b>7. 검증 연결</b><span>verify_criterion</span></article>
       <article class="step skill" data-detail="pending 후보가 있을 때 MemoryGraph Skill로 가치·중복·관계를 검토한다. 저장 후 promote, 제외 시 reject 처리한다."><b>8. 기억 Finalize</b><span>promote · reject</span></article>
       <article class="step agent" data-detail="get_postflight_status로 누락을 확인한 뒤 finish_work를 호출한다. 성공 직후 전용 PostToolUse가 종료된 run_id와 현재 세션 Binding을 비교하고 expected_run_id 조건으로 삭제한다."><b>9. 종료 준비</b><span>finish_work → Binding 삭제</span></article>
@@ -239,13 +239,35 @@ DB Run·WorkItem 상태 불일치 → 거부
   → 거부: deny JSON 또는 exit 2</code></pre>
     </div>
     <div class="callout"><p><strong>책임 경계:</strong> PreToolUse는 호출 가능 여부만 판단한다. MCP 입력 검증과 WorkItem·Run 상태 전이는 <code>state_store.py</code>가 담당하며, Hook 정책은 Codex 샌드박스·권한 체계를 대신하는 보안 경계가 아니다.</p></div>
+    <div class="callout"><p><strong>구현된 운영 경계:</strong> PreToolUse는 matcher 없는 단일 Hook이 내부 dispatcher로 도구 종류를 나눈다. 외부 MCP는 이 프로젝트의 상태를 바꾼다고 단정할 수 없어 통과시키며, 전역 Hook과 프로젝트 Hook의 충돌 가능성은 하네스가 추측해서 해결하지 않는다. Run 없이 복합 조회 명령이 막힌 경우에는 오류가 아니라 “단순 조회 명령으로 나눠 다시 시도할 예정”이라는 안내를 사용한다.</p></div>
+  </section>
+
+  <section id="posttool-policy">
+    <div class="section-head"><h2>PostToolUse와 Artifact 기록 정책</h2><p>PostToolUse는 <code>start_work()</code>·<code>finish_work()</code> 수명주기만 처리한다. 일반 도구 결과는 그 의미를 직접 읽은 Codex가 판단하여 <code>record_artifact()</code> MCP로 저장한다. 상세 기준은 <a href="./URGENT-posttooluse-implementation.html">[긴급] PostToolUse·Artifact 기록 전략</a>을 따른다.</p></div>
+    <div class="table-wrap"><table><thead><tr><th>대상</th><th>처리</th><th>쉬운 의미</th></tr></thead><tbody>
+      <tr><td data-label="대상"><code>start_work()</code>·<code>finish_work()</code></td><td data-label="처리">각 도구 전용 PostToolUse가 Binding 저장·Recall 또는 종료 Run의 Binding 삭제를 수행한다.</td><td data-label="쉬운 의미">작업 시작과 종료에 꼭 필요한 기계적인 뒤처리만 Hook이 맡는다.</td></tr>
+      <tr><td data-label="대상">테스트·lint·빌드·커밋</td><td data-label="처리">Codex가 실제 실행 완료와 결과를 확인한다. 현재 Run의 검증 가능한 산출물이면 <code>record_artifact()</code>를 호출한다.</td><td data-label="쉬운 의미">명령과 결과를 모두 본 모델이 저장 가치를 판단한다.</td></tr>
+      <tr><td data-label="대상">조회·도움말·dry-run·불완전 실행</td><td data-label="처리">Artifact로 기록하지 않는다. 일반 셸 명령을 자동 분류하는 PostToolUse도 만들지 않는다.</td><td data-label="쉬운 의미">실제 작업 결과가 아니면 상태 저장소를 늘리지 않는다.</td></tr>
+      <tr><td data-label="대상">Criterion Evidence·Run 종료</td><td data-label="처리">Hook이 처리하지 않는다. Codex가 <code>verify_criterion</code>과 <code>finish_work</code>로 판단한다.</td><td data-label="쉬운 의미">결과가 어느 완료 조건을 증명하는지는 모델이 문맥을 보고 결정한다.</td></tr>
+    </tbody></table></div>
+    <div class="binding" style="margin-top:18px">
+      <div><h3>일반 결과 기록 순서</h3><ol><li>Codex가 명령과 실제 결과를 확인한다.</li><li>현재 Run을 검증하는 의미 있는 결과인지 판단한다.</li><li>가치가 있으면 종류·상태·짧은 요약·참조 위치로 <code>record_artifact()</code>를 호출한다.</li><li>특정 Criterion의 근거라면 <code>verify_criterion()</code>으로 Evidence를 별도 연결한다.</li></ol></div>
+      <pre><code>ordinary tool result
+  → Codex meaning check
+  → meaningful: record_artifact()
+  → optional: verify_criterion()
+
+not meaningful / incomplete
+  → no state write</code></pre>
+    </div>
+    <div class="callout"><p><strong>저장 경계:</strong> stdout·stderr 전문, 환경 변수, 비밀정보는 Artifact에 넣지 않는다. DB의 <code>UNIQUE(run_id, kind, uri)</code>가 중복 저장의 최종 방어선이며, OTel Trace 연결과 종료 누락 검사는 후속 단계로 남긴다.</p></div>
   </section>
 
   <section id="ownership">
     <div class="section-head"><h2>판단 책임을 나눈다</h2><p>입력만 보면 답이 정해지는 처리는 Hook, 사용자 의도와 의미를 읽어야 하는 처리는 Codex, 반복되는 고급 추론 절차는 Skill이 맡는다.</p></div>
     <div class="three">
-      <article class="lane hook"><h3>Hook → <code>state_store.py</code></h3><p>모델 없이 가능한 기계 처리.</p><ul><li>DB 건강 검사와 상태 조회</li><li>Binding이 가리키는 Run·정책·권한 확인</li><li>Trace와 식별 가능한 Artifact 기록</li><li>종료 누락 검사와 1회 continuation</li></ul></article>
-      <article class="lane agent"><h3>Codex → MCP</h3><p>문맥과 결과 의미가 필요한 판단.</p><ul><li>일회성 답변과 프로젝트 작업 구분</li><li>기존 WorkItem 재사용 또는 새 목표 생성</li><li>Run 시작과 최종 outcome 결정</li><li>Artifact와 완료 조건 연결</li><li>Run 요약과 next_action 작성</li></ul></article>
+      <article class="lane hook"><h3>Hook → <code>state_store.py</code></h3><p>모델 없이 가능한 기계 처리.</p><ul><li>DB 건강 검사와 상태 조회</li><li>Binding이 가리키는 Run·정책·권한 확인</li><li>작업 시작·종료 Binding 처리와 Recall</li><li>종료 누락 검사와 1회 continuation</li></ul></article>
+      <article class="lane agent"><h3>Codex → MCP</h3><p>문맥과 결과 의미가 필요한 판단.</p><ul><li>일회성 답변과 프로젝트 작업 구분</li><li>기존 WorkItem 재사용 또는 새 목표 생성</li><li>Run 시작과 최종 outcome 결정</li><li>일반 도구 결과 판단과 Artifact 기록</li><li>Artifact와 완료 조건 연결</li><li>Run 요약과 next_action 작성</li></ul></article>
       <article class="lane skill"><h3>Codex → Skill</h3><p>재사용하는 추론 절차.</p><ul><li>후보 가치 평가</li><li>기존 기억 검색과 중복 판단</li><li>관계 선택과 MemoryGraph 저장</li><li>후보 promote 또는 reject</li></ul></article>
     </div>
   </section>
@@ -258,8 +280,8 @@ DB Run·WorkItem 상태 불일치 → 거부
       <tr><td data-label="시점">Run 준비</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출">기존 작업은 <code>start_work</code>; 새 목표는 <code>create_work_item</code> → <code>change_work_item_state(ready)</code> → <code>get_work_context</code> → <code>start_work</code></td><td data-label="이유">새 WorkItem도 목표·다음 행동·완료 조건을 다시 읽은 뒤 Run을 시작한다.</td></tr>
       <tr><td data-label="시점"><code>start_work</code> 성공 직후</td><td data-label="주체"><span class="owner hook">전용 PostToolUse</span></td><td data-label="호출">Runtime Binding 저장 → MemoryGraph 장기 기억 조회</td><td data-label="이유">WorkItem과 Run이 확정된 뒤 정확한 작업 문맥으로 관련 기억만 불러온다. 조회 실패는 Run을 되돌리지 않는다.</td></tr>
       <tr><td data-label="시점">도구 직전</td><td data-label="주체"><span class="owner hook">PreToolUse</span></td><td data-label="호출">도구 정책 목록 분류 → 변경 호출이면 <code>validate_active_binding(session_id, current_turn_id)</code> → 허용·거부</td><td data-label="이유">조회와 작업 준비는 열어 두고, 프로젝트 변경은 현재 Turn의 Binding과 DB의 활성 Run이 모두 일치할 때만 실행한다.</td></tr>
-      <tr><td data-label="시점">도구 직후</td><td data-label="주체"><span class="owner hook">PostToolUse</span></td><td data-label="호출"><code>create_artifact()</code>, Trace 결과 기록</td><td data-label="이유">명확한 결과를 추가 토큰 없이 수집한다.</td></tr>
-      <tr><td data-label="시점">작업 도중</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>record_artifact</code>, <code>resolve_artifact</code>, <code>create_memory_candidate</code></td><td data-label="이유">자동 인식하지 못한 결과와 기억 가치는 문맥 판단이 필요하다.</td></tr>
+      <tr><td data-label="시점">일반 도구 직후</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출">결과 의미 판단 → 필요하면 <code>record_artifact()</code></td><td data-label="이유">테스트·lint·빌드·커밋이 실제 검증 결과인지 명령 목적과 출력을 함께 보고 판단해야 한다.</td></tr>
+      <tr><td data-label="시점">작업 도중</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>resolve_artifact</code>, <code>create_memory_candidate</code></td><td data-label="이유">Artifact 해소와 기억 가치는 문맥 판단이 필요하다.</td></tr>
       <tr><td data-label="시점">검증 후</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>verify_criterion</code></td><td data-label="이유">어떤 Artifact가 어느 Criterion의 Evidence인지 이해해야 한다.</td></tr>
       <tr><td data-label="시점">기억 검토</td><td data-label="주체"><span class="owner skill">Memory Skill</span></td><td data-label="호출"><code>list_memory_candidates</code>, MemoryGraph 저장, <code>promote_memory_candidate</code>/<code>reject_memory_candidate</code></td><td data-label="이유">중복·가치·관계 평가는 반복 가능한 추론 절차다.</td></tr>
       <tr><td data-label="시점">종료 직전</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>get_postflight_status</code> → <code>finish_work</code></td><td data-label="이유">전체 완료·정상 진전·재시도·막힘·중단 중 outcome을 Codex가 판단한다.</td></tr>
@@ -307,7 +329,7 @@ DB Run·WorkItem 상태 불일치 → 거부
     <details><summary>위험 명령이 정말 필요하면?</summary><div>v1에서는 활성 Run이나 사용자 요청만으로 예외를 만들지 않는다. 실제 필요 사례가 생기면 사용자 승인을 한 번만 소비하는 Permit 구조를 별도로 설계한다.</div></details>
     <details><summary>어떤 기존 WorkItem을 선택하나?</summary><div>기본값은 재사용이다. “기존 WorkItem을 완료하려면 이번 요청도 처리해야 하는가?”가 참이면 같은 WorkItem에 새 Run을 만든다. 독립적으로 완료할 별도 목표와 완료 조건이 필요할 때만 새 WorkItem을 만든다.</div></details>
     <details><summary>후보 세 개와 맞는 WorkItem이 없다면?</summary><div>Codex가 사용자 요청에서 핵심 용어 2~5개를 만들고 <code>search_work_items()</code>를 딱 한 번 호출한다. 함수는 <code>backlog</code>·<code>ready</code>·<code>blocked</code> WorkItem의 제목·목표·다음 행동을 일반 SQL로 검색해 최대 5개를 반환한다. 그 결과에도 적합한 목표가 없으면 새 WorkItem을 만든다.</div></details>
-    <details><summary>테스트는 통과했지만 Criterion과 연결되지 않았다면?</summary><div>PostToolUse는 Artifact까지만 만든다. Codex가 <code>verify_criterion</code>으로 Evidence를 연결하지 않으면 Stop Guard가 누락을 알리고 한 번 계속한다.</div></details>
+    <details><summary>테스트는 통과했지만 Criterion과 연결되지 않았다면?</summary><div>Codex가 먼저 <code>record_artifact()</code>로 결과를 저장하고, 해당 결과가 Criterion의 근거라면 <code>verify_criterion()</code>으로 Evidence를 연결한다. 향후 Stop Guard는 이 연결 누락을 알리고 한 번 계속한다.</div></details>
     <details><summary>작업이 실패하거나 막혔다면?</summary><div>Codex가 <code>finish_work</code>에서 <code>retry_needed</code>, <code>blocked</code> 또는 <code>interrupted</code>를 선택하고 다음 Run이 이어갈 <code>next_action</code>과 종료 이유를 기록한다.</div></details>
     <details><summary>이번 Run은 성공했지만 WorkItem은 아직 남았다면?</summary><div><code>finish_work(outcome="progressed")</code>로 종료한다. Run은 <code>succeeded</code>, WorkItem은 <code>ready</code>와 새 <code>next_action</code>으로 남아 다음 Run에서 이어진다.</div></details>
     <details><summary>pending 기억 후보가 남았다면?</summary><div>Memory Finalize Skill이 구현된 뒤에는 저장 또는 reject가 끝나지 않은 후보를 Stop Guard가 알리고 한 번 continuation을 요청한다. Skill 구현 전에는 경고만 한다.</div></details>

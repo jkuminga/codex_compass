@@ -7,6 +7,7 @@ write function owns its validation, transaction, and State Event recording.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -34,6 +35,11 @@ class ConflictError(StateStoreError):
 
 _UNSET = object()
 _SEARCHABLE_WORK_ITEM_STATUSES = frozenset({"backlog", "ready", "blocked"})
+_EXECUTION_ARTIFACT_KINDS = frozenset({"test_run", "lint_run", "build_run"})
+_EXECUTION_ARTIFACT_URI = re.compile(
+    r"^command:(?P<family>[a-z0-9](?:[a-z0-9-]*[a-z0-9])?):"
+    r"(?P<started_at>\d{8}T\d{6}Z)(?:-(?P<suffix>[a-z0-9]{6,12}))?$"
+)
 _REQUIRED_TABLES = frozenset(
     {
         "features",
@@ -67,6 +73,29 @@ def _generate_id(prefix: str) -> str:
     """Create a compact unique identifier with a domain-specific prefix."""
 
     return f"{prefix}-{uuid4().hex[:12]}"
+
+
+def _validate_artifact_uri(kind: str, uri: str) -> str:
+    """Validate and normalize the reference that identifies one Artifact result."""
+
+    cleaned_uri = uri.strip()
+    if not cleaned_uri:
+        raise ConflictError("Artifact uri is required")
+    if kind not in _EXECUTION_ARTIFACT_KINDS:
+        return cleaned_uri
+
+    match = _EXECUTION_ARTIFACT_URI.fullmatch(cleaned_uri)
+    if match is None:
+        raise ConflictError(
+            "test_run, lint_run, and build_run uri must use "
+            "command:<command-family>:<YYYYMMDDTHHMMSSZ> with an optional "
+            "6-12 character lowercase suffix"
+        )
+    try:
+        datetime.strptime(match.group("started_at"), "%Y%m%dT%H%M%SZ")
+    except ValueError as error:
+        raise ConflictError("Artifact uri UTC timestamp is invalid") from error
+    return cleaned_uri
 
 
 def _as_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -1009,6 +1038,7 @@ def create_artifact(
 ) -> dict[str, Any]:
     """Register a verifiable Run result without copying its original content."""
 
+    normalized_uri = _validate_artifact_uri(kind, uri)
     identifier = artifact_id or _generate_id("ART")
     now = _utc_now()
     with _transaction(database_path) as database:
@@ -1021,7 +1051,15 @@ def create_artifact(
               id, run_id, kind, uri, verification_status, summary, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (identifier, run_id, kind, uri, verification_status, summary, now),
+            (
+                identifier,
+                run_id,
+                kind,
+                normalized_uri,
+                verification_status,
+                summary,
+                now,
+            ),
         )
         _append_state_event(
             database,
