@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+# Archive or restore the durable Harness databases that Git intentionally ignores.
+#
+# Archive only:
+#   - .harness/state.db       (WorkItem, Run, Artifact state)
+#   - .harness/memorygraph.db (long-term MemoryGraph state)
+#
+# Intentionally excluded:
+#   - .harness/runtime/       (active-session bindings; unsafe to transfer)
+#   - .venv/                  (rebuildable Python environment)
+#   - .harness/schema.sql     (tracked by Git)
+
+set -euo pipefail
+
+readonly PROGRAM_NAME="${0##*/}"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  orca-harness-state archive [options]
+  orca-harness-state restore [options]
+
+Options:
+  --worktree PATH       Worktree to archive or restore (default: $ORCA_WORKTREE_PATH or $PWD).
+  --archive-root PATH   Archive location (default: $ORCA_ARCHIVE_ROOT or
+                        ~/Library/Application Support/Orca/harness-archives).
+  --snapshot NAME       Snapshot name for archive, or snapshot to restore.
+                        The default is "latest". Archive creates a timestamped
+                        snapshot and updates the latest pointer.
+  --replace             On restore, first preserve existing database files in the
+                        archive root. Without this flag, restore refuses to overwrite.
+  -h, --help            Show this help.
+
+Recommended Orca lifecycle wiring:
+  Archive script:  bin/orca-harness-state archive --worktree "$PWD"
+  Setup/restore hook: bin/orca-harness-state restore --worktree "$PWD"
+
+Set ORCA_ARCHIVE_ROOT to a private, machine-local directory shared by the
+worktrees that should reuse this Harness state. Archive data can contain project
+activity and is created with owner-only permissions.
+USAGE
+}
+
+fail() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_value() {
+  local option="$1"
+  local value="${2:-}"
+  [[ -n "$value" ]] || fail "$option requires a value"
+}
+
+timestamp_utc() {
+  date -u +%Y%m%dT%H%M%SZ
+}
+
+sha256_file() {
+  shasum -a 256 "$1" | awk '{print $1}'
+}
+
+sqlite_backup() {
+  local source="$1"
+  local destination="$2"
+
+  # The SQLite backup API produces a consistent copy even when a WAL file exists.
+  # Archive destinations are generated below and do not contain double quotes.
+  sqlite3 "$source" ".backup \"$destination\""
+}
+
+action="${1:-}"
+[[ -n "$action" ]] || {
+  usage >&2
+  exit 2
+}
+shift
+
+case "$action" in
+  archive|restore) ;;
+  -h|--help) usage; exit 0 ;;
+  *) fail "unknown action: $action (expected archive or restore)" ;;
+esac
+
+worktree="${ORCA_WORKTREE_PATH:-$PWD}"
+archive_root="${ORCA_ARCHIVE_ROOT:-${HOME}/Library/Application Support/Orca/harness-archives}"
+snapshot="latest"
+replace_existing=false
+
+while (($#)); do
+  case "$1" in
+    --worktree)
+      require_value "$1" "${2:-}"
+      worktree="$2"
+      shift 2
+      ;;
+    --archive-root)
+      require_value "$1" "${2:-}"
+      archive_root="$2"
+      shift 2
+      ;;
+    --snapshot)
+      require_value "$1" "${2:-}"
+      snapshot="$2"
+      shift 2
+      ;;
+    --replace)
+      replace_existing=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *) fail "unknown option: $1" ;;
+  esac
+done
+
+[[ "$snapshot" =~ ^[A-Za-z0-9._-]+$ ]] || fail "snapshot may contain only letters, numbers, dot, underscore, and hyphen"
+[[ -d "$worktree" ]] || fail "worktree does not exist: $worktree"
+
+worktree="$(cd "$worktree" && pwd -P)"
+mkdir -p "$archive_root"
+chmod 700 "$archive_root"
+archive_root="$(cd "$archive_root" && pwd -P)"
+
+# Linked worktrees have different paths but one Git common directory. Use that
+# shared directory as the archive identity so a snapshot from an archived
+# worktree can be restored into the next worktree for the same repository.
+if git -C "$worktree" rev-parse --git-common-dir >/dev/null 2>&1; then
+  git_common_dir="$(git -C "$worktree" rev-parse --git-common-dir)"
+  if [[ "$git_common_dir" != /* ]]; then
+    git_common_dir="$worktree/$git_common_dir"
+  fi
+  git_common_dir="$(cd "$git_common_dir" && pwd -P)"
+  project_identity="$git_common_dir"
+  project_name="$(basename "$(dirname "$git_common_dir")")"
+else
+  project_identity="$worktree"
+  project_name="$(basename "$worktree")"
+fi
+project_key="$(printf '%s' "$project_identity" | shasum -a 256 | awk '{print substr($1, 1, 12)}')"
+project_archive="$archive_root/${project_name}-${project_key}"
+
+# state.db and memorygraph.db are durable SQLite databases. Runtime bindings are
+# deliberately absent from this list because they identify a live Codex session.
+database_names=(state.db memorygraph.db)
+
+archive_databases() {
+  local source_dir="$worktree/.harness"
+  local staging snapshot_id snapshot_dir database source destination manifest
+  local archived_count=0
+
+  cleanup_staging() {
+    rm -f "$staging"/*
+    rmdir "$staging"
+  }
+
+  [[ -d "$source_dir" ]] || fail "no .harness directory in $worktree"
+  mkdir -p "$project_archive"
+  chmod 700 "$project_archive"
+  staging="$(mktemp -d "$project_archive/.staging.XXXXXX")"
+  trap cleanup_staging EXIT
+
+  for database in "${database_names[@]}"; do
+    source="$source_dir/$database"
+    [[ -f "$source" ]] || continue
+    destination="$staging/$database"
+    sqlite_backup "$source" "$destination"
+    archived_count=$((archived_count + 1))
+  done
+
+  ((archived_count > 0)) || fail "no durable Harness database found in $source_dir"
+
+  manifest="$staging/manifest.tsv"
+  {
+    printf 'format\torca-harness-state-v1\n'
+    printf 'created_at\t%s\n' "$(timestamp_utc)"
+    printf 'source_worktree\t%s\n' "$worktree"
+    for database in "${database_names[@]}"; do
+      [[ -f "$staging/$database" ]] || continue
+      printf 'database\t%s\t%s\n' "$database" "$(sha256_file "$staging/$database")"
+    done
+  } > "$manifest"
+
+  if [[ "$snapshot" == "latest" ]]; then
+    snapshot_id="$(timestamp_utc)"
+  else
+    snapshot_id="$snapshot"
+  fi
+  snapshot_dir="$project_archive/$snapshot_id"
+  while [[ -e "$snapshot_dir" ]]; do
+    snapshot_id="${snapshot_id}-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 6)"
+    snapshot_dir="$project_archive/$snapshot_id"
+  done
+  mv "$staging" "$snapshot_dir"
+  trap - EXIT
+
+  local pointer="$project_archive/.latest.$$"
+  ln -s "$snapshot_id" "$pointer"
+  mv -f "$pointer" "$project_archive/latest"
+  printf 'Archived %d Harness database(s): %s\n' "$archived_count" "$snapshot_dir"
+}
+
+resolve_snapshot_dir() {
+  if [[ "$snapshot" == "latest" ]]; then
+    [[ -L "$project_archive/latest" ]] || fail "no latest snapshot for $project_name"
+    printf '%s\n' "$project_archive/$(readlink "$project_archive/latest")"
+  else
+    printf '%s\n' "$project_archive/$snapshot"
+  fi
+}
+
+restore_databases() {
+  local snapshot_dir target_dir database source destination recovery_dir manifest_line expected actual
+  snapshot_dir="$(resolve_snapshot_dir)"
+  [[ -d "$snapshot_dir" ]] || fail "snapshot does not exist: $snapshot_dir"
+  [[ -f "$snapshot_dir/manifest.tsv" ]] || fail "snapshot manifest is missing: $snapshot_dir/manifest.tsv"
+
+  while IFS=$'\t' read -r kind name expected; do
+    [[ "$kind" == "database" ]] || continue
+    source="$snapshot_dir/$name"
+    [[ -f "$source" ]] || fail "snapshot database is missing: $name"
+    actual="$(sha256_file "$source")"
+    [[ "$actual" == "$expected" ]] || fail "checksum mismatch for snapshot database: $name"
+  done < "$snapshot_dir/manifest.tsv"
+
+  target_dir="$worktree/.harness"
+  for database in "${database_names[@]}"; do
+    destination="$target_dir/$database"
+    if [[ -e "$destination" && "$replace_existing" != true ]]; then
+      fail "$destination already exists; re-run with --replace to preserve it outside the worktree before restoring"
+    fi
+  done
+
+  mkdir -p "$target_dir"
+  if [[ "$replace_existing" == true ]]; then
+    recovery_dir="$project_archive/replaced/$(timestamp_utc)"
+    mkdir -p "$recovery_dir"
+    chmod 700 "$recovery_dir"
+    for database in "${database_names[@]}"; do
+      destination="$target_dir/$database"
+      [[ -e "$destination" ]] || continue
+      mv "$destination" "$recovery_dir/$database"
+      for suffix in -wal -shm; do
+        [[ -e "${destination}${suffix}" ]] || continue
+        mv "${destination}${suffix}" "$recovery_dir/${database}${suffix}"
+      done
+    done
+  fi
+
+  local restored_count=0
+  for database in "${database_names[@]}"; do
+    source="$snapshot_dir/$database"
+    [[ -f "$source" ]] || continue
+    destination="$target_dir/$database"
+    sqlite_backup "$source" "$destination"
+    restored_count=$((restored_count + 1))
+  done
+  ((restored_count > 0)) || fail "snapshot contains no restorable Harness database"
+  printf 'Restored %d Harness database(s) from: %s\n' "$restored_count" "$snapshot_dir"
+}
+
+case "$action" in
+  archive) archive_databases ;;
+  restore) restore_databases ;;
+esac
