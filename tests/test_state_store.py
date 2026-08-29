@@ -77,6 +77,36 @@ class StateStoreLifecycleTests(unittest.TestCase):
         self.assertEqual(health["missing_tables"], [])
         self.assertEqual(health["missing_views"], ["project_progress"])
 
+    def test_get_memory_candidate_is_read_only_and_decodes_keywords(self) -> None:
+        work_item = state_store.create_work_item(
+            title="후보 단건 조회",
+            kind="verification",
+            goal="Memory Candidate를 상태 변경 없이 읽는다.",
+            next_action="후보를 생성하고 조회한다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"], "ready",
+            next_action="후보를 생성하고 조회한다.", actor="planner",
+            reason="조회 테스트 준비", database_path=self.database_path,
+        )
+        run = self.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+        candidate = state_store.create_candidate(
+            run["id"], proposed_type="technology", title="SQLite 조회",
+            content="후보를 단건 조회한다.", keywords=["SQLite", "조회", "sqlite"],
+            database_path=self.database_path,
+        )
+
+        loaded = state_store.get_memory_candidate(
+            candidate["id"], database_path=self.database_path
+        )
+
+        self.assertEqual(loaded["keywords"], ["sqlite", "조회"])
+        self.assertEqual(loaded["status"], "pending")
+
     def test_work_item_can_run_produce_evidence_and_finish(self) -> None:
         feature = state_store.create_feature(
             title="상태 저장소",

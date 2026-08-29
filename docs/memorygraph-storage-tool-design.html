@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MemoryGraph 장기 기억 저장 도구의 경계, 인터페이스, 실패 복구와 구현 순서를 설명하는 설계 문서">
+  <title>MemoryGraph 저장 도구 설계</title>
+  <style>
+    :root {
+      --paper: #f3efe5;
+      --surface: #fffdf7;
+      --ink: #18221f;
+      --muted: #66706b;
+      --line: #d7d1c3;
+      --green: #145c4e;
+      --green-soft: #d9ebe4;
+      --orange: #c45d24;
+      --orange-soft: #f7dfcf;
+      --blue: #285b8f;
+      --blue-soft: #dbe8f4;
+      --red: #9f3e36;
+      --shadow: 0 18px 48px rgba(37, 44, 40, .08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 5%, rgba(196, 93, 36, .10), transparent 27rem),
+        radial-gradient(circle at 92% 18%, rgba(20, 92, 78, .10), transparent 32rem),
+        var(--paper);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.62;
+    }
+    code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
+    code { color: #174f45; font-size: .92em; }
+    a { color: inherit; }
+    .shell { width: min(1180px, calc(100% - 34px)); margin: 0 auto; }
+    .hero { padding: 70px 0 34px; }
+    .eyebrow { margin: 0 0 12px; color: var(--orange); font-size: .77rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { max-width: 900px; margin: 0; overflow-wrap: anywhere; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2.55rem, 7vw, 5.8rem); font-weight: 500; line-height: .94; letter-spacing: -.055em; }
+    .lede { max-width: 770px; margin: 26px 0 0; color: var(--muted); font-size: clamp(1rem, 2vw, 1.18rem); }
+    .verdict { display: grid; grid-template-columns: 1.45fr .55fr; gap: 18px; margin-top: 34px; }
+    .verdict > div { min-width: 0; border: 1px solid var(--line); border-radius: 22px; background: rgba(255, 253, 247, .84); box-shadow: var(--shadow); }
+    .verdict-main { padding: 26px 28px; }
+    .verdict-main strong { display: block; overflow-wrap: anywhere; color: var(--green); font-family: Georgia, serif; font-size: 1.7rem; font-weight: 500; line-height: 1.22; }
+    .verdict-main p { margin: 10px 0 0; color: var(--muted); }
+    .metric { display: grid; place-content: center; padding: 24px; text-align: center; }
+    .metric b { color: var(--orange); font-size: 3rem; line-height: 1; }
+    .metric span { margin-top: 8px; color: var(--muted); font-size: .82rem; }
+    .toc { position: sticky; top: 0; z-index: 5; border-block: 1px solid var(--line); background: rgba(243, 239, 229, .88); backdrop-filter: blur(14px); }
+    .toc-inner { display: flex; gap: 8px; padding: 10px 0; overflow-x: auto; scrollbar-width: none; }
+    .toc a { flex: none; border-radius: 999px; padding: 7px 12px; text-decoration: none; color: var(--muted); font-size: .78rem; }
+    .toc a:hover, .toc a:focus-visible { background: var(--green); color: white; }
+    main { padding: 26px 0 88px; }
+    section { scroll-margin-top: 72px; margin-top: 22px; padding: clamp(24px, 5vw, 48px); border: 1px solid var(--line); border-radius: 26px; background: rgba(255, 253, 247, .92); box-shadow: var(--shadow); }
+    .section-head { display: grid; grid-template-columns: .65fr 1.35fr; gap: 28px; align-items: start; margin-bottom: 30px; }
+    .kicker { color: var(--orange); font-size: .75rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h2 { margin: 5px 0 0; font-family: Georgia, serif; font-size: clamp(1.75rem, 4vw, 2.75rem); font-weight: 500; line-height: 1.08; letter-spacing: -.03em; }
+    .section-head p { margin: 4px 0 0; color: var(--muted); }
+    h3 { margin: 0 0 8px; font-size: 1rem; }
+    p { margin-top: 0; }
+    .flow { overflow-x: auto; padding-bottom: 5px; }
+    .flow svg { display: block; min-width: 900px; width: 100%; height: auto; }
+    .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; color: var(--muted); font-size: .8rem; }
+    .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; }
+    .grid-2, .grid-3 { display: grid; gap: 16px; }
+    .grid-2 > *, .grid-3 > *, .section-head > *, .code-grid > * { min-width: 0; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+    .card p, .card li { color: var(--muted); font-size: .9rem; }
+    .card p:last-child { margin-bottom: 0; }
+    .tag { display: inline-flex; margin-bottom: 12px; border-radius: 999px; padding: 4px 9px; background: var(--green-soft); color: var(--green); font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .tag.write { background: var(--orange-soft); color: #964415; }
+    .tag.adapter { background: var(--blue-soft); color: var(--blue); }
+    ul, ol { margin: 10px 0 0; padding-left: 1.25rem; }
+    li + li { margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 15px; }
+    .table-wrap table { min-width: 720px; }
+    .code-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .code-box { min-width: 0; }
+    .code-box > b { display: block; margin: 0 0 8px; color: var(--muted); font-size: .75rem; }
+    pre { margin: 0; overflow: auto; border-radius: 15px; padding: 17px; background: #15201d; color: #eaf3ef; font-size: .77rem; line-height: 1.55; }
+    pre code { color: inherit; }
+    .callout { margin-top: 18px; border-left: 4px solid var(--orange); border-radius: 4px 14px 14px 4px; padding: 16px 18px; background: var(--orange-soft); }
+    .callout strong { color: #873c17; }
+    .callout p { margin: 5px 0 0; color: #6f4933; }
+    .steps { counter-reset: step; display: grid; gap: 11px; }
+    .step { position: relative; min-height: 70px; padding: 15px 18px 15px 67px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+    .step::before { counter-increment: step; content: counter(step, decimal-leading-zero); position: absolute; left: 17px; top: 17px; color: var(--orange); font-family: Georgia, serif; font-size: 1.35rem; }
+    .step strong { display: block; }
+    .step span { color: var(--muted); font-size: .88rem; }
+    .status { font-weight: 800; }
+    .ok { color: var(--green); }
+    .partial { color: var(--orange); }
+    .stop { color: var(--red); }
+    .tree { padding: 18px; border-radius: 16px; background: #15201d; color: #dbe8e2; white-space: pre; overflow: auto; font: .82rem/1.65 "SFMono-Regular", Consolas, monospace; }
+    dl { display: grid; grid-template-columns: 170px 1fr; gap: 0; margin: 0; }
+    dt, dd { margin: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    dt { color: var(--green); font-weight: 800; }
+    dd { color: var(--muted); }
+    footer { padding: 24px 0 45px; color: var(--muted); text-align: center; font-size: .78rem; }
+    @media (max-width: 760px) {
+      .hero { padding-top: 48px; }
+      .verdict, .section-head, .grid-2, .grid-3, .code-grid { grid-template-columns: 1fr; }
+      .section-head { gap: 15px; }
+      section { padding: 24px 20px; border-radius: 20px; }
+      dl { grid-template-columns: 1fr; }
+      dt { padding-bottom: 2px; border-bottom: 0; }
+      dd { padding-top: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero shell">
+    <p class="eyebrow">Design before implementation · 2026-08-29</p>
+    <h1>MemoryGraph<br>저장 도구 설계</h1>
+    <p class="lede">장기 기억 후보를 검토한 뒤 신규 저장·기존 기억 병합·관계 연결·후보 마감까지 안전하게 수행하는 도구의 경계와 생성 순서를 정한다. 모델은 판단하고, 도구는 검증된 계획을 기계적으로 실행한다.</p>
+    <div class="verdict">
+      <div class="verdict-main">
+        <strong>Codex에는 읽기 도구 1개와 쓰기 도구 1개만 보여준다.</strong>
+        <p>세부 MemoryGraph API와 두 SQLite DB 사이의 처리 순서는 Adapter 내부에 숨겨 호출 누락과 부분 실패를 줄인다.</p>
+      </div>
+      <div class="metric"><b>2</b><span>새 MCP 도구</span></div>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="문서 목차"><div class="shell toc-inner">
+    <a href="#boundary">책임 경계</a><a href="#flow">전체 흐름</a><a href="#tools">도구 계약</a><a href="#safety">실패·재시도</a><a href="#modules">파일 구조</a><a href="#build">생성 순서</a><a href="#tests">검증</a><a href="#terms">용어</a>
+  </div></nav>
+
+  <main class="shell">
+    <section id="boundary">
+      <div class="section-head"><div><span class="kicker">01 · Boundary</span><h2>판단과 실행을 분리한다</h2></div><p>기억의 가치·중복·관계는 추론이 필요하다. 반면 타입 검증, DB 쓰기, 상태 전이와 재시도는 같은 입력이면 같은 결과를 내야 한다.</p></div>
+      <div class="grid-3">
+        <article class="card"><span class="tag">Skill</span><h3>Memory Finalize Skill</h3><p>pending 후보를 읽고 저장 가치, 중복 여부, 병합 내용, 관계를 판단한다. 최종 <strong>Storage Plan</strong>만 만든다.</p></article>
+        <article class="card"><span class="tag adapter">MCP Adapter</span><h3>harness-memory</h3><p>Codex가 호출하는 얇은 입구다. 후보를 State DB에서 읽고 TypeScript 저장 모듈을 호출한 뒤 후보 상태까지 마감한다.</p></article>
+        <article class="card"><span class="tag write">Deep Module</span><h3>MemoryGraph Writer</h3><p>MemoryGraph v0.13.0의 <code>SQLiteBackend</code>를 직접 사용한다. 입력 검증, 저장·병합, 관계 생성, 재시도 안전성을 내부에서 처리한다.</p></article>
+      </div>
+      <div class="callout"><strong>왜 MemoryGraph의 작은 함수를 MCP로 그대로 노출하지 않는가?</strong><p><code>storeMemory</code>, <code>updateMemory</code>, <code>createRelationship</code>, <code>promote_candidate</code>를 각각 호출하게 하면 Codex가 순서와 실패 복구를 매번 기억해야 한다. 하나의 깊은 쓰기 도구가 이 복잡성을 맡는다.</p></div>
+    </section>
+
+    <section id="flow">
+      <div class="section-head"><div><span class="kicker">02 · Flow</span><h2>후보에서 정본 기억까지</h2></div><p><strong>Candidate</strong>는 아직 검토 중인 임시 기억이고, <strong>MemoryGraph</strong>는 검토를 통과한 장기 기억의 정본이다.</p></div>
+      <div class="flow" role="img" aria-label="MemoryGraph 후보 검토 및 저장 흐름">
+        <svg viewBox="0 0 1040 250" xmlns="http://www.w3.org/2000/svg">
+          <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#66706b"/></marker></defs>
+          <g font-family="ui-sans-serif, sans-serif">
+            <path d="M170 112H232M402 112H464M634 112H696M866 112H924" stroke="#66706b" stroke-width="2" marker-end="url(#arrow)"/>
+            <rect x="10" y="54" width="160" height="116" rx="18" fill="#dbe8f4" stroke="#285b8f"/><text x="90" y="89" text-anchor="middle" fill="#285b8f" font-size="15" font-weight="700">pending 후보</text><text x="90" y="116" text-anchor="middle" fill="#52615c" font-size="12">State DB</text><text x="90" y="138" text-anchor="middle" fill="#52615c" font-size="12">가벼운 임시 기록</text>
+            <rect x="242" y="54" width="160" height="116" rx="18" fill="#d9ebe4" stroke="#145c4e"/><text x="322" y="89" text-anchor="middle" fill="#145c4e" font-size="15" font-weight="700">inspect</text><text x="322" y="116" text-anchor="middle" fill="#52615c" font-size="12">후보 + 유사 기억</text><text x="322" y="138" text-anchor="middle" fill="#52615c" font-size="12">읽기 전용</text>
+            <rect x="474" y="54" width="160" height="116" rx="18" fill="#fffdf7" stroke="#c45d24" stroke-width="2"/><text x="554" y="89" text-anchor="middle" fill="#964415" font-size="15" font-weight="700">Skill 판단</text><text x="554" y="116" text-anchor="middle" fill="#52615c" font-size="12">create · merge · reject</text><text x="554" y="138" text-anchor="middle" fill="#52615c" font-size="12">관계 계획</text>
+            <rect x="706" y="54" width="160" height="116" rx="18" fill="#f7dfcf" stroke="#c45d24"/><text x="786" y="89" text-anchor="middle" fill="#964415" font-size="15" font-weight="700">finalize</text><text x="786" y="116" text-anchor="middle" fill="#52615c" font-size="12">노드·관계 쓰기</text><text x="786" y="138" text-anchor="middle" fill="#52615c" font-size="12">후보 상태 마감</text>
+            <rect x="934" y="54" width="96" height="116" rx="18" fill="#145c4e" stroke="#145c4e"/><text x="982" y="95" text-anchor="middle" fill="white" font-size="14" font-weight="700">정본</text><text x="982" y="120" text-anchor="middle" fill="white" font-size="12">MemoryGraph</text><text x="982" y="142" text-anchor="middle" fill="white" font-size="12">+ memory_ref</text>
+            <path d="M786 171V217H90V173" fill="none" stroke="#9f3e36" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrow)"/><text x="438" y="238" text-anchor="middle" fill="#9f3e36" font-size="12">partial / 실패면 후보는 pending 유지 → 같은 candidate_id로 재시도</text>
+          </g>
+        </svg>
+      </div>
+      <div class="legend"><span><i style="background:#285b8f"></i>State Store</span><span><i style="background:#145c4e"></i>읽기·정본</span><span><i style="background:#c45d24"></i>판단·쓰기</span><span><i style="background:#9f3e36"></i>복구 경로</span></div>
+    </section>
+
+    <section id="tools">
+      <div class="section-head"><div><span class="kicker">03 · Interface</span><h2>최소 MCP 도구 계약</h2></div><p>MCP 도구는 Codex가 이름·설명·입력 스키마를 보고 호출하는 함수다. 실제 DB 접근은 도구 서버 내부에서 수행한다.</p></div>
+      <div class="grid-2">
+        <article class="card"><span class="tag">Read</span><h3><code>inspect_memory_candidate()</code></h3><p>후보 한 건과 관련 기존 기억을 함께 반환한다. Finalize Skill이 신규 저장인지 병합인지, 어떤 관계가 가능한지 판단할 때 사용한다.</p><ul><li><code>candidate_id</code>: 검토할 후보의 고유 ID</li><li><code>extra_terms</code>: 후보 자체 키워드에 선택적으로 보탤 짧은 검색어 배열</li><li><code>limit</code>: 반환할 기존 기억 수, 기본 5·최대 10</li></ul></article>
+        <article class="card"><span class="tag write">Write</span><h3><code>finalize_memory_candidate()</code></h3><p>검토가 끝난 Storage Plan을 실행한다. 신규 저장·기존 기억 병합·관계 생성 후에만 후보를 <code>promoted</code>로 바꾸며, 제외 결정은 <code>rejected</code>로 마감한다.</p><ul><li><code>candidate_id</code>: 처리할 후보이자 재시도 식별자</li><li><code>decision</code>: <code>create</code>, <code>merge</code>, <code>reject</code></li><li><code>memory</code>: 최종 기억 내용. merge일 때 완성된 결과 필수</li><li><code>relationships</code>: 확정된 관계 목록</li></ul></article>
+      </div>
+
+      <h3 style="margin-top:28px">읽기 도구 예시</h3>
+      <div class="code-grid">
+        <div class="code-box"><b>INPUT</b><pre><code>{
+  "candidate_id": "MC-27f4",
+  "extra_terms": ["pragma", "foreign key"],
+  "limit": 5
+}</code></pre></div>
+        <div class="code-box"><b>OUTPUT</b><pre><code>{
+  "ok": true,
+  "candidate": {
+    "id": "MC-27f4",
+    "proposed_type": "solution",
+    "title": "SQLite 외래키 활성화",
+    "content": "연결마다 PRAGMA foreign_keys=ON...",
+    "keywords": ["sqlite", "foreign key"]
+  },
+  "matches": [
+    {"id":"m-81","type":"problem","title":"FK 누락",
+     "summary":"연결별 PRAGMA가 필요하다."}
+  ],
+  "warnings": []
+}</code></pre></div>
+      </div>
+
+      <h3 style="margin-top:28px">쓰기 도구 예시</h3>
+      <div class="code-grid">
+        <div class="code-box"><b>INPUT · STORAGE PLAN</b><pre><code>{
+  "candidate_id": "MC-27f4",
+  "decision": "create",
+  "memory": {
+    "summary": "SQLite 연결마다 FK를 활성화한다.",
+    "importance": 0.8,
+    "confidence": 0.95
+  },
+  "relationships": [{
+    "direction": "outgoing",
+    "target_memory_id": "m-81",
+    "type": "SOLVES",
+    "strength": 0.9,
+    "confidence": 0.95
+  }]
+}</code></pre></div>
+        <div class="code-box"><b>OUTPUT · RECEIPT</b><pre><code>{
+  "ok": true,
+  "status": "committed",
+  "candidate_id": "MC-27f4",
+  "decision": "create",
+  "memory_id": "candidate:MC-27f4",
+  "memory_ref": "memorygraph:candidate:MC-27f4",
+  "node_result": "created",
+  "relationships": {"created": 1, "skipped": 0, "failed": []},
+  "candidate_status": "promoted",
+  "warnings": []
+}</code></pre></div>
+      </div>
+
+      <div class="table-wrap" style="margin-top:22px"><table>
+        <thead><tr><th>Decision</th><th>도구가 하는 일</th><th>필수 입력</th><th>최종 후보 상태</th></tr></thead>
+        <tbody>
+          <tr><td><code>create</code></td><td>후보 내용으로 새 노드를 만들고 관계를 연결한다.</td><td>후보 ID, 기억 보강값, 관계</td><td><code>promoted</code></td></tr>
+          <tr><td><code>merge</code></td><td>기존 노드를 완성된 병합 결과로 갱신하고 관계를 연결한다.</td><td>기존 Memory ID, 완성된 <code>memory</code>, 관계</td><td><code>promoted</code></td></tr>
+          <tr><td><code>reject</code></td><td>MemoryGraph를 건드리지 않고 후보만 제외한다.</td><td>후보 ID</td><td><code>rejected</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><strong>관계 입력을 일부러 좁힌다.</strong><p><code>direction</code>은 새로 저장하거나 병합한 기준 노드에서 나가는지(<code>outgoing</code>) 들어오는지(<code>incoming</code>)만 표현한다. 도구 한 번으로 서로 무관한 기존 노드 둘을 임의로 연결할 수 없게 한다.</p></div>
+    </section>
+
+    <section id="safety">
+      <div class="section-head"><div><span class="kicker">04 · Failure policy</span><h2>완전한 성공 뒤에만 승격한다</h2></div><p>State DB와 MemoryGraph DB는 별도 SQLite 파일이므로 두 DB를 하나의 트랜잭션으로 묶을 수 없다. 따라서 도구는 작은 <strong>Saga</strong>처럼 순서와 재시도를 관리한다.</p></div>
+      <div class="steps">
+        <div class="step"><strong>후보 선점·검증</strong><span>후보가 <code>pending</code>인지 확인하고, 한 후보의 Finalize를 동시에 두 번 실행하지 않도록 프로젝트 로컬 잠금을 잡는다.</span></div>
+        <div class="step"><strong>입력 정규화</strong><span>공식 MemoryType·RelationshipType, 길이, 점수 범위, 관계 대상 존재 여부를 쓰기 전에 모두 검사한다.</span></div>
+        <div class="step"><strong>노드 저장 또는 병합</strong><span>create는 <code>candidate:&lt;candidate_id&gt;</code>라는 결정적 ID를 사용한다. merge는 지정된 기존 노드만 갱신한다.</span></div>
+        <div class="step"><strong>관계 생성</strong><span>같은 <code>from + to + type</code> 관계가 있으면 재생성하지 않고 <code>skipped</code>로 계산한다.</span></div>
+        <div class="step"><strong>후보 상태 마감</strong><span>노드와 모든 관계가 성공한 뒤 <code>memory_ref</code>를 기록하고 <code>promoted</code>로 바꾼다. reject만 MemoryGraph 쓰기 없이 즉시 끝난다.</span></div>
+      </div>
+      <div class="table-wrap" style="margin-top:22px"><table>
+        <thead><tr><th>상황</th><th>반환</th><th>후보 상태</th><th>다음 행동</th></tr></thead>
+        <tbody>
+          <tr><td>전체 성공</td><td><span class="status ok">committed</span></td><td><code>promoted</code> 또는 <code>rejected</code></td><td>종료</td></tr>
+          <tr><td>입력·타입·대상 오류</td><td><span class="status stop">conflict</span></td><td><code>pending</code></td><td>Skill이 계획을 고쳐 다시 호출</td></tr>
+          <tr><td>노드는 저장됐지만 관계 일부 실패</td><td><span class="status partial">partial</span></td><td><code>pending</code></td><td>같은 candidate_id와 계획으로 재시도</td></tr>
+          <tr><td>MemoryGraph 성공 후 후보 승격 실패</td><td><span class="status partial">partial</span></td><td><code>pending</code></td><td>재호출 시 기존 노드·관계를 감지하고 승격만 재수행</td></tr>
+          <tr><td>이미 promoted/rejected 후보 재호출</td><td><span class="status stop">conflict</span> 또는 동일 Receipt</td><td>기존 상태 유지</td><td>같은 결과면 안전 반환, 다른 계획이면 거부</td></tr>
+        </tbody>
+      </table></div>
+      <div class="grid-2" style="margin-top:16px">
+        <article class="card"><h3>삭제로 되돌리지 않는다</h3><p>관계 실패를 이유로 이미 저장된 노드를 삭제하면 기존 관계나 다른 후보의 참조까지 잃을 수 있다. 후보를 pending으로 남기고 앞으로 재시도한다.</p></article>
+        <article class="card"><h3>원문 로그를 넣지 않는다</h3><p>도구 입력과 Receipt에는 정제된 기억, 개수, ID, 짧은 오류 코드만 둔다. 프롬프트 전문·명령 원본 출력·비밀정보는 저장하지 않는다.</p></article>
+      </div>
+    </section>
+
+    <section id="modules">
+      <div class="section-head"><div><span class="kicker">05 · Modules</span><h2>프로젝트 내부 배치</h2></div><p>외부 인터페이스는 작게 유지하되, MemoryGraph 연결과 정책은 테스트 가능한 TypeScript 모듈로 분리한다.</p></div>
+      <div class="tree">src/harness/
+├── memory/
+│   ├── types.ts              # Tool 요청·Receipt와 내부 Port 타입
+│   ├── client.ts             # MemoryGraph 연결 생명주기
+│   ├── recall.ts             # 기존 작업 시작 Recall
+│   ├── inspect.ts            # 후보 검색 결과를 작게 정리
+│   ├── finalize.ts           # 저장·병합·관계·재시도 정책을 가진 Deep Module
+│   └── cli.ts                # Python Adapter가 JSON stdin으로 호출하는 Bridge
+├── memory_mcp_server.py      # Codex에 inspect/finalize 두 도구를 노출
+└── state_store.py            # 후보 조회·promote·reject 상태 함수
+
+tests/
+├── memory/                   # TypeScript 저장 정책·실제 SQLite 통합 테스트
+└── test_memory_mcp_server.py # MCP 입력 검증·Bridge·상태 마감 테스트
+
+.codex/config.toml            # harness-memory MCP 서버 등록</div>
+      <div class="grid-3" style="margin-top:16px">
+        <article class="card"><span class="tag">Port</span><h3><code>MemoryWriter</code></h3><p>저장 모듈이 필요한 <code>get/store/update/createRelation/getRelations</code>만 정의한 내부 인터페이스다. 테스트에서는 가짜 구현으로 정책만 검증한다.</p></article>
+        <article class="card"><span class="tag adapter">Adapter</span><h3><code>SQLiteBackend</code></h3><p>Port를 MemoryGraph v0.13.0 API에 연결하는 구현이다. 외부 라이브러리 세부 타입이 Finalize 정책 밖으로 새지 않게 한다.</p></article>
+        <article class="card"><span class="tag write">Bridge</span><h3>JSON stdin/stdout</h3><p>Python MCP가 셸 문자열을 만들지 않고 Bun 프로세스에 JSON을 전달한다. stdout은 Receipt 한 줄만 사용하고 로그는 stderr로 분리한다.</p></article>
+      </div>
+    </section>
+
+    <section id="build">
+      <div class="section-head"><div><span class="kicker">06 · Build order</span><h2>도구 생성 과정</h2></div><p>구현은 계약부터 고정하고 안쪽으로 내려간다. 각 단계가 끝날 때 다음 단계가 의존할 테스트 표면이 생긴다.</p></div>
+      <div class="steps">
+        <div class="step"><strong>요청·응답 계약 고정</strong><span><code>InspectRequest/Response</code>, <code>FinalizePlan</code>, <code>FinalizeReceipt</code>와 허용값을 <code>types.ts</code>에 정의한다.</span></div>
+        <div class="step"><strong>후보 단건 조회 함수 보강</strong><span>State Store가 candidate_id로 후보 하나를 읽게 한다. MCP에서 전체 후보 목록을 받아 다시 찾지 않는다.</span></div>
+        <div class="step"><strong>MemoryWriter Port와 Adapter 구현</strong><span>MemoryGraph v0.13.0의 <code>SQLiteBackend</code>를 감싸고 공식 타입·관계 검증을 재사용한다.</span></div>
+        <div class="step"><strong>Inspect Module 구현</strong><span>후보 키워드와 추가 검색어를 정규화하고 기존 Recall 병합 규칙을 재사용하되, 판단에 필요한 type·tags·summary를 반환한다.</span></div>
+        <div class="step"><strong>Finalize Deep Module 구현</strong><span>create·merge·reject 분기, 결정적 ID, 관계 중복 검사, partial Receipt를 구현한다.</span></div>
+        <div class="step"><strong>CLI Bridge 추가</strong><span><code>inspect</code>와 <code>finalize</code> 명령은 JSON stdin을 받고 JSON stdout을 반환한다. 프로세스 종료 코드는 계약 오류와 운영 오류를 구분한다.</span></div>
+        <div class="step"><strong>Python MCP Adapter 구현</strong><span><code>inspect_memory_candidate</code>와 <code>finalize_memory_candidate</code>만 노출하고, State DB 후보 상태와 TypeScript Bridge를 조율한다.</span></div>
+        <div class="step"><strong>Codex 설정 등록</strong><span><code>.codex/config.toml</code>에 <code>harness-memory</code> 서버와 두 도구만 허용한다. PreToolUse는 inspect는 Run 없이 읽기 허용, finalize는 유효한 Run을 요구한다.</span></div>
+        <div class="step"><strong>Finalize Skill 연결</strong><span>도구가 안정화된 뒤 별도 Skill에서 채점 기준과 호출 순서를 작성한다. 도구 구현과 LLM 판단 규칙을 한 번에 섞지 않는다.</span></div>
+      </div>
+    </section>
+
+    <section id="tests">
+      <div class="section-head"><div><span class="kicker">07 · Verification</span><h2>완료 기준</h2></div><p>단순 성공 경로보다 중복 호출과 중간 실패가 안전한지가 중요하다.</p></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>검증 층</th><th>반드시 확인할 사례</th><th>완료 신호</th></tr></thead>
+        <tbody>
+          <tr><td>계약 단위 테스트</td><td>잘못된 decision·점수·타입·관계 방향·빈 candidate_id</td><td>쓰기 전 명확한 오류 코드</td></tr>
+          <tr><td>Finalize 정책 테스트</td><td>create, merge, reject, 같은 계획 재호출, 다른 계획 충돌</td><td>동일 입력이 중복 노드·관계를 만들지 않음</td></tr>
+          <tr><td>부분 실패 테스트</td><td>노드 성공 후 관계 실패, 그래프 성공 후 promote 실패</td><td>후보 pending 유지, 재시도로 committed</td></tr>
+          <tr><td>실제 SQLite 통합</td><td>vendored v0.13.0에서 노드·관계 조회</td><td>MemoryGraph ID와 memory_ref 일치</td></tr>
+          <tr><td>MCP Adapter 테스트</td><td>JSON Bridge 오류, timeout, stderr 로그, 후보 없음</td><td>Codex에 짧고 안정적인 JSON만 반환</td></tr>
+          <tr><td>회귀 테스트</td><td>기존 작업 시작 Recall</td><td>기존 Recall 출력과 Hook 동작 유지</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><strong>이번 설계의 구현 범위 밖</strong><p>후보 가치 점수표, Memory Finalize Skill의 상세 프롬프트, Stop Hook 재호출 정책, MemoryGraph 시각화 웹은 저장 도구가 검증된 뒤 별도 설계한다.</p></div>
+    </section>
+
+    <section id="terms">
+      <div class="section-head"><div><span class="kicker">08 · Glossary</span><h2>핵심 키워드</h2></div><p>구현 중 같은 단어를 같은 의미로 사용하기 위한 짧은 사전이다.</p></div>
+      <dl>
+        <dt>Candidate</dt><dd>작업 중 발견했지만 아직 장기 기억으로 확정하지 않은 임시 기록.</dd>
+        <dt>Storage Plan</dt><dd>Skill이 만든 최종 실행 명세. create·merge·reject 결정과 완성된 기억·관계를 담는다.</dd>
+        <dt>Receipt</dt><dd>저장 도구의 실행 영수증. 실제 Memory ID, 관계 결과, 후보 상태와 경고를 담는다.</dd>
+        <dt>Deep Module</dt><dd>외부 함수는 적지만 내부에서 검증·저장 순서·복구 같은 많은 복잡성을 감추는 모듈.</dd>
+        <dt>Port</dt><dd>Finalize 정책이 저장 기술에 직접 묶이지 않도록 필요한 기능만 적은 내부 인터페이스.</dd>
+        <dt>Adapter</dt><dd>Port나 MCP 계약을 실제 MemoryGraph·SQLite·프로세스 호출에 연결하는 변환 계층.</dd>
+        <dt>Idempotency</dt><dd>같은 요청을 재실행해도 같은 노드나 관계가 중복 생성되지 않는 성질.</dd>
+        <dt>Partial</dt><dd>작업 일부만 성공한 상태. 후보는 pending으로 남고 같은 계획으로 이어서 재시도한다.</dd>
+        <dt>Saga</dt><dd>서로 다른 DB를 하나의 트랜잭션으로 묶지 못할 때, 단계별 성공 기록과 재시도로 전체 작업을 완성하는 방식.</dd>
+        <dt>memory_ref</dt><dd>State DB 후보가 실제 MemoryGraph 노드를 가리키는 문자열. 형식은 <code>memorygraph:&lt;memory_id&gt;</code>다.</dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer class="shell">Codex Compass · MemoryGraph storage tool design · source baseline: memory-graph v0.13.0</footer>
+</body>
+</html>

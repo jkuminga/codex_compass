@@ -5,7 +5,11 @@ import { join, resolve } from "node:path";
 
 import { SQLiteBackend } from "../../vendor/memory-graph/ts/src/backends/sqlite.ts";
 import { createMemory } from "../../vendor/memory-graph/ts/src/models.ts";
-import { openMemorySearchClient } from "../../src/harness/memory/client.ts";
+import {
+  openMemoryInspectClient,
+  openMemorySearchClient,
+} from "../../src/harness/memory/client.ts";
+import { inspectMemoryCandidate } from "../../src/harness/memory/inspect.ts";
 import { recallMemories } from "../../src/harness/memory/recall.ts";
 
 const temporaryDirectories: string[] = [];
@@ -128,5 +132,121 @@ describe("MemoryGraph SQLite integration", () => {
       ],
       warnings: [],
     });
+  });
+
+  test("inspects a Candidate through the pinned MemoryGraph backend", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "harness-memory-inspect-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "memorygraph.db");
+    const backend = new SQLiteBackend(databasePath);
+    const originalLog = console.log;
+    console.log = () => undefined;
+
+    try {
+      await backend.connect();
+      await backend.initializeSchema();
+      await backend.storeMemory(
+        createMemory({
+          id: "existing-fk",
+          type: "solution",
+          title: "SQLite 외래키 활성화",
+          content: "연결 직후 PRAGMA foreign_keys를 활성화한다.",
+          summary: "SQLite 연결 함수가 외래키 검사를 보장한다.",
+          tags: ["sqlite", "외래키"],
+          importance: 0.8,
+        }),
+      );
+    } finally {
+      await backend.disconnect();
+      console.log = originalLog;
+    }
+
+    const client = await openMemoryInspectClient(databasePath);
+    try {
+      const response = await inspectMemoryCandidate(
+        {
+          candidate: {
+            id: "MEMC-1",
+            run_id: "RUN-1",
+            proposed_type: "solution",
+            title: "외래키 검사",
+            content: "SQLite 외래키를 활성화한다.",
+            keywords: ["sqlite", "외래키"],
+            status: "pending",
+            memory_ref: null,
+            created_at: "2026-08-29T00:00:00Z",
+          },
+        },
+        client.searchKeyword,
+      );
+
+      expect(response.ok).toBe(true);
+      expect(response.matches[0]?.id).toBe("existing-fk");
+      expect(response.matches[0]?.matched_keywords).toEqual(["sqlite", "외래키"]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("the CLI accepts an inspect packet on stdin", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "harness-memory-inspect-cli-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "memorygraph.db");
+    const backend = new SQLiteBackend(databasePath);
+    const originalLog = console.log;
+    console.log = () => undefined;
+
+    try {
+      await backend.connect();
+      await backend.initializeSchema();
+      await backend.storeMemory(
+        createMemory({
+          id: "inspect-cli-memory",
+          type: "technology",
+          title: "MemoryGraph SQLite",
+          content: "프로젝트 로컬 SQLiteBackend를 사용한다.",
+          summary: "MemoryGraph는 프로젝트 로컬 SQLite에 저장한다.",
+          importance: 0.7,
+        }),
+      );
+    } finally {
+      await backend.disconnect();
+      console.log = originalLog;
+    }
+
+    const projectRoot = resolve(import.meta.dir, "../..");
+    const child = Bun.spawn([join(projectRoot, "bin/harness-memory"), "inspect"], {
+      cwd: projectRoot,
+      env: { ...process.env, HARNESS_MEMORY_DB_PATH: databasePath },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    child.stdin.write(
+      JSON.stringify({
+        candidate: {
+          id: "MEMC-cli",
+          run_id: "RUN-cli",
+          proposed_type: "technology",
+          title: "로컬 기억 DB",
+          content: "MemoryGraph 저장 위치를 확인한다.",
+          keywords: ["memorygraph", "sqlite"],
+          status: "pending",
+          memory_ref: null,
+          created_at: "2026-08-29T00:00:00Z",
+        },
+        limit: 5,
+      }),
+    );
+    child.stdin.end();
+    const stdout = await new Response(child.stdout).text();
+    const stderr = await new Response(child.stderr).text();
+    const exitCode = await child.exited;
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    const response = JSON.parse(stdout);
+    expect(response.ok).toBe(true);
+    expect(response.matches[0]?.id).toBe("inspect-cli-memory");
   });
 });

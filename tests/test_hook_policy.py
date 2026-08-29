@@ -134,6 +134,8 @@ class HookPolicyTests(unittest.TestCase):
                 False,
             ),
             ("mcp__harness_state__future_tool", {}, "run_required", False),
+            ("mcp__harness_memory__inspect_memory_candidate", {}, "read", True),
+            ("mcp__harness_memory__future_tool", {}, "run_required", False),
             ("mcp__notion__create_page", {}, "read", True),
         )
         for tool_name, tool_input, classification, allowed in cases:

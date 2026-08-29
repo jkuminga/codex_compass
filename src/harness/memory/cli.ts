@@ -1,8 +1,18 @@
 #!/usr/bin/env bun
 
-import { findProjectRoot, openMemorySearchClient, resolveMemoryDatabasePath } from "./client.ts";
+import {
+  findProjectRoot,
+  openMemoryInspectClient,
+  openMemorySearchClient,
+  resolveMemoryDatabasePath,
+} from "./client.ts";
+import { inspectMemoryCandidate } from "./inspect.ts";
 import { normalizeLimit, recallMemories } from "./recall.ts";
-import type { RecallResponse } from "./types.ts";
+import type {
+  InspectCandidateRequest,
+  InspectCandidateResponse,
+  RecallResponse,
+} from "./types.ts";
 
 interface ParsedArguments {
   command: "recall";
@@ -10,11 +20,20 @@ interface ParsedArguments {
   limit: number;
 }
 
+interface InspectArguments {
+  command: "inspect";
+}
+
 class UsageError extends Error {}
 
-function parseArguments(args: string[]): ParsedArguments {
+function parseArguments(args: string[]): ParsedArguments | InspectArguments {
+  if (args[0] === "inspect" && args.length === 1) {
+    return { command: "inspect" };
+  }
   if (args[0] !== "recall") {
-    throw new UsageError('usage: harness-memory recall "keyword1 keyword2" [--limit N]');
+    throw new UsageError(
+      'usage: harness-memory recall "keyword1 keyword2" [--limit N] | inspect',
+    );
   }
 
   const query = args[1]?.trim() ?? "";
@@ -41,12 +60,53 @@ function parseArguments(args: string[]): ParsedArguments {
   };
 }
 
-function writeResponse(response: RecallResponse): void {
+function writeResponse(response: RecallResponse | InspectCandidateResponse): void {
   process.stdout.write(`${JSON.stringify(response)}\n`);
 }
 
+async function runInspect(): Promise<number> {
+  let request: InspectCandidateRequest;
+  try {
+    request = JSON.parse(await Bun.stdin.text()) as InspectCandidateRequest;
+    if (!request || typeof request !== "object" || !request.candidate) {
+      throw new Error("candidate is required");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid_json";
+    process.stdout.write(
+      `${JSON.stringify({ ok: false, error: { code: "invalid_input", message } })}\n`,
+    );
+    return 2;
+  }
+
+  let close: (() => Promise<void>) | undefined;
+  try {
+    const projectRoot = findProjectRoot();
+    const client = await openMemoryInspectClient(
+      resolveMemoryDatabasePath(projectRoot),
+    );
+    close = client.close;
+    writeResponse(await inspectMemoryCandidate(request, client.searchKeyword));
+  } catch {
+    writeResponse(
+      await inspectMemoryCandidate(request, async () => {
+        throw new Error("memory_database_unavailable");
+      }),
+    );
+  } finally {
+    if (close) {
+      try {
+        await close();
+      } catch {
+        // Inspection is a read-only supporting operation.
+      }
+    }
+  }
+  return 0;
+}
+
 async function run(): Promise<number> {
-  let parsed: ParsedArguments;
+  let parsed: ParsedArguments | InspectArguments;
   try {
     parsed = parseArguments(process.argv.slice(2));
   } catch (error) {
@@ -54,6 +114,8 @@ async function run(): Promise<number> {
     writeResponse({ ok: false, memories: [], warnings: [`invalid_arguments:${message}`] });
     return 2;
   }
+
+  if (parsed.command === "inspect") return runInspect();
 
   if (parsed.keywords.every((keyword) => keyword.trim() === "")) {
     writeResponse({ ok: true, memories: [], warnings: [] });

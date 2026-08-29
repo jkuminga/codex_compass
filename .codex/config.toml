@@ -27,3 +27,12 @@ enabled_tools = [
   "promote_memory_candidate",
   "reject_memory_candidate",
 ]
+
+[mcp_servers.harness-memory]
+command = "uv"
+args = ["run", "python", "-m", "src.harness.memory_mcp_server"]
+cwd = "."
+required = true
+startup_timeout_sec = 20
+tool_timeout_sec = 30
+enabled_tools = ["inspect_memory_candidate"]

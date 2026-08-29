@@ -1858,6 +1858,29 @@ def create_candidate(
         return _candidate_from_row(row)
 
 
+def get_memory_candidate(
+    candidate_id: str,
+    *,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Return one Memory Candidate without changing its lifecycle state."""
+
+    identifier = candidate_id.strip()
+    if not identifier:
+        raise ConflictError("Memory Candidate id is required")
+    database = open_database(database_path)
+    try:
+        row = _require_row(
+            database,
+            "SELECT * FROM memory_candidates WHERE id = ?",
+            (identifier,),
+            "Memory Candidate",
+        )
+        return _candidate_from_row(row)
+    finally:
+        database.close()
+
+
 def list_pending_candidates(
     *,
     run_id: str | None = None,

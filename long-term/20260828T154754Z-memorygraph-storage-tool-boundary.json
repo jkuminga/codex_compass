@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "ltm_memorygraph_storage_tool_boundary",
+  "created_at": "2026-08-28T15:47:54Z",
+  "kind": "decision",
+  "title": "MemoryGraph 저장 도구 경계",
+  "summary": "장기 기억 저장은 후보와 기존 기억을 비교하는 읽기 도구와 저장·병합·관계 연결·후보 마감을 수행하는 깊은 쓰기 도구로 구성한다. 저장 가치와 관계 판단은 Finalize Skill이 맡고, 도구는 Storage Plan을 검증하고 기계적으로 실행한다.",
+  "evidence": [
+    {
+      "type": "file",
+      "ref": "docs/memorygraph-storage-tool-design.html"
+    },
+    {
+      "type": "file",
+      "ref": "vendor/memory-graph/ts/src/backends/sqlite.ts"
+    }
+  ]
+}
