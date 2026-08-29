@@ -168,7 +168,14 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'promoted', 'rejected')),
   memory_ref TEXT,
+  storage_plan_json TEXT CHECK (
+    storage_plan_json IS NULL OR json_valid(storage_plan_json)
+  ),
+  plan_fingerprint TEXT CHECK (
+    plan_fingerprint IS NULL OR length(trim(plan_fingerprint)) = 64
+  ),
   created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
+  CHECK ((storage_plan_json IS NULL) = (plan_fingerprint IS NULL)),
   CHECK (
     (status IN ('pending', 'rejected') AND memory_ref IS NULL)
     OR (status = 'promoted'

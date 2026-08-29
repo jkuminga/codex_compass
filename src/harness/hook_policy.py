@@ -47,6 +47,7 @@ HARNESS_BOOTSTRAP_TOOLS = frozenset(
     }
 )
 HARNESS_MEMORY_READ_TOOLS = frozenset({"inspect_memory_candidate"})
+HARNESS_MEMORY_WRITE_TOOLS = frozenset({"finalize_memory_candidate"})
 
 _COMPLEX_SHELL_OPERATORS = frozenset({">", "<", "|", "&", ";", "\n", "`"})
 _PATCH_PATH_PATTERN = re.compile(
@@ -382,6 +383,13 @@ def classify_mcp_tool(tool_name: str, tool_input: Any) -> ToolDecision:
                 True,
                 "harness_memory_mcp_read",
                 "장기 기억 후보와 기존 기억을 비교하는 조회 도구입니다.",
+            )
+        if short_name in HARNESS_MEMORY_WRITE_TOOLS:
+            return _decision(
+                "run_required",
+                False,
+                "harness_memory_mcp_write_requires_run",
+                "장기 기억 저장 도구는 현재 Turn의 활성 Run이 필요합니다.",
             )
         return _decision(
             "run_required",

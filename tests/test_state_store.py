@@ -565,6 +565,38 @@ class StateStoreLifecycleTests(unittest.TestCase):
             [],
         )
 
+    def test_memory_candidate_finalize_plan_is_durable_and_immutable(self) -> None:
+        work_item = state_store.create_work_item(
+            title="기억 저장 계획", kind="implementation", goal="재시도 계획을 보존한다.",
+            next_action="후보를 만든다.", actor="planner", database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"], "ready", next_action="후보를 만든다.", actor="planner",
+            reason="준비", database_path=self.database_path,
+        )
+        run = self.start_run(work_item["id"], actor="codex", database_path=self.database_path)
+        candidate = state_store.create_candidate(
+            run["id"], proposed_type="solution", title="계획", content="저장한다.",
+            keywords=["plan"], database_path=self.database_path,
+        )
+        plan = {"decision": "reject", "relationships": [], "memory": None, "target_memory_id": None}
+        first = state_store.reserve_candidate_finalize_plan(
+            candidate["id"], storage_plan=plan, plan_fingerprint="a" * 64,
+            database_path=self.database_path,
+        )
+        retry = state_store.reserve_candidate_finalize_plan(
+            candidate["id"], storage_plan=plan, plan_fingerprint="a" * 64,
+            database_path=self.database_path,
+        )
+        self.assertTrue(first["created"])
+        self.assertFalse(retry["created"])
+        self.assertEqual(retry["candidate"]["storage_plan"], plan)
+        with self.assertRaises(state_store.ConflictError):
+            state_store.reserve_candidate_finalize_plan(
+                candidate["id"], storage_plan=plan, plan_fingerprint="b" * 64,
+                database_path=self.database_path,
+            )
+
     def test_preflight_postflight_and_project_progress_are_compact(self) -> None:
         work_item = state_store.create_work_item(
             title="다음 작업",

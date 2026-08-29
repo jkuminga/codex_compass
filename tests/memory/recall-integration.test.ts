@@ -7,9 +7,11 @@ import { SQLiteBackend } from "../../vendor/memory-graph/ts/src/backends/sqlite.
 import { createMemory } from "../../vendor/memory-graph/ts/src/models.ts";
 import {
   openMemoryInspectClient,
+  openMemoryFinalizeClient,
   openMemorySearchClient,
 } from "../../src/harness/memory/client.ts";
 import { inspectMemoryCandidate } from "../../src/harness/memory/inspect.ts";
+import { finalizeMemoryCandidate } from "../../src/harness/memory/finalize.ts";
 import { recallMemories } from "../../src/harness/memory/recall.ts";
 
 const temporaryDirectories: string[] = [];
@@ -21,6 +23,45 @@ afterEach(() => {
 });
 
 describe("MemoryGraph SQLite integration", () => {
+  test("finalizes a node and relationship through the pinned SQLite backend", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "harness-memory-finalize-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "memorygraph.db");
+    const backend = new SQLiteBackend(databasePath);
+    const originalLog = console.log;
+    console.log = () => undefined;
+    try {
+      await backend.connect();
+      await backend.initializeSchema();
+      await backend.storeMemory(createMemory({
+        id: "problem-fk", type: "problem", title: "외래키 누락",
+        content: "SQLite 외래키 검사가 비활성화되었다.",
+      }));
+    } finally {
+      await backend.disconnect();
+      console.log = originalLog;
+    }
+
+    const connection = await openMemoryFinalizeClient(databasePath);
+    try {
+      const response = await finalizeMemoryCandidate({
+        candidate_id: "MEMC-integration", plan_fingerprint: "c".repeat(64), mode: "execute",
+        storage_plan: {
+          decision: "create",
+          memory: { type: "solution", title: "외래키 활성화", content: "연결마다 외래키 검사를 켠다." },
+          relationships: [{ direction: "outgoing", target_memory_id: "problem-fk", type: "SOLVES" }],
+        },
+      }, connection.client);
+      expect(response.status).toBe("committed");
+      expect(await connection.client.getMemory("candidate:MEMC-integration")).not.toBeNull();
+      expect(await connection.client.relationshipExists(
+        "candidate:MEMC-integration", "problem-fk", "SOLVES",
+      )).toBe(true);
+    } finally {
+      await connection.close();
+    }
+  });
+
   test("recalls and merges memories stored by the pinned backend", async () => {
     const directory = mkdtempSync(join(tmpdir(), "harness-memory-"));
     temporaryDirectories.push(directory);

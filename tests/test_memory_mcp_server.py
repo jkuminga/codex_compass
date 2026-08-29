@@ -110,6 +110,88 @@ class MemoryMCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.structured_content["error"]["code"], "candidate_not_pending")
         self.assertEqual(calls, 0)
 
+    def storage_plan(self, decision: str = "create") -> dict[str, Any]:
+        return {
+            "decision": decision,
+            "target_memory_id": None,
+            "memory": None if decision == "reject" else {
+                "type": "solution", "title": "SQLite 외래키",
+                "content": "연결마다 외래키 검사를 활성화한다.",
+                "summary": "SQLite 외래키 안전 설정", "tags": ["SQLite"],
+                "importance": 0.8, "confidence": 0.9,
+            },
+            "relationships": [], "reason": "장기 재사용 가능",
+        }
+
+    async def test_finalize_promotes_only_after_committed_writer_receipt(self) -> None:
+        calls: list[dict[str, Any]] = []
+
+        def finalizer(payload: dict[str, Any]) -> dict[str, Any]:
+            calls.append(payload)
+            if payload["mode"] == "validate":
+                return {"ok": True, "status": "validated", "candidate_id": self.candidate["id"],
+                        "decision": "create", "relationships": {"created": [], "skipped": [], "failed": []}, "warnings": []}
+            return {"ok": True, "status": "committed", "candidate_id": self.candidate["id"],
+                    "decision": "create", "memory_ref": "memory://candidate:test",
+                    "node_result": "created", "relationships": {"created": [], "skipped": [], "failed": []}, "warnings": []}
+
+        async with Client(create_server(self.database_path, finalize_runner=finalizer)) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("finalize_memory_candidate", {
+                "candidate_id": self.candidate["id"], "storage_plan": self.storage_plan(),
+            })
+
+        self.assertIn("finalize_memory_candidate", {tool.name for tool in tools.tools})
+        self.assertTrue(result.structured_content["ok"])
+        self.assertEqual([call["mode"] for call in calls], ["validate", "execute"])
+        stored = state_store.get_memory_candidate(self.candidate["id"], database_path=self.database_path)
+        self.assertEqual(stored["status"], "promoted")
+        self.assertIsNotNone(stored["storage_plan"])
+        self.assertEqual(len(stored["plan_fingerprint"]), 64)
+
+    async def test_partial_finalize_stays_pending_and_retry_reuses_saved_plan(self) -> None:
+        executions = 0
+
+        def finalizer(payload: dict[str, Any]) -> dict[str, Any]:
+            nonlocal executions
+            if payload["mode"] == "validate":
+                return {"ok": True, "status": "validated", "candidate_id": self.candidate["id"],
+                        "decision": "create", "relationships": {"created": [], "skipped": [], "failed": []}, "warnings": []}
+            executions += 1
+            return {"ok": executions > 1, "status": "committed" if executions > 1 else "partial",
+                    "candidate_id": self.candidate["id"], "decision": "create",
+                    "memory_ref": "memory://candidate:test", "node_result": "skipped" if executions > 1 else "created",
+                    "relationships": {"created": [], "skipped": [], "failed": []}, "warnings": []}
+
+        server = create_server(self.database_path, finalize_runner=finalizer)
+        async with Client(server) as client:
+            first = await client.call_tool("finalize_memory_candidate", {
+                "candidate_id": self.candidate["id"], "storage_plan": self.storage_plan(),
+            })
+            retry = await client.call_tool("finalize_memory_candidate", {"candidate_id": self.candidate["id"]})
+
+        self.assertEqual(first.structured_content["status"], "partial")
+        self.assertEqual(retry.structured_content["status"], "committed")
+        self.assertEqual(state_store.get_memory_candidate(
+            self.candidate["id"], database_path=self.database_path)["status"], "promoted")
+
+    async def test_finalize_reject_and_plan_conflict_are_stable(self) -> None:
+        def finalizer(payload: dict[str, Any]) -> dict[str, Any]:
+            return {"ok": True, "status": "validated", "candidate_id": self.candidate["id"],
+                    "decision": payload["storage_plan"]["decision"],
+                    "relationships": {"created": [], "skipped": [], "failed": []}, "warnings": []}
+
+        async with Client(create_server(self.database_path, finalize_runner=finalizer)) as client:
+            rejected = await client.call_tool("finalize_memory_candidate", {
+                "candidate_id": self.candidate["id"], "storage_plan": self.storage_plan("reject"),
+            })
+            conflict = await client.call_tool("finalize_memory_candidate", {
+                "candidate_id": self.candidate["id"], "storage_plan": self.storage_plan("create"),
+            })
+
+        self.assertEqual(rejected.structured_content["node_result"], "rejected")
+        self.assertEqual(conflict.structured_content["error"]["code"], "plan_conflict")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,11 +2,17 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import { SQLiteBackend } from "../../../vendor/memory-graph/ts/src/backends/sqlite.ts";
-import { SearchQuerySchema } from "../../../vendor/memory-graph/ts/src/models.ts";
+import {
+  createMemory,
+  createRelationshipProperties,
+  SearchQuerySchema,
+} from "../../../vendor/memory-graph/ts/src/models.ts";
 
 import type {
   InspectKeywordSearcher,
   InspectSourceMemory,
+  FinalizeMemoryClient,
+  FinalizeStoredMemory,
   KeywordSearcher,
   RecallSourceMemory,
 } from "./types.ts";
@@ -25,6 +31,21 @@ export function findProjectRoot(startDirectory = process.cwd()): string {
     }
     current = parent;
   }
+}
+
+function toFinalizeMemory(memory: Awaited<ReturnType<SQLiteBackend["getMemory"]>>): FinalizeStoredMemory | null {
+  if (!memory?.id) return null;
+  return {
+    id: memory.id,
+    type: memory.type,
+    title: memory.title,
+    content: memory.content,
+    summary: memory.summary,
+    tags: memory.tags,
+    importance: memory.importance,
+    confidence: memory.confidence,
+    context: memory.context as Record<string, unknown> | null | undefined,
+  };
 }
 
 /** Resolve the project-local MemoryGraph SQLite file. */
@@ -139,4 +160,55 @@ export async function openMemoryInspectClient(databasePath: string): Promise<{
     searchKeyword,
     close: () => withoutInfoLogs(() => backend.disconnect()),
   };
+}
+
+/** Open the narrow write boundary used by Candidate finalization. */
+export async function openMemoryFinalizeClient(databasePath: string): Promise<{
+  client: FinalizeMemoryClient;
+  close: () => Promise<void>;
+}> {
+  const backend = await openMemoryBackend(databasePath);
+  const client: FinalizeMemoryClient = {
+    getMemory: async (id) => toFinalizeMemory(await backend.getMemory(id, false)),
+    createMemory: async (memory) => {
+      await withoutInfoLogs(() => backend.storeMemory(createMemory({
+        ...memory,
+        context: memory.context ?? undefined,
+      })));
+    },
+    updateMemory: async (memory) => {
+      const current = await backend.getMemory(memory.id, false);
+      if (!current) throw new Error("memory_not_found");
+      const currentContext = (current.context ?? {}) as Record<string, unknown>;
+      const incomingContext = (memory.context ?? {}) as Record<string, unknown>;
+      const currentMetadata = (currentContext.additional_metadata ?? {}) as Record<string, unknown>;
+      const incomingMetadata = (incomingContext.additional_metadata ?? {}) as Record<string, unknown>;
+      await backend.updateMemory(createMemory({
+        ...current,
+        ...memory,
+        context: {
+          ...currentContext,
+          ...incomingContext,
+          additional_metadata: { ...currentMetadata, ...incomingMetadata },
+        },
+        version: current.version + 1,
+        updated_by: "codex-compass",
+      }));
+    },
+    relationshipExists: async (fromId, toId, type) => {
+      const related = await backend.getRelatedMemories(fromId, {
+        relationshipTypes: [type], maxDepth: 1,
+      });
+      return related.some(([, relation]) =>
+        relation.from_memory_id === fromId
+        && relation.to_memory_id === toId
+        && relation.type === type);
+    },
+    createRelationship: async (fromId, toId, type, properties) => {
+      await withoutInfoLogs(() => backend.createRelationship(
+        fromId, toId, type, createRelationshipProperties(properties),
+      ));
+    },
+  };
+  return { client, close: () => withoutInfoLogs(() => backend.disconnect()) };
 }

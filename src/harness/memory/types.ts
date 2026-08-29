@@ -44,7 +44,92 @@ export interface MemoryCandidateSnapshot {
   keywords: string[];
   status: string;
   memory_ref?: string | null;
+  storage_plan?: FinalizeStoragePlan | null;
+  plan_fingerprint?: string | null;
   created_at: string;
+}
+
+export type FinalizeDecision = "create" | "merge" | "reject";
+export type RelationshipDirection = "outgoing" | "incoming";
+
+/** One MemoryGraph node proposed by the Memory Finalize Skill. */
+export interface FinalizeMemoryNode {
+  type: string;
+  title: string;
+  content: string;
+  summary?: string | null;
+  tags?: string[];
+  importance?: number;
+  confidence?: number;
+}
+
+/** One directed edge proposed between the finalized node and an existing node. */
+export interface FinalizeRelationshipPlan {
+  direction: RelationshipDirection;
+  target_memory_id: string;
+  type: string;
+  strength?: number;
+  confidence?: number;
+  context?: string | null;
+}
+
+/** Canonical write plan persisted in the State DB before graph mutation. */
+export interface FinalizeStoragePlan {
+  decision: FinalizeDecision;
+  target_memory_id?: string | null;
+  memory?: FinalizeMemoryNode | null;
+  relationships: FinalizeRelationshipPlan[];
+  reason?: string | null;
+}
+
+export interface FinalizeMemoryRequest {
+  candidate_id: string;
+  plan_fingerprint: string;
+  storage_plan: FinalizeStoragePlan;
+  mode: "validate" | "execute";
+}
+
+export interface FinalizeRelationshipResult {
+  from_memory_id: string;
+  to_memory_id: string;
+  type: string;
+}
+
+/** Stable receipt returned by the MemoryGraph writer. */
+export interface FinalizeMemoryResponse {
+  ok: boolean;
+  status: "validated" | "committed" | "partial" | "validation_error" | "conflict";
+  candidate_id: string;
+  decision: FinalizeDecision;
+  memory_id?: string | null;
+  memory_ref?: string | null;
+  node_result?: "created" | "updated" | "skipped" | "rejected";
+  relationships: {
+    created: FinalizeRelationshipResult[];
+    skipped: FinalizeRelationshipResult[];
+    failed: FinalizeRelationshipResult[];
+  };
+  warnings: string[];
+  error?: { code: string; message: string };
+}
+
+export interface FinalizeStoredMemory extends FinalizeMemoryNode {
+  id: string;
+  context?: Record<string, unknown> | null;
+}
+
+/** Testable storage seam used by the finalization policy. */
+export interface FinalizeMemoryClient {
+  getMemory(id: string): Promise<FinalizeStoredMemory | null>;
+  createMemory(memory: FinalizeStoredMemory): Promise<void>;
+  updateMemory(memory: FinalizeStoredMemory): Promise<void>;
+  relationshipExists(fromId: string, toId: string, type: string): Promise<boolean>;
+  createRelationship(
+    fromId: string,
+    toId: string,
+    type: string,
+    properties: { strength: number; confidence: number; context?: string | null },
+  ): Promise<void>;
 }
 
 /** Rich but bounded MemoryGraph record used while comparing one Candidate. */

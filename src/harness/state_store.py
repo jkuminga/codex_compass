@@ -138,6 +138,7 @@ def initialize_database(
     try:
         database.executescript(Path(schema_path).read_text())
         _migrate_run_recall_fields(database)
+        _migrate_memory_candidate_finalize_fields(database)
         database.commit()
     except (OSError, sqlite3.Error) as error:
         raise StateStoreError(f"database initialization failed: {error}") from error
@@ -161,6 +162,24 @@ def _migrate_run_recall_fields(database: sqlite3.Connection) -> None:
         database.execute(
             "ALTER TABLE runs ADD COLUMN recall_query TEXT NOT NULL DEFAULT 'legacy' "
             "CHECK (length(trim(recall_query)) > 0)"
+        )
+
+
+def _migrate_memory_candidate_finalize_fields(database: sqlite3.Connection) -> None:
+    """Add the persisted Storage Plan used to resume Candidate finalization."""
+
+    columns = {
+        row["name"] for row in database.execute("PRAGMA table_info(memory_candidates)")
+    }
+    if "storage_plan_json" not in columns:
+        database.execute(
+            "ALTER TABLE memory_candidates ADD COLUMN storage_plan_json TEXT "
+            "CHECK (storage_plan_json IS NULL OR json_valid(storage_plan_json))"
+        )
+    if "plan_fingerprint" not in columns:
+        database.execute(
+            "ALTER TABLE memory_candidates ADD COLUMN plan_fingerprint TEXT "
+            "CHECK (plan_fingerprint IS NULL OR length(trim(plan_fingerprint)) = 64)"
         )
 
 
@@ -1803,7 +1822,61 @@ def _candidate_from_row(row: sqlite3.Row | Mapping[str, Any]) -> dict[str, Any]:
 
     candidate = dict(row)
     candidate["keywords"] = json.loads(candidate.pop("keywords_json"))
+    storage_plan_json = candidate.pop("storage_plan_json", None)
+    candidate["storage_plan"] = (
+        json.loads(storage_plan_json) if storage_plan_json is not None else None
+    )
+    candidate.setdefault("plan_fingerprint", None)
     return candidate
+
+
+def reserve_candidate_finalize_plan(
+    candidate_id: str,
+    *,
+    storage_plan: Mapping[str, Any],
+    plan_fingerprint: str,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Persist the first validated Storage Plan or confirm an identical retry.
+
+    ``storage_plan`` is the canonical MemoryGraph write plan. The 64-character
+    ``plan_fingerprint`` is its SHA-256 identity and prevents a retry from
+    silently changing the already approved plan.
+    """
+
+    fingerprint = plan_fingerprint.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+        raise ConflictError("plan_fingerprint must be a SHA-256 hex digest")
+    encoded = json.dumps(storage_plan, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    with _transaction(database_path) as database:
+        current = _require_row(
+            database,
+            "SELECT * FROM memory_candidates WHERE id = ?",
+            (candidate_id,),
+            "Memory Candidate",
+        )
+        existing_fingerprint = current.get("plan_fingerprint")
+        created = existing_fingerprint is None
+        if created:
+            if current["status"] != "pending":
+                raise ConflictError("only a pending Memory Candidate can reserve a Storage Plan")
+            database.execute(
+                """
+                UPDATE memory_candidates
+                SET storage_plan_json = ?, plan_fingerprint = ?
+                WHERE id = ?
+                """,
+                (encoded, fingerprint, candidate_id),
+            )
+        elif existing_fingerprint != fingerprint:
+            raise ConflictError("Memory Candidate already has a different Storage Plan")
+
+        row = database.execute(
+            "SELECT * FROM memory_candidates WHERE id = ?", (candidate_id,)
+        ).fetchone()
+        assert row is not None
+        return {"candidate": _candidate_from_row(row), "created": created}
 
 
 def create_candidate(

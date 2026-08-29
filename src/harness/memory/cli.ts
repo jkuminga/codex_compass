@@ -3,14 +3,18 @@
 import {
   findProjectRoot,
   openMemoryInspectClient,
+  openMemoryFinalizeClient,
   openMemorySearchClient,
   resolveMemoryDatabasePath,
 } from "./client.ts";
 import { inspectMemoryCandidate } from "./inspect.ts";
+import { finalizeMemoryCandidate } from "./finalize.ts";
 import { normalizeLimit, recallMemories } from "./recall.ts";
 import type {
   InspectCandidateRequest,
   InspectCandidateResponse,
+  FinalizeMemoryRequest,
+  FinalizeMemoryResponse,
   RecallResponse,
 } from "./types.ts";
 
@@ -21,7 +25,7 @@ interface ParsedArguments {
 }
 
 interface InspectArguments {
-  command: "inspect";
+  command: "inspect" | "finalize";
 }
 
 class UsageError extends Error {}
@@ -30,9 +34,12 @@ function parseArguments(args: string[]): ParsedArguments | InspectArguments {
   if (args[0] === "inspect" && args.length === 1) {
     return { command: "inspect" };
   }
+  if (args[0] === "finalize" && args.length === 1) {
+    return { command: "finalize" };
+  }
   if (args[0] !== "recall") {
     throw new UsageError(
-      'usage: harness-memory recall "keyword1 keyword2" [--limit N] | inspect',
+      'usage: harness-memory recall "keyword1 keyword2" [--limit N] | inspect | finalize',
     );
   }
 
@@ -60,8 +67,32 @@ function parseArguments(args: string[]): ParsedArguments | InspectArguments {
   };
 }
 
-function writeResponse(response: RecallResponse | InspectCandidateResponse): void {
+function writeResponse(response: RecallResponse | InspectCandidateResponse | FinalizeMemoryResponse): void {
   process.stdout.write(`${JSON.stringify(response)}\n`);
+}
+
+async function runFinalize(): Promise<number> {
+  let request: FinalizeMemoryRequest;
+  try {
+    request = JSON.parse(await Bun.stdin.text()) as FinalizeMemoryRequest;
+    if (!request || typeof request !== "object" || !request.storage_plan) throw new Error("storage_plan is required");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid_json";
+    process.stdout.write(`${JSON.stringify({ ok: false, status: "validation_error", error: { code: "invalid_input", message } })}\n`);
+    return 2;
+  }
+  let close: (() => Promise<void>) | undefined;
+  try {
+    const projectRoot = findProjectRoot();
+    const connection = await openMemoryFinalizeClient(resolveMemoryDatabasePath(projectRoot));
+    close = connection.close;
+    writeResponse(await finalizeMemoryCandidate(request, connection.client));
+  } catch {
+    process.stdout.write(`${JSON.stringify({ ok: false, status: "partial", candidate_id: request.candidate_id, decision: request.storage_plan.decision, relationships: { created: [], skipped: [], failed: [] }, warnings: [], error: { code: "memory_database_unavailable", message: "MemoryGraph writer is unavailable" } })}\n`);
+  } finally {
+    if (close) { try { await close(); } catch { /* writer result already explains the operation */ } }
+  }
+  return 0;
 }
 
 async function runInspect(): Promise<number> {
@@ -116,6 +147,8 @@ async function run(): Promise<number> {
   }
 
   if (parsed.command === "inspect") return runInspect();
+  if (parsed.command === "finalize") return runFinalize();
+  if (parsed.command !== "recall") return 2;
 
   if (parsed.keywords.every((keyword) => keyword.trim() === "")) {
     writeResponse({ ok: true, memories: [], warnings: [] });
