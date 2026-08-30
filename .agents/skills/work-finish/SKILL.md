@@ -30,44 +30,7 @@ description: 활성 Run이 있는 프로젝트 작업의 최종 답변 전에 Po
 
 ## 3. 기억 후보 확인
 
-각 `pending_memory_candidates`를 다음 순서로 처리한다.
-
-1. `inspect_memory_candidate(candidate_id)`로 후보와 관련된 기존 기억을 읽는다.
-2. 후보의 `storage_plan`이 이미 있으면 새 판단을 만들지 않고 `finalize_memory_candidate(candidate_id)`만 호출한다.
-3. 저장된 Plan이 없으면 후보와 기존 기억을 비교해 하나의 Storage Plan을 만든다.
-   - `create`: 새 기억 노드를 만든다.
-   - `merge`: `target_memory_id`로 지정한 기존 기억을 보강한다.
-   - `reject`: 장기적으로 저장할 가치가 낮아 후보를 폐기한다.
-   - `relationships`: 최종 노드와 기존 노드 사이에 실제로 필요한 관계만 넣는다.
-
-Storage Plan은 다음 키만 사용한다. `merge`에는 `target_memory_id`가 필수이고, `reject`에는 `memory`와 관계를 넣지 않는다. `importance`, `confidence`, `strength`는 0~1 숫자다.
-
-```json
-{
-  "decision": "create | merge | reject",
-  "target_memory_id": "merge 대상 Memory ID 또는 null",
-  "memory": {
-    "type": "MemoryGraph MemoryType",
-    "title": "짧은 제목",
-    "content": "독립적으로 이해되는 내용",
-    "summary": "500자 이하 요약",
-    "tags": ["검색 태그"],
-    "importance": 0.8,
-    "confidence": 0.9
-  },
-  "relationships": [{
-    "direction": "outgoing | incoming",
-    "target_memory_id": "기존 Memory ID",
-    "type": "MemoryGraph RelationshipType",
-    "strength": 0.8,
-    "confidence": 0.9,
-    "context": "관계 설명"
-  }],
-  "reason": "판단 이유"
-}
-```
-4. `finalize_memory_candidate(candidate_id, storage_plan)`을 한 번 호출한다. 이 도구가 전체 저장 성공 뒤 후보를 `promoted`로 바꾸며, `reject`도 내부에서 처리한다. `promote_memory_candidate()`나 `reject_memory_candidate()`를 별도로 호출하지 않는다.
-5. `partial` 또는 도구 실패라면 후보는 `pending`으로 남는다. 같은 Turn에서 계획을 바꾸거나 무한 반복하지 않고, 저장된 Plan을 다음 재시도에서 재사용한다.
+`pending_memory_candidates`가 있으면 후보마다 `$memory-finalize` 스킬을 실행한다. 저장 가치·노드 타입·중복·관계 판단과 `finalize_memory_candidate()` 호출은 해당 스킬에 맡긴다. `promote_memory_candidate()`와 `reject_memory_candidate()`를 별도로 호출하지 않는다.
 
 후보 처리 후 `get_postflight_status()`를 다시 호출한다. pending 후보가 남았다면 그 수와 오류를 최종 보고에 포함하되, 후보가 있다는 이유만으로 Run 종료 자체를 막지는 않는다.
 
