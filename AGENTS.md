@@ -32,60 +32,6 @@
 
 ## 장기 기억 후보 기록
 
-작업 중 이후 세션에서도 다시 도움이 될 만한 정보를 발견하면 `long-term/`에 JSON 파일로 기록한다.
+활성 Run에서 이후 세션에도 재사용할 결정, 문제와 해결 방법, 기술 지식 또는 명령을 발견하면 `create_memory_candidate()`로 즉시 기록한다.
 
-기록 대상:
-
-- 오류·문제의 원인과 해결 방법
-- 장기적으로 유효한 프로젝트 진행 정보와 결정
-- 다시 사용할 기술 지식과 구현 방법
-- 유용한 명령어와 사용 조건
-
-일회성 작업 내용, 단순 진행 로그, 추측, 비밀정보는 기록하지 않는다. 한 파일에는 하나의 독립적인 기억만 저장하고, 가능하면 해당 판단의 근거가 되는 파일·명령·테스트를 함께 기록한다.
-
-파일명은 `<UTC 시각>-<짧은 설명>.json` 형식을 사용한다.
-
-```text
-long-term/
-├── 20260809T142301Z-auth-token-refresh.json
-├── 20260809T143522Z-test-command.json
-└── 20260809T150104Z-project-state-store-decision.json
-```
-
-JSON은 다음 구조를 사용한다. `problem`과 `solution`은 해당되는 경우에만 넣는다.
-
-```json
-{
-  "schema_version": 1,
-  "id": "ltm_auth_token_refresh",
-  "created_at": "2026-08-09T14:23:01Z",
-  "kind": "problem_solution",
-  "title": "인증 토큰 만료 문제 해결",
-  "summary": "짧은 토큰 만료 문제를 refresh token 방식으로 해결했다.",
-  "problem": "인증 토큰의 만료 시간이 짧아 사용자가 자주 로그아웃됐다.",
-  "solution": "refresh token과 token rotation을 적용했다.",
-  "evidence": [
-    {
-      "type": "file",
-      "ref": "src/auth/token.ts"
-    },
-    {
-      "type": "test",
-      "ref": "npm test -- auth"
-    }
-  ]
-}
-```
-
-필드와 허용값:
-
-- `schema_version`: JSON 구조의 버전
-- `id`: 기억을 구분하는 고유 이름
-- `created_at`: 기억을 기록한 시각
-- `kind`: 기억의 종류. `problem`, `problem_solution`, `project_progress`, `decision`, `technology`, `command` 중 하나를 사용한다.
-- `title`: 검색하기 쉬운 짧은 제목
-- `summary`: 나중에 읽어도 이해되는 핵심 내용
-- `problem`: 발견한 문제나 원인
-- `solution`: 적용한 해결 방법
-- `evidence`: 기억이 사실임을 확인할 수 있는 파일·명령·테스트 목록
-- `ref`: 근거의 실제 위치나 실행 명령
+일회성 진행 상태, 근거 없는 추측, 비밀정보는 후보로 기록하지 않는다.
