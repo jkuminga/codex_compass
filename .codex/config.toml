@@ -24,8 +24,6 @@ enabled_tools = [
   "recover_abandoned_work",
   "create_memory_candidate",
   "list_memory_candidates",
-  "promote_memory_candidate",
-  "reject_memory_candidate",
 ]
 
 [mcp_servers.harness-memory]

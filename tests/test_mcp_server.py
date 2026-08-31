@@ -431,7 +431,7 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.structured_content["run"]["status"], "interrupted")
         self.assertEqual(result.structured_content["work_item"]["status"], "ready")
 
-    async def test_codex_can_capture_and_review_memory_candidates_through_mcp(self) -> None:
+    async def test_codex_can_capture_and_list_memory_candidates_through_mcp(self) -> None:
         work_item = state_store.create_work_item(
             title="기억 후보 MCP",
             kind="research",
@@ -457,7 +457,7 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
         )
 
         async with Client(create_server(self.database_path)) as client:
-            promoted_source = await client.call_tool(
+            first_source = await client.call_tool(
                 "create_memory_candidate",
                 {
                     "run_id": run["id"],
@@ -467,7 +467,7 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
                     "keywords": ["MCP", "test", "mcp"],
                 },
             )
-            rejected_source = await client.call_tool(
+            second_source = await client.call_tool(
                 "create_memory_candidate",
                 {
                     "run_id": run["id"],
@@ -480,22 +480,11 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             pending_result = await client.call_tool(
                 "list_memory_candidates", {"run_id": run["id"]}
             )
-            promoted_result = await client.call_tool(
-                "promote_memory_candidate",
-                {
-                    "candidate_id": promoted_source.structured_content["id"],
-                    "memory_ref": "memory://command/run-tests",
-                },
-            )
-            rejected_result = await client.call_tool(
-                "reject_memory_candidate",
-                {"candidate_id": rejected_source.structured_content["id"]},
-            )
 
         self.assertEqual(len(pending_result.structured_content["candidates"]), 2)
-        self.assertEqual(promoted_source.structured_content["keywords"], ["mcp", "test"])
-        self.assertEqual(promoted_result.structured_content["status"], "promoted")
-        self.assertEqual(rejected_result.structured_content["status"], "rejected")
+        self.assertEqual(first_source.structured_content["keywords"], ["mcp", "test"])
+        self.assertEqual(first_source.structured_content["status"], "pending")
+        self.assertEqual(second_source.structured_content["status"], "pending")
 
     async def test_stdio_server_exposes_the_agreed_tool_interface(self) -> None:
         state_store.create_work_item(
@@ -542,8 +531,6 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "recover_abandoned_work",
             "create_memory_candidate",
             "list_memory_candidates",
-            "promote_memory_candidate",
-            "reject_memory_candidate",
         }
         self.assertEqual({tool.name for tool in tools.tools}, expected_tools)
         self.assertEqual(status.structured_content["progress"]["total_work_items"], 1)

@@ -568,31 +568,6 @@ def create_server(
             )
         }
 
-    @server.tool(name="promote_memory_candidate")
-    def promote_memory_candidate(
-        candidate_id: str,
-        memory_ref: str,
-    ) -> dict[str, Any]:
-        """Mark a reviewed Candidate stored in MemoryGraph.
-
-        Call only after the memory finalizer has actually stored or merged the
-        memory. memory_ref identifies the resulting MemoryGraph node.
-        """
-
-        return state_store.promote_candidate(
-            candidate_id,
-            memory_ref=memory_ref,
-            database_path=database_path,
-        )
-
-    @server.tool(name="reject_memory_candidate")
-    def reject_memory_candidate(candidate_id: str) -> dict[str, Any]:
-        """Reject a reviewed Candidate that is not worth long-term storage."""
-
-        return state_store.reject_candidate(
-            candidate_id, database_path=database_path
-        )
-
     return server
 
 
