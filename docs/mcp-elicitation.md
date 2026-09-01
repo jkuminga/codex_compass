@@ -266,4 +266,4 @@ def main(request_file: Path) -> None:
 - [ ] UPS의 Hook timeout을 300초로 바꾸고, 선택 대기를 구현한다.
 - [ ] 선택·취소·시간 초과·터미널 실행 실패·비정상 종료를 테스트한다.
 - [ ] 선택 결과를 Codex `additionalContext`로 전달하고, 이전 WI 자동 매칭 패킷·스킬·지침을 제거하거나 축소한다.
-- [ ] 기존 MCP Elicitation PoC 도구·설정 제거 여부를 결정한다.
+- [x] 기존 MCP Elicitation PoC 도구·설정을 제거했다.
