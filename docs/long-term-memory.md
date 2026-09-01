@@ -117,7 +117,7 @@ create_memory_candidate(run_id, ...)
 
 ## 다음 구현 목표: MemoryGraph Finalize Skill
 
-후보 DB와 MCP 저장 도구는 구현되었다. 다음 단계는 종료 직전 Finalize Skill이 pending 후보를 검토해 MemoryGraph에 저장·병합하고, 실제 노드 사이의 관계를 판단하도록 만드는 것이다. 저장한 후보는 `promote_memory_candidate`, 제외한 후보는 `reject_memory_candidate`로 마감한다.
+후보 DB와 MemoryGraph 저장 도구는 구현되었다. 종료 직전 Finalize Skill이 pending 후보를 검토해 저장·병합·제외와 관계를 판단하고 `finalize_memory_candidate()`를 호출한다. 후보의 최종 상태는 이 도구가 MemoryGraph 처리 결과를 확인한 뒤 내부에서 마감한다.
 
 후보 DB는 [`memory_candidates` 스키마](./memory-candidate-schema.html)를 따른다. 후보는 발견 즉시 한 건씩 저장하고, 관계는 종료 전 검토에서 기존 MemoryGraph 기억과 함께 판단한다. 전체 호출 시점은 [단일 Codex 요청 파이프라인](./single-request-pipeline.html)을 따른다.
 

@@ -155,8 +155,6 @@
             <tr class="group-row"><td colspan="4">장기 기억 후보</td></tr>
             <tr><td data-label="MCP 도구"><code>create_memory_candidate</code></td><td data-label="설명">발견한 기억 후보를 작업 도중 즉시 저장한다.</td><td data-label="주요 입력"><code>run_id</code>, 종류, 제목, 내용, 키워드</td><td data-label="DB 함수"><div class="call-list"><code>create_candidate()</code></div></td></tr>
             <tr><td data-label="MCP 도구"><code>list_memory_candidates</code></td><td data-label="설명">아직 검토하지 않은 후보를 가져온다.</td><td data-label="주요 입력"><code>run_id</code></td><td data-label="DB 함수"><div class="call-list"><code>list_pending_candidates()</code></div></td></tr>
-            <tr><td data-label="MCP 도구"><code>promote_memory_candidate</code></td><td data-label="설명">MemoryGraph에 저장된 후보와 실제 기억 참조를 연결한다.</td><td data-label="주요 입력">후보 ID, <code>memory_ref</code></td><td data-label="DB 함수"><div class="call-list"><code>promote_candidate()</code></div></td></tr>
-            <tr><td data-label="MCP 도구"><code>reject_memory_candidate</code></td><td data-label="설명">장기 보관하지 않을 후보를 거절 처리한다.</td><td data-label="주요 입력">후보 ID</td><td data-label="DB 함수"><div class="call-list"><code>reject_candidate()</code></div></td></tr>
           </tbody>
         </table>
       </div>
@@ -186,7 +184,7 @@
             <tr><td data-label="영역">Artifact</td><td data-label="함수"><code>create_artifact()</code> · <code>resolve_artifact()</code> · <code>get_run_artifacts()</code></td><td data-label="설명">실행 결과를 등록·확정·조회한다.</td><td data-label="주 사용자">검증 MCP·Hook</td></tr>
             <tr><td data-label="영역">Evidence</td><td data-label="함수"><code>link_evidence()</code> · <code>get_criterion_evidence()</code></td><td data-label="설명">Artifact와 완료 조건의 증명 관계를 연결하고 읽는다.</td><td data-label="주 사용자">검증 MCP</td></tr>
             <tr><td data-label="영역">기억 후보</td><td data-label="함수"><code>create_candidate()</code> · <code>list_pending_candidates()</code></td><td data-label="설명">후보를 즉시 만들고 미검토 목록을 읽는다.</td><td data-label="주 사용자">기억 MCP·Skill</td></tr>
-            <tr><td data-label="영역">기억 후보</td><td data-label="함수"><code>promote_candidate()</code> · <code>reject_candidate()</code></td><td data-label="설명">검토된 후보를 장기 기억 저장 또는 거절로 마감한다.</td><td data-label="주 사용자">기억 검토 Skill</td></tr>
+            <tr><td data-label="영역">기억 후보</td><td data-label="함수"><code>promote_candidate()</code> · <code>reject_candidate()</code></td><td data-label="설명"><code>finalize_memory_candidate()</code> 내부에서 저장 성공 또는 제외가 확정된 후보를 마감한다.</td><td data-label="주 사용자">Memory MCP Adapter 내부 처리</td></tr>
             <tr><td data-label="영역">Hook 조회</td><td data-label="함수"><code>get_preflight_context()</code> · <code>get_postflight_status()</code></td><td data-label="설명">작업 전후에 필요한 상태만 작게 묶어 반환한다.</td><td data-label="주 사용자">Hook·MCP</td></tr>
             <tr><td data-label="영역">진행 조회</td><td data-label="함수"><code>get_project_progress()</code> · <code>get_recent_activity()</code></td><td data-label="설명">프로젝트 집계와 최근 State Event를 읽는다.</td><td data-label="주 사용자">조회 MCP</td></tr>
             <tr class="group-row"><td colspan="4">구현 완료 Hook 지원 · Runtime Interface</td></tr>
