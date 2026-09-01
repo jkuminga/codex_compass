@@ -684,6 +684,22 @@ def list_next_work_items(
         database.close()
 
 
+def list_ready_work_items(
+    *,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """Return every ready WorkItem, ordered for an explicit user selection."""
+
+    database = open_database(database_path)
+    try:
+        return [
+            dict(row)
+            for row in database.execute("SELECT * FROM next_work_items")
+        ]
+    finally:
+        database.close()
+
+
 def search_work_items(
     terms: Sequence[str],
     *,

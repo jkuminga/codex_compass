@@ -1,173 +1,106 @@
 import json
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
+from unittest.mock import patch
 
-from src.harness import runtime_binding, state_store
+from src.harness import state_store, work_item_picker
 from src.harness.hooks import user_prompt_submit
 
 
 class UserPromptSubmitHookTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
-        root = Path(self.temporary_directory.name)
-        self.database_path = root / "state.db"
-        self.bindings_directory = root / "bindings"
+        self.root = Path(self.temporary_directory.name)
+        self.database_path = self.root / "state.db"
         state_store.initialize_database(self.database_path)
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def event(self, *, session_id: str = "session-current", turn_id: str = "turn-new") -> dict[str, str]:
-        return {
-            "hook_event_name": "UserPromptSubmit",
-            "session_id": session_id,
-            "turn_id": turn_id,
-            "prompt": "UPS Hook을 구현해줘",
-        }
+    def event(self, prompt: str = "w/ 로그인 구현") -> dict[str, str]:
+        return {"hook_event_name": "UserPromptSubmit", "session_id": "session-current", "turn_id": "turn-new", "prompt": prompt}
 
-    def create_ready_work_item(self, title: str = "UPS Hook 구현") -> dict[str, object]:
+    def create_ready_work_item(self, title: str = "로그인 구현") -> dict[str, object]:
         work_item = state_store.create_work_item(
-            title=title,
-            kind="implementation",
-            goal="각 요청 전에 프로젝트 상태를 준비한다.",
-            next_action="UserPromptSubmit Hook을 구현한다.",
-            acceptance_criteria=["Hook이 최신 상태 패킷을 제공한다."],
-            actor="test",
-            database_path=self.database_path,
+            title=title, kind="implementation", goal="로그인을 적용한다.", next_action="로그인 화면을 구현한다.",
+            acceptance_criteria=["로그인할 수 있다."], actor="test", database_path=self.database_path,
         )
         return state_store.change_work_item_status(
-            work_item["id"],
-            "ready",
-            next_action="UserPromptSubmit Hook을 구현한다.",
-            actor="test",
-            reason="테스트 준비",
-            database_path=self.database_path,
+            work_item["id"], "ready", next_action="로그인 화면을 구현한다.", actor="test", reason="테스트 준비", database_path=self.database_path,
         )
 
-    def start(self, work_item_id: str) -> dict[str, object]:
-        return state_store.start_run(
-            work_item_id,
-            intent="UPS Hook을 구현한다.",
-            recall_query="UPS Hook WorkItem",
-            actor="test",
-            database_path=self.database_path,
-        )
+    def test_non_work_prompt_does_not_query_the_database_or_add_context(self) -> None:
+        with patch.object(state_store, "list_ready_work_items") as list_ready:
+            output = user_prompt_submit.dispatch_user_prompt_submit(self.event("일반 질문"), database_path=self.database_path)
+        self.assertEqual(output, {"continue": True})
+        list_ready.assert_not_called()
 
-    def test_returns_compact_context_and_work_start_instruction(self) -> None:
+    def test_work_prompt_passes_the_selected_work_item_only(self) -> None:
         work_item = self.create_ready_work_item()
+        second_work_item = self.create_ready_work_item("비밀번호 재설정")
 
-        output = user_prompt_submit.dispatch_user_prompt_submit(
-            self.event(),
-            database_path=self.database_path,
-            bindings_directory=self.bindings_directory,
-        )
+        def write_selected_result(request_path: Path) -> None:
+            request = work_item_picker.read_json_object(request_path)
+            self.assertEqual(
+                {item["id"] for item in request["work_items"]},
+                {work_item["id"], second_work_item["id"]},
+            )
+            work_item_picker.atomic_write_json(work_item_picker.result_path_for(request_path), {
+                "schema_version": 1, "request_id": request["request_id"], "session_id": request["session_id"],
+                "turn_id": request["turn_id"], "created_at": work_item_picker.format_timestamp(work_item_picker.utc_now()),
+                "status": "selected", "work_item_id": work_item["id"],
+            })
+
+        with patch.object(user_prompt_submit, "launch_terminal_picker", side_effect=write_selected_result):
+            output = user_prompt_submit.dispatch_user_prompt_submit(self.event(), database_path=self.database_path)
 
         context = output["hookSpecificOutput"]["additionalContext"]
-        packet_text = context.split("<work-selection-context>\n", 1)[1].split(
-            "\n</work-selection-context>", 1
-        )[0]
-        packet = json.loads(packet_text)
-        self.assertTrue(packet["db_ok"])
-        self.assertEqual(
-            packet["ready_candidates"][0]["work_item_id"], work_item["id"]
-        )
-        self.assertIn("$work-start", context)
+        packet = json.loads(context.split("\n", 1)[1].rsplit("\n", 1)[0])
+        self.assertEqual(packet, {"selection_status": "selected", "work_item_id": work_item["id"], "title": work_item["title"], "request": "로그인 구현"})
+        selections_directory = self.root / "selections"
+        self.assertFalse(selections_directory.exists() and list(selections_directory.iterdir()))
 
-    def test_recovers_only_same_session_binding_from_a_different_turn(self) -> None:
-        work_item = self.create_ready_work_item()
-        run = self.start(work_item["id"])
-        runtime_binding.save_binding(
-            session_id="session-current",
-            turn_id="turn-old",
-            work_item_id=work_item["id"],
-            run_id=run["id"],
-            bindings_directory=self.bindings_directory,
+    def test_rejects_result_for_an_unlisted_work_item(self) -> None:
+        request_path = user_prompt_submit.write_selection_request(
+            request_id="request", session_id="session", turn_id="turn", work_items=[], selections_directory=self.root / "selections",
         )
+        request = work_item_picker.read_json_object(request_path)
+        result = {"schema_version": 1, "request_id": request["request_id"], "session_id": request["session_id"],
+                  "turn_id": request["turn_id"], "created_at": work_item_picker.format_timestamp(work_item_picker.utc_now()),
+                  "status": "selected", "work_item_id": "WI-other"}
+        with self.assertRaises(user_prompt_submit.HookInputError):
+            user_prompt_submit.validate_selection_result(request_path, result, request_text="구현")
 
-        packet = user_prompt_submit.build_work_selection_packet(
-            self.event(),
-            database_path=self.database_path,
-            bindings_directory=self.bindings_directory,
+    def test_expired_orphaned_selection_files_are_removed(self) -> None:
+        directory = self.root / "selections"
+        request_path = user_prompt_submit.write_selection_request(
+            request_id="expired", session_id="session", turn_id="turn", work_items=[], selections_directory=directory, timeout_seconds=-1,
         )
+        work_item_picker.atomic_write_json(work_item_picker.result_path_for(request_path), {"unused": True})
+        user_prompt_submit.cleanup_expired_selection_files(directory)
+        self.assertFalse(request_path.exists())
+        self.assertFalse(work_item_picker.result_path_for(request_path).exists())
 
-        self.assertEqual(packet["recovered_runs"][0]["run_id"], run["id"])
-        self.assertEqual(
-            state_store.get_run(run["id"], database_path=self.database_path)["status"],
-            "interrupted",
-        )
-        self.assertIsNone(
-            runtime_binding.load_binding(
-                "session-current", bindings_directory=self.bindings_directory
-            )
-        )
+    def test_picker_writes_a_cancelled_result_for_fzf_cancellation(self) -> None:
+        now = work_item_picker.utc_now()
+        request_path = self.root / "selection-request.request.json"
+        work_item_picker.atomic_write_json(request_path, {
+            "schema_version": 1, "request_id": "request", "session_id": "session", "turn_id": "turn",
+            "created_at": work_item_picker.format_timestamp(now), "expires_at": work_item_picker.format_timestamp(now + timedelta(minutes=5)),
+            "work_items": [{"id": "WI-1", "title": "선택", "goal": "고른다", "priority": "high"}],
+        })
+        with patch.object(work_item_picker, "run_fzf", return_value=None):
+            work_item_picker.run_picker(request_path)
+        result = work_item_picker.read_json_object(work_item_picker.result_path_for(request_path))
+        self.assertEqual(result["status"], "cancelled")
+        self.assertNotIn("work_item_id", result)
 
-    def test_preserves_and_reports_another_sessions_active_work(self) -> None:
-        work_item = self.create_ready_work_item()
-        run = self.start(work_item["id"])
-        runtime_binding.save_binding(
-            session_id="session-other",
-            turn_id="turn-other",
-            work_item_id=work_item["id"],
-            run_id=run["id"],
-            bindings_directory=self.bindings_directory,
-        )
-
-        packet = user_prompt_submit.build_work_selection_packet(
-            self.event(),
-            database_path=self.database_path,
-            bindings_directory=self.bindings_directory,
-        )
-
-        self.assertEqual(packet["active_work_items"][0]["ownership"], "other_session")
-        self.assertEqual(packet["active_work_items"][0]["run_id"], run["id"])
-        self.assertEqual(
-            state_store.get_run(run["id"], database_path=self.database_path)["status"],
-            "running",
-        )
-
-    def test_removes_current_sessions_binding_when_its_run_is_terminal(self) -> None:
-        work_item = self.create_ready_work_item()
-        run = self.start(work_item["id"])
-        runtime_binding.save_binding(
-            session_id="session-current",
-            turn_id="turn-old",
-            work_item_id=work_item["id"],
-            run_id=run["id"],
-            bindings_directory=self.bindings_directory,
-        )
-        state_store.recover_stale_run(
-            work_item["id"],
-            expected_run_id=run["id"],
-            actor="test",
-            database_path=self.database_path,
-        )
-
-        packet = user_prompt_submit.build_work_selection_packet(
-            self.event(),
-            database_path=self.database_path,
-            bindings_directory=self.bindings_directory,
-        )
-
-        self.assertTrue(packet["db_ok"])
-        self.assertIsNone(
-            runtime_binding.load_binding(
-                "session-current", bindings_directory=self.bindings_directory
-            )
-        )
-
-    def test_bad_database_returns_a_fail_closed_packet(self) -> None:
-        bad_database = Path(self.temporary_directory.name) / "empty.db"
-
-        output = user_prompt_submit.dispatch_user_prompt_submit(
-            self.event(),
-            database_path=bad_database,
-            bindings_directory=self.bindings_directory,
-        )
-        context = output["hookSpecificOutput"]["additionalContext"]
-
-        self.assertIn('"db_ok":false', context)
-        self.assertIn("상태 저장소 건강 검사에 실패", context)
+    def test_picker_reports_a_missing_fzf_executable(self) -> None:
+        with patch.object(work_item_picker.subprocess, "run", side_effect=FileNotFoundError):
+            with self.assertRaisesRegex(work_item_picker.SelectionFileError, "fzf could not be started"):
+                work_item_picker.run_fzf(["WI-1\thigh\t선택\t고른다"])
 
 
 if __name__ == "__main__":

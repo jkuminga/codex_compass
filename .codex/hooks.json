@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "\"$(git rev-parse --show-toplevel)/bin/harness-user-prompt-submit\"",
-            "timeout": 20,
+            "timeout": 300,
             "statusMessage": "Preparing project work context",
             "additionalContextLimit": 1800
           }

@@ -6,6 +6,7 @@
 .harness/memorygraph.db-shm
 .harness/memorygraph.db-wal
 .harness/runtime/
+.harness/selections/
 
 # Python test caches.
 __pycache__/
