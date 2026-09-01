@@ -37,6 +37,11 @@ class UserPromptSubmitHookTests(unittest.TestCase):
         self.assertEqual(output, {"continue": True})
         list_ready.assert_not_called()
 
+    def test_work_prefix_is_case_insensitive(self) -> None:
+        self.assertEqual(user_prompt_submit.strip_work_prefix("w/ 로그인 구현"), "로그인 구현")
+        self.assertEqual(user_prompt_submit.strip_work_prefix("W/ 로그인 구현"), "로그인 구현")
+        self.assertIsNone(user_prompt_submit.strip_work_prefix("work/ 로그인 구현"))
+
     def test_work_prompt_passes_the_selected_work_item_only(self) -> None:
         work_item = self.create_ready_work_item()
         second_work_item = self.create_ready_work_item("비밀번호 재설정")
@@ -101,6 +106,17 @@ class UserPromptSubmitHookTests(unittest.TestCase):
         with patch.object(work_item_picker.subprocess, "run", side_effect=FileNotFoundError):
             with self.assertRaisesRegex(work_item_picker.SelectionFileError, "fzf could not be started"):
                 work_item_picker.run_fzf(["WI-1\thigh\t선택\t고른다"])
+
+    def test_terminal_picker_shows_guidance_when_terminal_cannot_access_desktop(self) -> None:
+        request_path = self.root / "selections" / "selection.request.json"
+        with patch.object(user_prompt_submit.subprocess, "run") as run:
+            user_prompt_submit.launch_terminal_picker(request_path)
+
+        command = run.call_args.args[0][-1]
+        self.assertIn("Terminal이 프로젝트가 있는 Desktop 폴더에 접근할 수 없습니다.", command)
+        self.assertIn("Codex에서 /stop으로 현재 실행을 종료하세요.", command)
+        self.assertIn("if ! cd", command)
+        self.assertIn("test -r", command)
 
 
 if __name__ == "__main__":

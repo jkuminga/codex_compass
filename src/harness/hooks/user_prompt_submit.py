@@ -33,11 +33,11 @@ def _required_string(payload: Mapping[str, Any], field: str) -> str:
 
 
 def strip_work_prefix(prompt: str) -> str | None:
-    """Remove the ``w/`` prefix, leaving the user's request."""
+    """Remove a case-insensitive ``w/`` prefix, leaving the user's request."""
 
-    if not prompt.startswith(WORK_PREFIX):
+    if not prompt[: len(WORK_PREFIX)].lower() == WORK_PREFIX:
         return None
-    return prompt.removeprefix(WORK_PREFIX).lstrip()
+    return prompt[len(WORK_PREFIX) :].lstrip()
 
 
 def _selection_directory(database_path: str | Path) -> Path:
@@ -98,11 +98,43 @@ def write_selection_request(
 def launch_terminal_picker(request_path: Path) -> None:
     """Open the picker in a new macOS Terminal.app tab via AppleScript."""
 
-    command = (
-        f"cd {shlex.quote(str(state_store.PROJECT_ROOT))} && "
-        "uv run python -m src.harness.work_item_picker --request "
-        f"{shlex.quote(str(request_path))}"
-    )
+    project_root = shlex.quote(str(state_store.PROJECT_ROOT))
+    request = shlex.quote(str(request_path))
+    selections_directory = shlex.quote(str(request_path.parent))
+    shell_program = f"""\
+show_permission_guidance() {{
+  printf '\\n[Harness] WorkItem 선택 창을 열지 못했습니다.\\n\\n'
+  printf '원인: Terminal이 프로젝트가 있는 Desktop 폴더에 접근할 수 없습니다.\\n\\n'
+  printf '해결:\\n'
+  printf '1. macOS 설정 → 개인정보 보호 및 보안 → 파일 및 폴더에서\\n'
+  printf '   Terminal의 Desktop 폴더 접근을 허용하세요.\\n'
+  printf '2. Codex에서 /stop으로 현재 실행을 종료하세요.\\n'
+  printf '3. 같은 w/ 요청을 다시 보내세요.\\n\\n'
+  printf '아무 키나 누르면 창을 닫습니다. '
+  read -r -k 1
+}}
+
+if ! cd {project_root} || ! pwd -P >/dev/null 2>&1; then
+  show_permission_guidance
+  exit 1
+fi
+
+if ! test -r {request} || ! test -w {selections_directory}; then
+  show_permission_guidance
+  exit 1
+fi
+
+uv run python -m src.harness.work_item_picker --request {request}
+picker_status=$?
+if [ "$picker_status" -ne 0 ]; then
+  printf '\\n[Harness] 선택 프로그램이 종료되었습니다 (exit %s).\\n' "$picker_status"
+  printf '위 오류를 확인한 뒤 같은 w/ 요청을 다시 보내세요.\\n'
+  printf '아무 키나 누르면 창을 닫습니다. '
+  read -r -k 1
+fi
+exit "$picker_status"
+"""
+    command = f"/bin/zsh -lc {shlex.quote(shell_program)}"
     script = 'on run argv\n tell application "Terminal" to do script (item 1 of argv)\nend run'
     try:
         subprocess.run(["osascript", "-e", script, command], check=True)
