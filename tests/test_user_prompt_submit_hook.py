@@ -110,6 +110,10 @@ class UserPromptSubmitHookTests(unittest.TestCase):
     def test_terminal_picker_shows_guidance_when_terminal_cannot_access_desktop(self) -> None:
         request_path = self.root / "selections" / "selection.request.json"
         with patch.object(user_prompt_submit.subprocess, "run") as run:
+            run.side_effect = [
+                user_prompt_submit.subprocess.CompletedProcess(["pgrep"], 1),
+                user_prompt_submit.subprocess.CompletedProcess(["osascript"], 0),
+            ]
             user_prompt_submit.launch_terminal_picker(request_path)
 
         command = run.call_args.args[0][-1]
@@ -117,6 +121,38 @@ class UserPromptSubmitHookTests(unittest.TestCase):
         self.assertIn("Codex에서 /stop으로 현재 실행을 종료하세요.", command)
         self.assertIn("if ! cd", command)
         self.assertIn("test -r", command)
+        self.assertIn("WorkItem 선택기를 준비하는 중", command)
+        self.assertIn(".venv/bin/python", command)
+        self.assertIn("uv run --quiet", command)
+
+    def test_terminal_picker_reuses_startup_tab_when_terminal_is_not_running(self) -> None:
+        request_path = self.root / "selections" / "selection.request.json"
+        with patch.object(user_prompt_submit.subprocess, "run") as run:
+            run.side_effect = [
+                user_prompt_submit.subprocess.CompletedProcess(["pgrep"], 1),
+                user_prompt_submit.subprocess.CompletedProcess(["osascript"], 0),
+            ]
+            user_prompt_submit.launch_terminal_picker(request_path)
+
+        script = run.call_args.args[0][2]
+        self.assertIn("do script (item 1 of argv) in selected tab of front window", script)
+        self.assertIn("repeat 50 times", script)
+        self.assertNotIn("waitForPickerAndClose", script)
+
+    def test_terminal_picker_opens_a_new_picker_tab_when_terminal_is_running(self) -> None:
+        request_path = self.root / "selections" / "selection.request.json"
+        with patch.object(user_prompt_submit.subprocess, "run") as run:
+            run.side_effect = [
+                user_prompt_submit.subprocess.CompletedProcess(["pgrep"], 0),
+                user_prompt_submit.subprocess.CompletedProcess(["osascript"], 0),
+            ]
+            user_prompt_submit.launch_terminal_picker(request_path)
+
+        script = run.call_args.args[0][2]
+        command = run.call_args.args[0][-1]
+        self.assertIn("do script (item 1 of argv)", script)
+        self.assertIn("close_picker_terminal", command)
+        self.assertIn("if (tty of candidateTab) is pickerTty", command)
 
 
 if __name__ == "__main__":

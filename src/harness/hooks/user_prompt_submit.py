@@ -96,12 +96,39 @@ def write_selection_request(
 
 
 def launch_terminal_picker(request_path: Path) -> None:
-    """Open the picker in a new macOS Terminal.app tab via AppleScript."""
+    """Open a picker tab that closes itself after selection or cancellation."""
 
     project_root = shlex.quote(str(state_store.PROJECT_ROOT))
     request = shlex.quote(str(request_path))
     selections_directory = shlex.quote(str(request_path.parent))
+    venv_python = state_store.PROJECT_ROOT / ".venv" / "bin" / "python"
+    direct_picker_command = (
+        f"{shlex.quote(str(venv_python))} -m src.harness.work_item_picker --request {request}"
+    )
+    fallback_picker_command = (
+        f"uv run --quiet python -m src.harness.work_item_picker --request {request}"
+    )
     shell_program = f"""\
+close_picker_terminal() {{
+  local picker_tty
+  picker_tty="$(tty)"
+  /usr/bin/osascript \\
+    -e 'on run argv' \\
+    -e 'set pickerTty to item 1 of argv' \\
+    -e 'tell application "Terminal"' \\
+    -e 'repeat with candidateWindow in windows' \\
+    -e 'repeat with candidateTab in tabs of candidateWindow' \\
+    -e 'if (tty of candidateTab) is pickerTty then' \\
+    -e 'close candidateWindow' \\
+    -e 'return' \\
+    -e 'end if' \\
+    -e 'end repeat' \\
+    -e 'end repeat' \\
+    -e 'end tell' \\
+    -e 'end run' \\
+    "$picker_tty" >/dev/null 2>&1
+}}
+
 show_permission_guidance() {{
   printf '\\n[Harness] WorkItem 선택 창을 열지 못했습니다.\\n\\n'
   printf '원인: Terminal이 프로젝트가 있는 Desktop 폴더에 접근할 수 없습니다.\\n\\n'
@@ -112,6 +139,7 @@ show_permission_guidance() {{
   printf '3. 같은 w/ 요청을 다시 보내세요.\\n\\n'
   printf '아무 키나 누르면 창을 닫습니다. '
   read -r -k 1
+  close_picker_terminal
 }}
 
 if ! cd {project_root} || ! pwd -P >/dev/null 2>&1; then
@@ -124,7 +152,12 @@ if ! test -r {request} || ! test -w {selections_directory}; then
   exit 1
 fi
 
-uv run python -m src.harness.work_item_picker --request {request}
+printf '[Harness] WorkItem 선택기를 준비하는 중…\\n'
+if test -x {shlex.quote(str(venv_python))}; then
+  {direct_picker_command}
+else
+  {fallback_picker_command}
+fi
 picker_status=$?
 if [ "$picker_status" -ne 0 ]; then
   printf '\\n[Harness] 선택 프로그램이 종료되었습니다 (exit %s).\\n' "$picker_status"
@@ -132,10 +165,30 @@ if [ "$picker_status" -ne 0 ]; then
   printf '아무 키나 누르면 창을 닫습니다. '
   read -r -k 1
 fi
+close_picker_terminal
 exit "$picker_status"
 """
     command = f"/bin/zsh -lc {shlex.quote(shell_program)}"
-    script = 'on run argv\n tell application "Terminal" to do script (item 1 of argv)\nend run'
+    terminal_was_running = subprocess.run(
+        ["pgrep", "-x", "Terminal"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+    if terminal_was_running:
+        script = 'on run argv\n tell application "Terminal" to do script (item 1 of argv)\nend run'
+    else:
+        script = """on run argv
+ tell application "Terminal"
+  activate
+  repeat 50 times
+   if (count of windows) > 0 then exit repeat
+   delay 0.1
+  end repeat
+  if (count of windows) = 0 then error "Terminal startup window was not created"
+  do script (item 1 of argv) in selected tab of front window
+ end tell
+end run"""
     try:
         subprocess.run(["osascript", "-e", script, command], check=True)
     except (OSError, subprocess.CalledProcessError) as error:
