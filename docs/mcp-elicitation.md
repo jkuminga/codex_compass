@@ -1,12 +1,12 @@
 # fzf로 WorkItem 선택하기: UPS와 외부 터미널 방식
 
-> 구현 대상 문서. `/work` 접두사가 붙은 요청은 UPS(UserPromptSubmit Hook)가 외부 터미널의 `fzf` 선택창으로 WorkItem(WI)을 고르게 한다. Codex는 사용자가 고른 WI를 그대로 사용하며 WI 매칭을 추론하지 않는다.
+> 구현 대상 문서. `w/` 접두사가 붙은 요청은 UPS(UserPromptSubmit Hook)가 외부 터미널의 `fzf` 선택창으로 WorkItem(WI)을 고르게 한다. Codex는 사용자가 고른 WI를 그대로 사용하며 WI 매칭을 추론하지 않는다.
 
 ## 결정 요약
 
 | 항목 | 결정 |
 | --- | --- |
-| 사용자 진입점 | `/work <요청>` 접두사 |
+| 사용자 진입점 | `w/ <요청>` 접두사 |
 | WI 선택자 | 사용자 + `fzf` |
 | WI 목록 | UPS가 상태 DB에서 `ready` WI 전체 조회 |
 | 기본 터미널 | macOS `Terminal.app` |
@@ -14,15 +14,15 @@
 | MCP Elicitation | 사용하지 않음 |
 | 선택 취소·오류·시간 초과 | 작업 시작 금지 |
 | UPS 대기 시간 | 300초를 기본값으로 구현 |
-| `/work` 없는 요청 | DB 조회·터미널 실행 없이 즉시 통과 |
+| `w/` 없는 요청 | DB 조회·터미널 실행 없이 즉시 통과 |
 
 **WorkItem(WI)** 은 이후 세션에도 이어서 할 수 있는 작업 카드다. **UPS** 는 사용자가 프롬프트를 보낸 직후, 모델보다 먼저 실행되는 로컬 Hook이다.
 
 ## 전체 흐름
 
 ```text
-사용자: /work 로그인 기능 구현을 이어서 해줘
-  → UPS: /work 접두사 확인
+사용자: w/ 로그인 기능 구현을 이어서 해줘
+  → UPS: w/ 접두사 확인
   → UPS: ready WI 전체 조회
   → UPS: 선택 요청 JSON 파일을 원자적으로 생성
   → UPS: Terminal.app 새 탭에서 선택 프로그램 실행
@@ -71,7 +71,7 @@ Codex가 받는 추가 문맥은 한 WI만 담는다.
     selection-<request_id>.result.json
 ```
 
-`request_id`는 매 `/work` 요청마다 새로 만드는 UUID4 기반의 랜덤 식별자다. 예시는 `selection-7f3a1c9e-....request.json`이다.
+`request_id`는 매 `w/` 요청마다 새로 만드는 UUID4 기반의 랜덤 식별자다. 예시는 `selection-7f3a1c9e-....request.json`이다.
 
 파일명에는 사용자 프롬프트, WI 제목, 세션 ID, Turn ID를 넣지 않는다. 파일명을 짧고 안전하게 유지하며, 세션·Turn 값은 JSON 내부에서 검증에만 사용한다.
 
@@ -134,12 +134,12 @@ UPS는 결과를 받았다고 바로 믿지 않는다. 아래를 모두 확인�
   → 선택 프로그램은 expires_at을 시작 전·결과 쓰기 전 확인해 늦은 결과를 쓰지 않음
 
 비정상 종료
-  → 다음 /work UPS 시작 시 만료된 선택 파일을 정리
+  → 다음 w/ UPS 시작 시 만료된 선택 파일을 정리
 ```
 
 `finally 블록`은 성공·취소·오류 여부와 관계없이 마지막에 실행되는 정리 구간이다.
 
-시간 초과 직전에 결과 파일이 만들어지는 경쟁 상황으로 남는 파일이 있을 수 있다. 다음 `/work` 시작 시 `expires_at`을 넘긴 파일을 청소하는 규칙이 최후의 안전망이다. 청소는 진행 중인 선택을 지우지 않도록 만료 후 충분한 여유를 둔 파일만 대상으로 한다.
+시간 초과 직전에 결과 파일이 만들어지는 경쟁 상황으로 남는 파일이 있을 수 있다. 다음 `w/` 시작 시 `expires_at`을 넘긴 파일을 청소하는 규칙이 최후의 안전망이다. 청소는 진행 중인 선택을 지우지 않도록 만료 후 충분한 여유를 둔 파일만 대상으로 한다.
 
 ## 터미널 실행 규칙
 
@@ -174,13 +174,13 @@ Linux와 Windows에는 모든 환경에서 공통인 GUI 터미널 실행 명령
 
 ## 최소 구현 의사 코드
 
-UPS는 `/work`일 때만 이 흐름을 수행한다.
+UPS는 `w/`일 때만 이 흐름을 수행한다.
 
 ```python
 def handle_user_prompt(event: dict[str, object]) -> dict[str, object]:
     prompt = read_prompt(event)
 
-    if not prompt.startswith("/work"):
+    if not prompt.startswith("w/"):
         return {"selection_status": "not_requested"}
 
     request = strip_work_prefix(prompt)
@@ -232,9 +232,9 @@ def main(request_file: Path) -> None:
     write_result(request, status="selected", work_item_id=work_item_id)
 ```
 
-`strip_work_prefix()`는 `/work`만 제거하고 나머지 사용자 요청 문장을 Codex에 전달하는 함수다. `wait_for_selection_result()`는 결과 파일이 생길 때까지 제한된 시간 동안만 확인하는 함수다.
+`strip_work_prefix()`는 `w/`만 제거하고 나머지 사용자 요청 문장을 Codex에 전달하는 함수다. `wait_for_selection_result()`는 결과 파일이 생길 때까지 제한된 시간 동안만 확인하는 함수다.
 
-## `/work` 없는 요청
+## `w/` 없는 요청
 
 ```text
 사용자 일반 프롬프트
@@ -254,16 +254,16 @@ def main(request_file: Path) -> None:
 ## 구현 체크리스트
 
 - [x] MCP Elicitation 대신 외부 터미널 + fzf 방식을 채택한다.
-- [x] `/work` 접두사로 선택 필요 여부를 기계적으로 결정한다.
+- [x] `w/` 접두사로 선택 필요 여부를 기계적으로 결정한다.
 - [x] macOS Terminal.app을 비대화형 프로세스에서 열 수 있음을 확인했다.
 - [x] 선택 파일 위치, 이름, 검증, 정상·비정상 정리 규칙을 정의했다.
-- [ ] `.harness/`와 선택 파일을 Git에서 제외한다.
-- [ ] UPS Hook 입력에서 사용자 프롬프트를 읽고 `/work`를 판별한다.
-- [ ] `ready` WI 전체 조회 함수를 확인하거나 추가한다.
-- [ ] `harness-work-picker` Python CLI와 fzf 실행을 구현하고, fzf 설치 여부를 확인한다.
+- [x] `.harness/`와 선택 파일을 Git에서 제외한다.
+- [x] UPS Hook 입력에서 사용자 프롬프트를 읽고 `w/`를 판별한다.
+- [x] `ready` WI 전체 조회 함수를 확인하거나 추가한다.
+- [x] `harness-work-picker` Python CLI와 fzf 실행을 구현하고, fzf 설치 여부를 확인한다.
 - [ ] macOS Terminal.app 실행기와 사용자 설정형 실행기 선택을 구현한다.
 - [ ] 선택 프로그램 실행에 쓸 Python·uv 경로를 설정으로 정한다. GUI 앱의 PATH에 의존하지 않는다.
-- [ ] UPS의 Hook timeout을 300초로 바꾸고, 선택 대기를 구현한다.
+- [x] UPS의 Hook timeout을 300초로 바꾸고, 선택 대기를 구현한다.
 - [ ] 선택·취소·시간 초과·터미널 실행 실패·비정상 종료를 테스트한다.
 - [ ] 선택 결과를 Codex `additionalContext`로 전달하고, 이전 WI 자동 매칭 패킷·스킬·지침을 제거하거나 축소한다.
 - [x] 기존 MCP Elicitation PoC 도구·설정을 제거했다.
