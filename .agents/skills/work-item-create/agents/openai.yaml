@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create a WorkItem"
+  short_description: "현재 대화에서 완성 WI를 등록"
+  default_prompt: "Use $work-item-create to register a complete WorkItem from this conversation."

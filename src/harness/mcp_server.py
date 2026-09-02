@@ -184,6 +184,47 @@ def create_server(
             database_path=database_path,
         )
 
+    @server.tool(name="create_ready_work_item")
+    def create_ready_work_item(
+        title: str,
+        kind: Literal[
+            "implementation",
+            "bug",
+            "research",
+            "decision",
+            "refactor",
+            "migration",
+            "verification",
+            "maintenance",
+        ],
+        goal: str,
+        next_action: str,
+        acceptance_criteria: list[str],
+        feature_id: str | None = None,
+        priority: Literal["urgent", "high", "normal", "low"] = "normal",
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a complete non-Draft WorkItem ready for a future Run.
+
+        Use this after a user explicitly asks to register or create a complete
+        WorkItem from the current conversation. The operation atomically stores
+        the executable plan and Acceptance Criteria in ``ready`` state; it does
+        not start a Run.
+        """
+
+        return state_store.create_ready_work_item(
+            title=title,
+            kind=kind,
+            goal=goal,
+            next_action=next_action,
+            acceptance_criteria=acceptance_criteria,
+            feature_id=feature_id,
+            priority=priority,
+            description=description,
+            actor="codex",
+            database_path=database_path,
+        )
+
     @server.tool(name="create_draft_work_item")
     def create_draft_work_item(
         title: str,

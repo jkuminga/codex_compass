@@ -101,6 +101,26 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "pending",
         )
 
+    async def test_codex_can_create_a_complete_ready_work_item_through_mcp(self) -> None:
+        async with Client(create_server(self.database_path)) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool(
+                "create_ready_work_item",
+                {
+                    "title": "대화에서 완성 WI 생성",
+                    "kind": "decision",
+                    "goal": "대화에서 합의한 결정을 실행 가능한 작업으로 등록한다.",
+                    "next_action": "등록된 결정의 후속 구현을 검토한다.",
+                    "acceptance_criteria": ["WorkItem이 ready 상태다."],
+                    "priority": "normal",
+                },
+            )
+
+        self.assertIn("create_ready_work_item", {tool.name for tool in tools.tools})
+        self.assertFalse(result.is_error)
+        self.assertEqual(result.structured_content["status"], "ready")
+        self.assertEqual(result.structured_content["is_draft"], 0)
+
     async def test_codex_can_create_and_refine_a_draft_through_mcp(self) -> None:
         async with Client(create_server(self.database_path)) as client:
             draft_result = await client.call_tool(
@@ -548,6 +568,7 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "create_feature",
             "update_feature",
             "create_work_item",
+            "create_ready_work_item",
             "create_draft_work_item",
             "refine_draft_work_item",
             "revise_work_item",

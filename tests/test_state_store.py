@@ -179,6 +179,43 @@ class StateStoreLifecycleTests(unittest.TestCase):
             len(state_store.get_recent_activity(database_path=self.database_path)), 8
         )
 
+    def test_create_ready_work_item_stores_complete_plan_atomically(self) -> None:
+        work_item = state_store.create_ready_work_item(
+            title="대화에서 완성 WI 생성",
+            kind="implementation",
+            goal="현재 대화의 작업을 나중에 바로 실행할 수 있게 등록한다.",
+            next_action="등록된 작업의 구현 범위를 검토한다.",
+            acceptance_criteria=["WorkItem이 ready 상태로 조회된다.", "AC가 하나 이상 저장된다."],
+            priority="high",
+            description="대화 맥락에서 만든 완성 WorkItem",
+            actor="codex",
+            database_path=self.database_path,
+        )
+
+        context = state_store.get_work_item_context(
+            work_item["id"], database_path=self.database_path
+        )
+        self.assertEqual(work_item["status"], "ready")
+        self.assertEqual(work_item["is_draft"], 0)
+        self.assertEqual(work_item["priority"], "high")
+        self.assertEqual(work_item["description"], "대화 맥락에서 만든 완성 WorkItem")
+        self.assertEqual(len(context["acceptance_criteria"]), 2)
+        self.assertIsNone(context["running_run"])
+
+    def test_create_ready_work_item_rejects_an_empty_plan_before_inserting(self) -> None:
+        with self.assertRaisesRegex(state_store.ConflictError, "Acceptance Criteria"):
+            state_store.create_ready_work_item(
+                title="불완전한 WI",
+                kind="research",
+                goal="저장되지 않아야 한다.",
+                next_action="다음 행동",
+                acceptance_criteria=[],
+                actor="codex",
+                database_path=self.database_path,
+            )
+
+        self.assertEqual(state_store.list_work_items(database_path=self.database_path), [])
+
     def test_planning_entities_can_be_revised_without_raw_sql(self) -> None:
         feature = state_store.create_feature(
             title="초기 기능",

@@ -576,6 +576,87 @@ def create_work_item(
         )
 
 
+def create_ready_work_item(
+    *,
+    title: str,
+    kind: str,
+    goal: str,
+    next_action: str,
+    acceptance_criteria: Sequence[str],
+    actor: str,
+    feature_id: str | None = None,
+    priority: str = "normal",
+    description: str | None = None,
+    work_item_id: str | None = None,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Create one complete, non-Draft WorkItem atomically in ``ready`` state."""
+
+    cleaned_next_action = next_action.strip()
+    cleaned_criteria = [criterion.strip() for criterion in acceptance_criteria]
+    if not cleaned_next_action:
+        raise ConflictError("ready WorkItem requires next_action")
+    if not cleaned_criteria or any(not criterion for criterion in cleaned_criteria):
+        raise ConflictError("ready WorkItem requires non-empty Acceptance Criteria")
+
+    identifier = work_item_id or _generate_id("WI")
+    now = _utc_now()
+    cleaned_description = description.strip() if description and description.strip() else None
+    with _transaction(database_path) as database:
+        database.execute(
+            """
+            INSERT INTO work_items (
+              id, feature_id, title, kind, goal, description, is_draft, status,
+              priority, next_action, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 0, 'ready', ?, ?, ?, ?)
+            """,
+            (
+                identifier,
+                feature_id,
+                title,
+                kind,
+                goal,
+                cleaned_description,
+                priority,
+                cleaned_next_action,
+                now,
+                now,
+            ),
+        )
+        _append_state_event(
+            database,
+            entity_type="work_item",
+            entity_id=identifier,
+            event_type="created",
+            actor=actor,
+            to_status="ready",
+            payload={"is_draft": False, "creation_mode": "complete"},
+            created_at=now,
+        )
+        for sort_order, criterion in enumerate(cleaned_criteria, start=1):
+            criterion_id = _generate_id("AC")
+            database.execute(
+                """
+                INSERT INTO acceptance_criteria (
+                  id, work_item_id, description, status, sort_order
+                ) VALUES (?, ?, ?, 'pending', ?)
+                """,
+                (criterion_id, identifier, criterion, sort_order),
+            )
+            _append_state_event(
+                database,
+                entity_type="acceptance_criterion",
+                entity_id=criterion_id,
+                event_type="created",
+                actor=actor,
+                to_status="pending",
+                created_at=now,
+            )
+        return _require_row(
+            database, "SELECT * FROM work_items WHERE id = ?", (identifier,), "WorkItem"
+        )
+
+
 def create_draft_work_item(
     *,
     title: str,

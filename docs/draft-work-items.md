@@ -48,6 +48,12 @@ Codex는 Draft의 제목·종류·목표·선택 메모를 읽고 필요한 경�
 
 구체화가 끝나면 `is_draft = false`로 바꾸고, 실행 준비가 되었으면 `status = ready`로 바꾼다.
 
+## 대화에서 완성 WI를 직접 등록하는 경우
+
+사용자가 현재 대화의 내용을 바탕으로 “이 작업을 WI로 만들어 달라”고 명시하면 Draft를 거치지 않고 `$work-item-create` 스킬을 사용한다. 스킬은 대화에서 제목·목표·종류·우선순위·다음 행동·완료 조건을 정리한 뒤 `create_ready_work_item()`을 한 번 호출하고 `get_work_context()`로 저장 결과를 확인한다.
+
+`create_ready_work_item()`은 실행 계획과 Acceptance Criteria를 하나의 DB 트랜잭션으로 저장하고, `is_draft = false`, `status = ready`인 WorkItem을 만든다. 이 경로는 미래 작업을 등록하는 것만 하므로 Run은 생성하지 않는다. 제목이나 목표를 정할 근거가 부족할 때만 생성 전에 짧게 확인한다.
+
 ## 아직 하지 않는 것
 
 - 사용자가 모든 WI 필드와 AC를 직접 입력하게 만들지 않는다.
@@ -70,6 +76,8 @@ Codex는 Draft의 제목·종류·목표·선택 메모를 읽고 필요한 경�
   - `refine_draft_work_item()`: Codex가 실행 계획과 완료 조건을 보강한다.
 - [x] 웹 콘솔 첫 연결 범위를 구현한다.
   - Draft 생성 모달 → SQLite 저장 → 목록의 Draft 배지 표시
+- [x] 대화에서 명시한 완성 WI를 실행 없이 직접 등록한다.
+  - `$work-item-create` → `create_ready_work_item()` → `ready` 상태 저장
 
 ## 웹 콘솔 구조 결정
 
