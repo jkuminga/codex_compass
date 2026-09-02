@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -103,7 +104,7 @@ def write_selection_request(
 
 
 def launch_terminal_picker(request_path: Path) -> None:
-    """Open a picker tab that closes itself after selection or cancellation."""
+    """Open the picker in its own Terminal.app instance."""
 
     project_root = shlex.quote(str(state_store.PROJECT_ROOT))
     request = shlex.quote(str(request_path))
@@ -116,26 +117,6 @@ def launch_terminal_picker(request_path: Path) -> None:
         f"uv run --quiet python -m src.harness.work_item_picker --request {request}"
     )
     shell_program = f"""\
-close_picker_terminal() {{
-  local picker_tty
-  picker_tty="$(tty)"
-  /usr/bin/osascript \\
-    -e 'on run argv' \\
-    -e 'set pickerTty to item 1 of argv' \\
-    -e 'tell application "Terminal"' \\
-    -e 'repeat with candidateWindow in windows' \\
-    -e 'repeat with candidateTab in tabs of candidateWindow' \\
-    -e 'if (tty of candidateTab) is pickerTty then' \\
-    -e 'close candidateWindow' \\
-    -e 'return' \\
-    -e 'end if' \\
-    -e 'end repeat' \\
-    -e 'end repeat' \\
-    -e 'end tell' \\
-    -e 'end run' \\
-    "$picker_tty" >/dev/null 2>&1
-}}
-
 show_permission_guidance() {{
   printf '\\n[Harness] WorkItem 선택 창을 열지 못했습니다.\\n\\n'
   printf '원인: Terminal이 프로젝트가 있는 Desktop 폴더에 접근할 수 없습니다.\\n\\n'
@@ -146,7 +127,6 @@ show_permission_guidance() {{
   printf '3. 같은 w/ 요청을 다시 보내세요.\\n\\n'
   printf '아무 키나 누르면 창을 닫습니다. '
   read -r -k 1
-  close_picker_terminal
 }}
 
 if ! cd {project_root} || ! pwd -P >/dev/null 2>&1; then
@@ -172,34 +152,50 @@ if [ "$picker_status" -ne 0 ]; then
   printf '아무 키나 누르면 창을 닫습니다. '
   read -r -k 1
 fi
-close_picker_terminal
 exit "$picker_status"
 """
-    command = f"/bin/zsh -lc {shlex.quote(shell_program)}"
-    terminal_was_running = subprocess.run(
-        ["pgrep", "-x", "Terminal"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    ).returncode == 0
-    if terminal_was_running:
-        script = 'on run argv\n tell application "Terminal" to do script (item 1 of argv)\nend run'
-    else:
-        script = """on run argv
- tell application "Terminal"
-  activate
-  repeat 50 times
-   if (count of windows) > 0 then exit repeat
-   delay 0.1
-  end repeat
-  if (count of windows) = 0 then error "Terminal startup window was not created"
-  do script (item 1 of argv) in selected tab of front window
- end tell
-end run"""
+    launcher_path = work_item_picker.terminal_launcher_path_for(request_path)
+    process_id_path = work_item_picker.terminal_process_id_path_for(request_path)
     try:
-        subprocess.run(["osascript", "-e", script, command], check=True)
+        launcher_path.parent.mkdir(parents=True, exist_ok=True)
+        launcher_path.write_text("#!/bin/zsh\n" + shell_program, encoding="utf-8")
+        launcher_path.chmod(0o700)
+        existing_process_ids = _terminal_process_ids()
+        subprocess.run(
+            ["open", "-n", "-a", "Terminal", str(launcher_path)],
+            check=True,
+        )
     except (OSError, subprocess.CalledProcessError) as error:
         raise HookInputError("Terminal.app picker could not be launched") from error
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        launched_process_ids = _terminal_process_ids() - existing_process_ids
+        if len(launched_process_ids) == 1:
+            process_id_path.write_text(
+                f"{launched_process_ids.pop()}\n", encoding="utf-8"
+            )
+            return
+        time.sleep(0.05)
+
+
+def _terminal_process_ids() -> set[int]:
+    """Return the current PID set for Terminal.app processes."""
+
+    completed = subprocess.run(
+        ["pgrep", "-x", "Terminal"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return set()
+    return {
+        int(process_id)
+        for process_id in completed.stdout.splitlines()
+        if process_id.isdecimal()
+    }
 
 
 def validate_selection_result(
@@ -251,10 +247,36 @@ def wait_for_selection_result(
     return None
 
 
-def cleanup_selection_files(request_path: Path) -> None:
-    """Remove this request/result pair after any completed selection attempt."""
+def close_terminal_picker(request_path: Path) -> None:
+    """Best-effort terminate of this request's dedicated Terminal instance."""
 
-    for path in (request_path, work_item_picker.result_path_for(request_path)):
+    process_id_path = work_item_picker.terminal_process_id_path_for(request_path)
+    try:
+        process_id = int(process_id_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return
+    if process_id not in _terminal_process_ids():
+        return
+
+    # The result is written before the picker shell exits. Let it end before
+    # terminating its isolated Terminal.app process.
+    time.sleep(0.2)
+    try:
+        os.kill(process_id, signal.SIGTERM)
+    except OSError:
+        pass
+
+
+def cleanup_selection_files(request_path: Path) -> None:
+    """Remove a request and its paired transient selection files."""
+
+    for path in (
+        request_path,
+        work_item_picker.result_path_for(request_path),
+        work_item_picker.terminal_tty_path_for(request_path),
+        work_item_picker.terminal_process_id_path_for(request_path),
+        work_item_picker.terminal_launcher_path_for(request_path),
+    ):
         try:
             path.unlink()
         except FileNotFoundError:
@@ -304,7 +326,11 @@ def dispatch_user_prompt_submit(
         result = wait_for_selection_result(request_path)
         if result is None:
             return _hook_output(_selection_packet("timed_out"))
-        return _hook_output(validate_selection_result(request_path, result, request_text=request_text))
+        packet = validate_selection_result(
+            request_path, result, request_text=request_text
+        )
+        close_terminal_picker(request_path)
+        return _hook_output(packet)
     except Exception as error:
         return _hook_output(_selection_packet("error", reason=type(error).__name__))
     finally:

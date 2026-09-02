@@ -1,4 +1,5 @@
 import json
+import signal
 import tempfile
 import unittest
 from datetime import timedelta
@@ -66,6 +67,32 @@ class UserPromptSubmitHookTests(unittest.TestCase):
         self.assertEqual(packet, {"selection_status": "selected", "work_item_id": work_item["id"], "title": work_item["title"], "is_draft": False, "request": "로그인 구현"})
         selections_directory = self.root / "selections"
         self.assertFalse(selections_directory.exists() and list(selections_directory.iterdir()))
+
+    def test_selected_picker_result_is_closed_by_the_hook_after_it_is_read(self) -> None:
+        work_item = self.create_ready_work_item()
+
+        def selected_result(request_path: Path) -> dict[str, object]:
+            request = work_item_picker.read_json_object(request_path)
+            return {
+                "schema_version": 1,
+                "request_id": request["request_id"],
+                "session_id": request["session_id"],
+                "turn_id": request["turn_id"],
+                "created_at": work_item_picker.format_timestamp(work_item_picker.utc_now()),
+                "status": "selected",
+                "work_item_id": work_item["id"],
+            }
+
+        with (
+            patch.object(user_prompt_submit, "launch_terminal_picker"),
+            patch.object(user_prompt_submit, "wait_for_selection_result", side_effect=selected_result),
+            patch.object(user_prompt_submit, "close_terminal_picker", create=True) as close_picker,
+        ):
+            user_prompt_submit.dispatch_user_prompt_submit(
+                self.event(), database_path=self.database_path
+            )
+
+        close_picker.assert_called_once()
 
     def test_work_prompt_includes_a_draft_and_marks_it_in_the_context_packet(self) -> None:
         draft = state_store.create_draft_work_item(
@@ -135,16 +162,70 @@ class UserPromptSubmitHookTests(unittest.TestCase):
             with self.assertRaisesRegex(work_item_picker.SelectionFileError, "fzf could not be started"):
                 work_item_picker.run_fzf(["WI-1\thigh\t선택\t고른다"])
 
+    def test_picker_configures_fzf_with_labels_and_selection_guidance(self) -> None:
+        line = "WI-1\tREADY   | high     | implementation | 로그인 구현 / 로그인을 적용한다."
+        completed = work_item_picker.subprocess.CompletedProcess(
+            args=["fzf"], returncode=0, stdout=f"{line}\n"
+        )
+
+        with patch.object(work_item_picker.subprocess, "run", return_value=completed) as run:
+            selected = work_item_picker.run_fzf([line])
+
+        command = run.call_args.args[0]
+        self.assertEqual(selected, line)
+        self.assertIn("--border-label= Harness · WorkItem 선택 ", command)
+        self.assertIn("--with-nth=2", command)
+        self.assertIn("--nth=2,6,7", command)
+        self.assertIn("--layout=reverse", command)
+        self.assertIn("--header-first", command)
+        self.assertIn("--header-border=bottom", command)
+        self.assertIn("--footer-border=top", command)
+        self.assertIn("--info=inline-right", command)
+        self.assertIn("--pointer=▶", command)
+        header = next(option for option in command if option.startswith("--header="))
+        self.assertIn("상태    | 우선순위 | 종류          | 제목 / 목표", header)
+        footer = next(option for option in command if option.startswith("--footer="))
+        self.assertIn("Enter 선택 · Esc 취소", footer)
+        preview = next(option for option in command if option.startswith("--preview="))
+        self.assertIn("◆ 제목", preview)
+        self.assertIn("◆ 목표", preview)
+        self.assertNotIn("선택한 WorkItem\\n\\n", preview)
+        self.assertIn("{6}", preview)
+        self.assertIn("{7}", preview)
+        self.assertIn("--preview-window=down:50%,border-top,wrap", command)
+
+    def test_picker_formats_visible_columns_with_fixed_separators(self) -> None:
+        line = work_item_picker.format_fzf_line(
+            {
+                "id": "WI-1",
+                "is_draft": False,
+                "priority": "high",
+                "kind": "bug",
+                "title": "로그인\t구현",
+                "goal": "로그인한다.\n검증한다.",
+            }
+        )
+
+        self.assertEqual(
+            line,
+            "WI-1\tREADY   | high     | bug            | 로그인 구현 / 로그인한다. 검증한다."
+            "\tREADY\thigh\tbug\t로그인 구현\t로그인한다. 검증한다.",
+        )
+
     def test_terminal_picker_shows_guidance_when_terminal_cannot_access_desktop(self) -> None:
         request_path = self.root / "selections" / "selection.request.json"
-        with patch.object(user_prompt_submit.subprocess, "run") as run:
-            run.side_effect = [
-                user_prompt_submit.subprocess.CompletedProcess(["pgrep"], 1),
-                user_prompt_submit.subprocess.CompletedProcess(["osascript"], 0),
-            ]
+        with (
+            patch.object(
+                user_prompt_submit,
+                "_terminal_process_ids",
+                side_effect=[{100}, {100, 200}],
+            ),
+            patch.object(user_prompt_submit.subprocess, "run"),
+        ):
             user_prompt_submit.launch_terminal_picker(request_path)
 
-        command = run.call_args.args[0][-1]
+        launcher = work_item_picker.terminal_launcher_path_for(request_path)
+        command = launcher.read_text(encoding="utf-8")
         self.assertIn("Terminal이 프로젝트가 있는 Desktop 폴더에 접근할 수 없습니다.", command)
         self.assertIn("Codex에서 /stop으로 현재 실행을 종료하세요.", command)
         self.assertIn("if ! cd", command)
@@ -153,34 +234,47 @@ class UserPromptSubmitHookTests(unittest.TestCase):
         self.assertIn(".venv/bin/python", command)
         self.assertIn("uv run --quiet", command)
 
-    def test_terminal_picker_reuses_startup_tab_when_terminal_is_not_running(self) -> None:
+    def test_terminal_picker_opens_a_dedicated_terminal_instance(self) -> None:
         request_path = self.root / "selections" / "selection.request.json"
-        with patch.object(user_prompt_submit.subprocess, "run") as run:
-            run.side_effect = [
-                user_prompt_submit.subprocess.CompletedProcess(["pgrep"], 1),
-                user_prompt_submit.subprocess.CompletedProcess(["osascript"], 0),
-            ]
+        with (
+            patch.object(
+                user_prompt_submit,
+                "_terminal_process_ids",
+                side_effect=[{100}, {100, 200}],
+            ),
+            patch.object(user_prompt_submit.subprocess, "run") as run,
+        ):
             user_prompt_submit.launch_terminal_picker(request_path)
 
-        script = run.call_args.args[0][2]
-        self.assertIn("do script (item 1 of argv) in selected tab of front window", script)
-        self.assertIn("repeat 50 times", script)
-        self.assertNotIn("waitForPickerAndClose", script)
+        launcher = work_item_picker.terminal_launcher_path_for(request_path)
+        self.assertEqual(
+            run.call_args.args[0],
+            ["open", "-n", "-a", "Terminal", str(launcher)],
+        )
+        self.assertEqual(
+            work_item_picker.terminal_process_id_path_for(request_path).read_text(
+                encoding="utf-8"
+            ),
+            "200\n",
+        )
 
-    def test_terminal_picker_opens_a_new_picker_tab_when_terminal_is_running(self) -> None:
+    def test_hook_terminates_only_the_recorded_picker_terminal_instance(self) -> None:
         request_path = self.root / "selections" / "selection.request.json"
-        with patch.object(user_prompt_submit.subprocess, "run") as run:
-            run.side_effect = [
-                user_prompt_submit.subprocess.CompletedProcess(["pgrep"], 0),
-                user_prompt_submit.subprocess.CompletedProcess(["osascript"], 0),
-            ]
-            user_prompt_submit.launch_terminal_picker(request_path)
+        process_id_path = work_item_picker.terminal_process_id_path_for(request_path)
+        process_id_path.parent.mkdir()
+        process_id_path.write_text("4321\n", encoding="utf-8")
 
-        script = run.call_args.args[0][2]
-        command = run.call_args.args[0][-1]
-        self.assertIn("do script (item 1 of argv)", script)
-        self.assertIn("close_picker_terminal", command)
-        self.assertIn("if (tty of candidateTab) is pickerTty", command)
+        with (
+            patch.object(
+                user_prompt_submit, "_terminal_process_ids", return_value={4321}
+            ),
+            patch.object(user_prompt_submit.time, "sleep") as sleep,
+            patch.object(user_prompt_submit.os, "kill") as kill,
+        ):
+            user_prompt_submit.close_terminal_picker(request_path)
+
+        sleep.assert_called_once_with(0.2)
+        kill.assert_called_once_with(4321, signal.SIGTERM)
 
 
 if __name__ == "__main__":

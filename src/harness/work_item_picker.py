@@ -18,6 +18,16 @@ from typing import Any, Mapping, Sequence
 
 
 SCHEMA_VERSION = 1
+FZF_HEADER = "상태    | 우선순위 | 종류          | 제목 / 목표"
+FZF_FOOTER = "Enter 선택 · Esc 취소 · 입력하여 검색 · ↑↓ 이동"
+FZF_PREVIEW = (
+    "printf 'ID        %s\\n"
+    "상태      %s\\n"
+    "우선순위  %s\\n"
+    "종류      %s\\n\\n"
+    "◆ 제목\\n  %s\\n\\n"
+    "◆ 목표\\n  %s\\n' {1} {3} {4} {5} {6} {7}"
+)
 
 
 class SelectionFileError(ValueError):
@@ -57,6 +67,33 @@ def result_path_for(request_path: Path) -> Path:
     if not request_path.name.endswith(suffix):
         raise SelectionFileError("request filename must end with .request.json")
     return request_path.with_name(request_path.name.removesuffix(suffix) + ".result.json")
+
+
+def terminal_tty_path_for(request_path: Path) -> Path:
+    """Return the transient Terminal TTY file paired with a selection request."""
+
+    suffix = ".request.json"
+    if not request_path.name.endswith(suffix):
+        raise SelectionFileError("request filename must end with .request.json")
+    return request_path.with_name(request_path.name.removesuffix(suffix) + ".tty")
+
+
+def terminal_process_id_path_for(request_path: Path) -> Path:
+    """Return the transient dedicated-Terminal process ID file for a request."""
+
+    suffix = ".request.json"
+    if not request_path.name.endswith(suffix):
+        raise SelectionFileError("request filename must end with .request.json")
+    return request_path.with_name(request_path.name.removesuffix(suffix) + ".terminal.pid")
+
+
+def terminal_launcher_path_for(request_path: Path) -> Path:
+    """Return the executable Terminal launcher file paired with a request."""
+
+    suffix = ".request.json"
+    if not request_path.name.endswith(suffix):
+        raise SelectionFileError("request filename must end with .request.json")
+    return request_path.with_name(request_path.name.removesuffix(suffix) + ".picker.command")
 
 
 def atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
@@ -127,7 +164,27 @@ def run_fzf(lines: Sequence[str]) -> str | None:
 
     try:
         completed = subprocess.run(
-            ["fzf", "--delimiter=\t", "--with-nth=2..", "--prompt=WorkItem> "],
+            [
+                "fzf",
+                "--delimiter=\t",
+                "--with-nth=2",
+                "--nth=2,6,7",
+                "--prompt=검색> ",
+                "--layout=reverse",
+                "--border=rounded",
+                "--border-label= Harness · WorkItem 선택 ",
+                "--border-label-pos=3",
+                f"--header={FZF_HEADER}",
+                "--header-first",
+                "--header-border=bottom",
+                f"--footer={FZF_FOOTER}",
+                "--footer-border=top",
+                "--info=inline-right",
+                "--pointer=▶",
+                f"--preview={FZF_PREVIEW}",
+                "--preview-window=down:50%,border-top,wrap",
+                "--preview-label= 선택한 WorkItem 상세 ",
+            ],
             input="\n".join(lines) + ("\n" if lines else ""),
             text=True,
             stdout=subprocess.PIPE,
@@ -141,6 +198,35 @@ def run_fzf(lines: Sequence[str]) -> str | None:
     if completed.returncode == 1:
         return None
     raise SelectionFileError(f"fzf exited with status {completed.returncode}")
+
+
+def _one_line(value: object) -> str:
+    """Return one safe display line without changing the stored WorkItem value."""
+
+    return " ".join(str(value).replace("\t", " ").splitlines())
+
+
+def format_fzf_line(item: Mapping[str, Any]) -> str:
+    """Format a fixed-column WorkItem row while preserving its ID for selection."""
+
+    status = "DRAFT" if item.get("is_draft") else "READY"
+    display = (
+        f"{status:<7} | "
+        f"{_one_line(item['priority']):<8} | "
+        f"{_one_line(item.get('kind', 'work')):<14} | "
+        f"{_one_line(item['title'])} / {_one_line(item['goal'])}"
+    )
+    return "\t".join(
+        (
+            str(item["id"]),
+            display,
+            status,
+            _one_line(item["priority"]),
+            _one_line(item.get("kind", "work")),
+            _one_line(item["title"]),
+            _one_line(item["goal"]),
+        )
+    )
 
 
 def write_result(request: Mapping[str, Any], request_path: Path, *, status: str, work_item_id: str | None = None) -> None:
@@ -164,19 +250,7 @@ def run_picker(request_path: Path) -> None:
     """Run the external-terminal selection flow for one request file."""
 
     request = read_and_validate_request(request_path)
-    lines = [
-        "\t".join(
-            (
-                str(item["id"]),
-                "DRAFT" if item.get("is_draft") else "READY",
-                str(item["priority"]),
-                str(item.get("kind", "work")),
-                str(item["title"]),
-                str(item["goal"]),
-            )
-        )
-        for item in request["work_items"]
-    ]
+    lines = [format_fzf_line(item) for item in request["work_items"]]
     selected_line = run_fzf(lines)
     if utc_now() >= parse_timestamp(request["expires_at"], "expires_at"):
         return
