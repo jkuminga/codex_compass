@@ -1,0 +1,342 @@
+<!DOCTYPE html><html class="light" lang="ko" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Harness v2 - 프로젝트 운영 현황</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=JetBrains+Mono:wght@400&amp;family=Literata:wght@600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#faf8ff",
+                        "on-tertiary-fixed-variant": "#441cc8",
+                        "surface-container-low": "#f3f2ff",
+                        "outline-variant": "#c1c8c2",
+                        "on-tertiary-fixed": "#1a0063",
+                        "surface-container-high": "#e4e7fe",
+                        "on-secondary-container": "#646561",
+                        "on-primary-fixed-variant": "#274e3d",
+                        "surface-variant": "#dee1f8",
+                        "primary-fixed-dim": "#a5d0b9",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#240080",
+                        "primary": "#012d1d",
+                        "outline": "#717973",
+                        "tertiary-container": "#3900bb",
+                        "inverse-on-surface": "#eff0ff",
+                        "primary-container": "#1b4332",
+                        "on-secondary-fixed-variant": "#464744",
+                        "primary-fixed": "#c1ecd4",
+                        "tertiary-fixed": "#e5deff",
+                        "surface-dim": "#d6d9ef",
+                        "secondary-fixed-dim": "#c7c7c2",
+                        "tertiary-fixed-dim": "#c9bfff",
+                        "on-primary-fixed": "#002114",
+                        "secondary": "#5e5f5b",
+                        "on-tertiary-container": "#a799ff",
+                        "inverse-surface": "#2c3041",
+                        "surface-container-lowest": "#ffffff",
+                        "on-background": "#171b2b",
+                        "inverse-primary": "#a5d0b9",
+                        "on-surface-variant": "#414844",
+                        "surface-container": "#ebedff",
+                        "on-error-container": "#93000a",
+                        "on-primary-container": "#86af99",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#faf8ff",
+                        "on-error": "#ffffff",
+                        "surface-tint": "#3f6653",
+                        "secondary-fixed": "#e3e3de",
+                        "on-primary": "#ffffff",
+                        "surface-container-highest": "#dee1f8",
+                        "on-secondary-fixed": "#1b1c19",
+                        "secondary-container": "#e3e3de",
+                        "on-tertiary": "#ffffff",
+                        "on-surface": "#171b2b",
+                        "background": "#faf8ff",
+                        "on-secondary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "component-padding-y": "8px",
+                        "component-padding-x": "12px",
+                        "container-margin": "32px",
+                        "gutter": "16px",
+                        "section-gap": "48px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Literata"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "display-lg": ["Literata"],
+                        "code-md": ["JetBrains Mono"],
+                        "headline-lg": ["Literata"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "label-caps": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.4", "fontWeight": "600" }],
+                        "body-sm": ["13px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "body-md": ["15px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "display-lg": ["40px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "code-md": ["14px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background font-body-md antialiased overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 w-full md:w-[calc(100%-280px)] h-16 bg-surface z-50 flex items-center justify-between px-container-margin md:ml-[280px] shadow-sm">
+<div class="flex items-center gap-gutter">
+<h1 class="font-headline-md text-headline-md text-primary font-bold">Harness v2</h1>
+<nav class="hidden md:flex items-center gap-gutter">
+<a class="text-primary font-semibold border-b-2 border-primary pb-1" href="#">Breadcrumbs</a>
+<a class="text-secondary hover:text-primary transition-colors pb-1" href="#">main</a>
+<a class="text-secondary hover:text-primary transition-colors pb-1" href="#">Worktree</a>
+</nav>
+</div>
+<div class="flex items-center gap-gutter">
+<button class="text-secondary hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="database">database</span></button>
+<button class="text-secondary hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="search">search</span></button>
+<button class="text-secondary hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="dark_mode">dark_mode</span></button>
+<img alt="User Profile" class="w-8 h-8 rounded-full object-cover border border-outline-variant" data-alt="A small, circular avatar image of a professional user in a minimalist style. The image should be clean, modern, and fit well within a premium technical workspace UI. The color palette should align with the off-white and deep green theme of the interface, exuding authority and precision." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuqBw0uhZsTgdg0LN_pP4G7uFL2mqJVeSmWFIsqBUjDSvApmEcmM39txcRQxozdMonr2V2LaMXoN8xHeFrhj9ENqSDTvnZWX4sk8jOgv0Iyq9kUHiJHAIvWsdKn6jknetoFNDnqwl4tdfiOu7ZghfUFEpExn6nALiOaxbMctJccz95EqlJ_zMIrk8edmyw2yqYMsfNMdboKgREB9qs8nScsbY3lbpZ3bBadoAoJEPXPqiK3ChFlnHByg">
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-screen w-[280px] bg-surface-container-low border-r border-outline-variant hidden md:flex flex-col py-component-padding-y px-component-padding-x z-40">
+<div class="flex items-center gap-2 mb-8 mt-4 px-4">
+<img alt="Harness v2 Logo" class="w-8 h-8 object-contain" data-alt="A simple, abstract, and highly geometric logo for 'Harness v2'. The design should use thin lines and perfect circles to convey a sense of technical orchestration and precision. The colors should be deep forest green and off-white to match the surrounding UI. It should look like an icon for a modern, high-end developer tool." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQ5D-KuHfdEbizgKnRkVf8eIJvql152eX3F2qEsFMQceADDaT-BNri8a409dX1vIShqUlZpnPIe1z8eA9H2MYhpZ8P1NHgcX75Pe2-t3AlM2DgmDzYtPRtxz02EhLg9a_jV-kOM617bfYY1kC1wY47RLcHII7SFUeZpYKBIH-t5YueN0Ec8xIXFCC-n2HXgteSp3JhFeft1ghnEo9a_-kgTOu4fDtt7MJwElEOSDJHIS5G6q7dhAsayA">
+<div>
+<h2 class="font-headline-md text-headline-md font-bold text-primary">Harness_v2</h2>
+<p class="font-body-sm text-body-sm text-secondary">AI Orchestration Workspace</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-on-tertiary-fixed-variant font-bold bg-surface-container-high border-r-2 border-tertiary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard" data-weight="fill" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">Overview</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="extension">extension</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">Features</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="list_alt">list_alt</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">Work Items</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="play_circle">play_circle</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">Runs</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">Evidence</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">Memory Candidates</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">MemoryGraph</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">Activity Timeline</span>
+</a>
+</nav>
+<div class="mt-auto border-t border-outline-variant pt-4 space-y-1">
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">Health Status</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider">System Logs</span>
+</a>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="md:ml-[280px] pt-24 px-container-margin pb-section-gap min-h-screen">
+<!-- Hero Header -->
+<div class="mb-section-gap flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+<div>
+<h1 class="font-display-lg text-display-lg text-primary mb-2">프로젝트 운영 현황</h1>
+<p class="font-body-lg text-body-lg text-secondary">에이전트 작업, 검증 근거, 장기 기억을 하나의 흐름으로 확인합니다.</p>
+</div>
+<div class="text-secondary font-code-md text-code-md bg-surface-container py-2 px-4 rounded border border-outline-variant">
+                Last Updated: <span id="current-time" class="">2026. 9. 2. 오후 5:18:58</span>
+</div>
+</div>
+<script>
+            document.getElementById('current-time').textContent = new Date().toLocaleString('ko-KR');
+        </script>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+<!-- Metrics Cards (Spans full width in 3 columns) -->
+<div class="md:col-span-12 grid grid-cols-2 lg:grid-cols-6 gap-4">
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-lg flex flex-col justify-between hover:bg-surface-container-low transition-colors">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-wider mb-2">Active Features</span>
+<span class="font-headline-lg text-headline-lg text-primary">5</span>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-lg flex flex-col justify-between hover:bg-surface-container-low transition-colors">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-wider mb-2">Ready Work Items</span>
+<span class="font-headline-lg text-headline-lg text-primary">12</span>
+</div>
+<div class="bg-surface-container-lowest border border-tertiary p-4 rounded-lg flex flex-col justify-between bg-surface-container-high relative overflow-hidden">
+<div class="absolute inset-0 bg-gradient-to-br from-tertiary-fixed to-transparent opacity-50"></div>
+<span class="font-label-caps text-label-caps text-tertiary-container uppercase tracking-wider mb-2 relative z-10">In Progress Work Items</span>
+<span class="font-headline-lg text-headline-lg text-tertiary relative z-10">3</span>
+</div>
+<div class="bg-surface-container-lowest border border-error p-4 rounded-lg flex flex-col justify-between bg-error-container relative overflow-hidden">
+<span class="font-label-caps text-label-caps text-on-error-container uppercase tracking-wider mb-2 relative z-10">Blocked Work Items</span>
+<span class="font-headline-lg text-headline-lg text-error relative z-10">1</span>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-lg flex flex-col justify-between hover:bg-surface-container-low transition-colors">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-wider mb-2">AC Completion Rate</span>
+<span class="font-headline-lg text-headline-lg text-primary">84%</span>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-lg flex flex-col justify-between hover:bg-surface-container-low transition-colors">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-wider mb-2">Pending Memory</span>
+<span class="font-headline-lg text-headline-lg text-on-tertiary-fixed-variant">8</span>
+</div>
+</div>
+<!-- Attention Panel & Timeline -->
+<div class="md:col-span-8 space-y-6">
+<!-- Attention Panel -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+<div class="bg-surface-container-low px-6 py-4 border-b border-outline-variant flex justify-between items-center">
+<h3 class="font-headline-md text-headline-md text-primary">Attention Required</h3>
+<span class="material-symbols-outlined text-error">warning</span>
+</div>
+<div class="p-0 divide-y divide-outline-variant">
+<div class="p-4 flex items-start gap-4 hover:bg-surface-bright transition-colors group cursor-pointer">
+<div class="mt-1 w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_rgba(36,0,128,0.4)]"></div>
+<div class="flex-1">
+<div class="flex justify-between items-start mb-1">
+<span class="font-code-md text-code-md text-primary font-bold">WI-8a3f12 진단 및 복구</span>
+<span class="font-label-caps text-label-caps text-tertiary bg-tertiary-fixed px-2 py-1 rounded">Running</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Agent is actively processing diagnostic routines.</p>
+</div>
+</div>
+<div class="p-4 flex items-start gap-4 hover:bg-surface-bright transition-colors group cursor-pointer bg-error-container/20">
+<div class="mt-1 w-2 h-2 rounded-full bg-error shadow-[0_0_8px_rgba(186,26,26,0.4)]"></div>
+<div class="flex-1">
+<div class="flex justify-between items-start mb-1">
+<span class="font-code-md text-code-md text-error font-bold">WI-7c2d91 인증 모듈 리팩토링</span>
+<span class="font-label-caps text-label-caps text-on-error-container bg-error-container px-2 py-1 rounded">Blocked</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant font-medium">Reason: 외부 API 응답 지연</p>
+</div>
+</div>
+<div class="p-4 flex items-start gap-4 hover:bg-surface-bright transition-colors group cursor-pointer">
+<div class="mt-1 w-2 h-2 rounded-full bg-on-tertiary-fixed-variant shadow-[0_0_8px_rgba(68,28,200,0.4)]"></div>
+<div class="flex-1">
+<div class="flex justify-between items-start mb-1">
+<span class="font-code-md text-code-md text-primary font-bold">Candidate-42</span>
+<span class="font-label-caps text-label-caps text-on-tertiary-fixed-variant bg-tertiary-fixed-dim/30 px-2 py-1 rounded">Needs Review</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Awaiting manual approval for permanent memory storage.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Progress Flow -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-6">
+<h3 class="font-headline-md text-headline-md text-primary mb-6">Execution Flow</h3>
+<div class="flex items-center justify-between relative">
+<div class="absolute left-0 top-1/2 w-full h-px bg-outline-variant -z-10 -translate-y-1/2"></div>
+<div class="flex flex-col items-center gap-2 bg-surface-container-lowest px-2">
+<div class="w-10 h-10 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">extension</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary">Feature</span>
+</div>
+<div class="flex flex-col items-center gap-2 bg-surface-container-lowest px-2">
+<div class="w-10 h-10 rounded-full bg-tertiary-fixed border border-tertiary flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined">list_alt</span>
+</div>
+<span class="font-label-caps text-label-caps text-primary">WorkItem</span>
+</div>
+<div class="flex flex-col items-center gap-2 bg-surface-container-lowest px-2">
+<div class="w-10 h-10 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">play_circle</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary">Run</span>
+</div>
+<div class="flex flex-col items-center gap-2 bg-surface-container-lowest px-2">
+<div class="w-10 h-10 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">description</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary">Artifact</span>
+</div>
+<div class="flex flex-col items-center gap-2 bg-surface-container-lowest px-2">
+<div class="w-10 h-10 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center text-on-tertiary-fixed-variant">
+<span class="material-symbols-outlined">account_tree</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary">MemoryGraph</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Recent Activity Timeline -->
+<div class="md:col-span-4 bg-surface-container-lowest border border-outline-variant rounded-xl p-6">
+<h3 class="font-headline-md text-headline-md text-primary mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined">history</span> Activity Timeline
+                </h3>
+<div class="relative pl-4 border-l-2 border-outline-variant space-y-6">
+<div class="relative">
+<div class="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-primary border-2 border-surface-container-lowest"></div>
+<div class="flex justify-between items-baseline mb-1">
+<span class="font-code-md text-code-md text-primary">Artifact Generated</span>
+<span class="font-label-caps text-label-caps text-secondary">2m ago</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Evidence logged for WI-392b45.</p>
+</div>
+<div class="relative">
+<div class="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-tertiary border-2 border-surface-container-lowest"></div>
+<div class="flex justify-between items-baseline mb-1">
+<span class="font-code-md text-code-md text-primary">Run Completed</span>
+<span class="font-label-caps text-label-caps text-secondary">15m ago</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Successful execution of test suite.</p>
+</div>
+<div class="relative">
+<div class="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-error border-2 border-surface-container-lowest"></div>
+<div class="flex justify-between items-baseline mb-1">
+<span class="font-code-md text-code-md text-error">Block Encountered</span>
+<span class="font-label-caps text-label-caps text-secondary">1h ago</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">WI-7c2d91 blocked by external API timeout.</p>
+</div>
+<div class="relative">
+<div class="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-outline border-2 border-surface-container-lowest"></div>
+<div class="flex justify-between items-baseline mb-1">
+<span class="font-code-md text-code-md text-primary">Memory Candidate Logged</span>
+<span class="font-label-caps text-label-caps text-secondary">3h ago</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Candidate-41 queued for review.</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+
+
+</body></html>

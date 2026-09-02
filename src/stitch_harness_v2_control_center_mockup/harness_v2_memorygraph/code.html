@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Harness v2 - MemoryGraph</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=JetBrains+Mono:wght@400&amp;family=Literata:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface": "#faf8ff",
+                      "on-tertiary-fixed-variant": "#441cc8",
+                      "surface-container-low": "#f3f2ff",
+                      "outline-variant": "#c1c8c2",
+                      "on-tertiary-fixed": "#1a0063",
+                      "surface-container-high": "#e4e7fe",
+                      "on-secondary-container": "#646561",
+                      "on-primary-fixed-variant": "#274e3d",
+                      "surface-variant": "#dee1f8",
+                      "primary-fixed-dim": "#a5d0b9",
+                      "error-container": "#ffdad6",
+                      "tertiary": "#240080",
+                      "primary": "#012d1d",
+                      "outline": "#717973",
+                      "tertiary-container": "#3900bb",
+                      "inverse-on-surface": "#eff0ff",
+                      "primary-container": "#1b4332",
+                      "on-secondary-fixed-variant": "#464744",
+                      "primary-fixed": "#c1ecd4",
+                      "tertiary-fixed": "#e5deff",
+                      "surface-dim": "#d6d9ef",
+                      "secondary-fixed-dim": "#c7c7c2",
+                      "tertiary-fixed-dim": "#c9bfff",
+                      "on-primary-fixed": "#002114",
+                      "secondary": "#5e5f5b",
+                      "on-tertiary-container": "#a799ff",
+                      "inverse-surface": "#2c3041",
+                      "surface-container-lowest": "#ffffff",
+                      "on-background": "#171b2b",
+                      "inverse-primary": "#a5d0b9",
+                      "on-surface-variant": "#414844",
+                      "surface-container": "#ebedff",
+                      "on-error-container": "#93000a",
+                      "on-primary-container": "#86af99",
+                      "error": "#ba1a1a",
+                      "surface-bright": "#faf8ff",
+                      "on-error": "#ffffff",
+                      "surface-tint": "#3f6653",
+                      "secondary-fixed": "#e3e3de",
+                      "on-primary": "#ffffff",
+                      "surface-container-highest": "#dee1f8",
+                      "on-secondary-fixed": "#1b1c19",
+                      "secondary-container": "#e3e3de",
+                      "on-tertiary": "#ffffff",
+                      "on-surface": "#171b2b",
+                      "background": "#faf8ff",
+                      "on-secondary": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "unit": "4px",
+                      "component-padding-y": "8px",
+                      "component-padding-x": "12px",
+                      "container-margin": "32px",
+                      "gutter": "16px",
+                      "section-gap": "48px"
+              },
+              "fontFamily": {
+                      "headline-md": [
+                              "Literata"
+                      ],
+                      "body-sm": [
+                              "Hanken Grotesk"
+                      ],
+                      "body-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "display-lg": [
+                              "Literata"
+                      ],
+                      "code-md": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg": [
+                              "Literata"
+                      ],
+                      "body-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "label-caps": [
+                              "Hanken Grotesk"
+                      ]
+              },
+              "fontSize": {
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.4",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-sm": [
+                              "13px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-md": [
+                              "15px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "display-lg": [
+                              "40px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "code-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .grid-pattern {
+            background-image: radial-gradient(var(--tw-colors-outline-variant) 1px, transparent 1px);
+            background-size: 24px 24px;
+            opacity: 0.3;
+        }
+      </style>
+</head>
+<body class="bg-background text-on-surface antialiased overflow-hidden">
+<!-- Shared Component: SideNavBar -->
+<nav class="fixed left-0 top-0 h-screen w-[280px] bg-surface-container-low dark:bg-surface-container-lowest border-r border-outline-variant dark:border-outline flex flex-col py-component-padding-y px-component-padding-x z-20">
+<!-- Header -->
+<div class="flex items-center gap-3 px-3 py-4 mb-4">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined" data-weight="fill" style="font-variation-settings: 'FILL' 1;">hexagon</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed-dim tracking-tight">Harness_v2</h1>
+<p class="font-label-caps text-label-caps text-secondary uppercase tracking-widest mt-0.5">AI Orchestration Workspace</p>
+</div>
+</div>
+<!-- Main Navigation -->
+<ul class="flex flex-col gap-1 flex-1">
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<span>Overview</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">extension</span>
+<span>Features</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">list_alt</span>
+<span>Work Items</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">play_circle</span>
+<span>Runs</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">description</span>
+<span>Evidence</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+<span>Memory Candidates</span>
+</a>
+</li>
+<!-- Active Tab -->
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-tertiary-fixed-variant dark:text-on-tertiary-container font-bold border-r-2 border-tertiary dark:border-on-tertiary-container bg-surface-variant/50 font-body-md text-body-md scale-[0.98] transition-transform duration-150" href="#">
+<span class="material-symbols-outlined text-[20px]">account_tree</span>
+<span>MemoryGraph</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+<span>Activity Timeline</span>
+</a>
+</li>
+</ul>
+<!-- Footer Navigation -->
+<ul class="flex flex-col gap-1 mt-auto border-t border-outline-variant pt-4">
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">analytics</span>
+<span>Health Status</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-secondary dark:text-on-secondary-fixed-variant hover:bg-surface-variant dark:hover:bg-surface-container-high transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+<span>System Logs</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Shared Component: TopAppBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-280px)] h-16 bg-surface dark:bg-background border-b border-outline-variant dark:border-outline flex items-center justify-between px-container-margin z-10">
+<!-- Breadcrumbs / Nav Links -->
+<nav class="flex items-center gap-2 text-secondary dark:text-on-secondary-fixed-variant font-body-sm text-body-sm">
+<a class="hover:text-primary transition-colors" href="#">Harness v2</a>
+<span class="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
+<a class="hover:text-primary transition-colors" href="#">main</a>
+<span class="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
+<a class="text-primary dark:text-primary-fixed-dim font-semibold border-b-2 border-primary pb-0.5" href="#">Worktree</a>
+</nav>
+<!-- Actions -->
+<div class="flex items-center gap-4">
+<button class="w-8 h-8 flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[20px]">database</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[20px]">search</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[20px]">dark_mode</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-outline-variant overflow-hidden ml-2 border border-outline">
+<img alt="User Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZXFQchvTyEWR5jX5HdDa6fthJrS2O5-rCVBUWBdewlfxgvKqkXk6J4kwPI8enGMttsJTQwzMvZM5zNtpXamAB12_P68z9PtHcx1Y8dtJBOAltc3zmZLtgKVusM31WnYXd0sHlWtoOx-MwvY6SAVuVAvvVx5SCKPQZzy9BhEniTTInYQmEGHJ4knhHKFWwG3bosWXcqoJRvuUwxsdZnVof3PMggfhg_8kuWZit9llYf8zqKy-yVt48Sg"/>
+</div>
+</div>
+</header>
+<!-- Main Workspace - Split Screen Layout -->
+<main class="ml-[280px] mt-16 h-[calc(100vh-64px)] flex bg-surface-container-lowest">
+<!-- Left Pane: Searchable List -->
+<aside class="w-[360px] flex-shrink-0 border-r border-outline-variant flex flex-col bg-surface-bright z-10 shadow-[4px_0_12px_rgba(27,67,50,0.02)]">
+<!-- Header & Search -->
+<div class="p-4 border-b border-outline-variant">
+<div class="flex items-center justify-between mb-4">
+<h2 class="font-headline-md text-[18px] font-semibold text-on-surface">Long-term Memories</h2>
+<span class="font-label-caps text-label-caps text-secondary bg-surface-variant px-2 py-0.5 rounded">124 Items</span>
+</div>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span>
+<input class="w-full pl-9 pr-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-sm text-body-sm focus:border-tertiary focus:ring-1 focus:ring-tertiary outline-none transition-all placeholder:text-outline" placeholder="Search memories, types, IDs..." type="text"/>
+</div>
+</div>
+<!-- Filter Chips -->
+<div class="px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar border-b border-outline-variant bg-surface">
+<button class="whitespace-nowrap px-3 py-1 rounded-full border border-tertiary bg-tertiary-fixed text-tertiary font-label-caps text-label-caps transition-colors">All</button>
+<button class="whitespace-nowrap px-3 py-1 rounded-full border border-outline-variant text-secondary hover:bg-surface-variant font-label-caps text-label-caps transition-colors">Schema</button>
+<button class="whitespace-nowrap px-3 py-1 rounded-full border border-outline-variant text-secondary hover:bg-surface-variant font-label-caps text-label-caps transition-colors">Logic</button>
+<button class="whitespace-nowrap px-3 py-1 rounded-full border border-outline-variant text-secondary hover:bg-surface-variant font-label-caps text-label-caps transition-colors">Config</button>
+</div>
+<!-- Scrollable List -->
+<div class="flex-1 overflow-y-auto">
+<!-- Selected Item -->
+<div class="p-4 border-b border-outline-variant bg-surface-container-high border-l-4 border-l-tertiary cursor-pointer relative overflow-hidden group">
+<div class="absolute right-0 top-0 bottom-0 w-1 bg-tertiary-container group-hover:w-2 transition-all duration-300 opacity-20"></div>
+<div class="flex justify-between items-start mb-2">
+<span class="font-code-md text-[12px] text-tertiary bg-surface rounded px-1.5 py-0.5 border border-tertiary/20">MEM-492-A</span>
+<span class="font-label-caps text-[10px] text-on-surface-variant bg-surface-variant px-1.5 py-0.5 rounded">SCHEMA</span>
+</div>
+<h3 class="font-body-md text-body-md font-semibold text-on-surface mb-1 leading-snug">Orca 새 워크트리 State Store 스키마 초기화</h3>
+<p class="font-body-sm text-[12px] text-secondary line-clamp-2">워크트리 실행 중 상태를 추적하기 위해 SQLite 기반의 새로운 스키마 구조를 정의하고 초기화함.</p>
+</div>
+<!-- Unselected Items -->
+<div class="p-4 border-b border-outline-variant bg-surface-bright hover:bg-surface-variant transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-2">
+<span class="font-code-md text-[12px] text-secondary group-hover:text-primary transition-colors">MEM-488-B</span>
+<span class="font-label-caps text-[10px] text-outline border border-outline-variant px-1.5 py-0.5 rounded">VALIDATION</span>
+</div>
+<h3 class="font-body-md text-body-md font-medium text-on-surface-variant mb-1 leading-snug">SQLite 상태 저장소의 완료 조건 검증</h3>
+<p class="font-body-sm text-[12px] text-secondary line-clamp-2 text-opacity-80">트랜잭션 완료 시 데이터 일관성을 보장하기 위한 무결성 체크 로직 추가.</p>
+</div>
+<div class="p-4 border-b border-outline-variant bg-surface-bright hover:bg-surface-variant transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-2">
+<span class="font-code-md text-[12px] text-secondary group-hover:text-primary transition-colors">MEM-450-X</span>
+<span class="font-label-caps text-[10px] text-outline border border-outline-variant px-1.5 py-0.5 rounded">LOGIC</span>
+</div>
+<h3 class="font-body-md text-body-md font-medium text-on-surface-variant mb-1 leading-snug">AI Orchestration 파이프라인 최적화</h3>
+<p class="font-body-sm text-[12px] text-secondary line-clamp-2 text-opacity-80">병렬 처리 노드 간의 컨텍스트 전달 지연 시간을 줄이기 위한 라우팅 알고리즘 개선.</p>
+</div>
+<div class="p-4 border-b border-outline-variant bg-surface-bright hover:bg-surface-variant transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-2">
+<span class="font-code-md text-[12px] text-secondary group-hover:text-primary transition-colors">MEM-412-C</span>
+<span class="font-label-caps text-[10px] text-outline border border-outline-variant px-1.5 py-0.5 rounded">CONFIG</span>
+</div>
+<h3 class="font-body-md text-body-md font-medium text-on-surface-variant mb-1 leading-snug">메모리 캐시 무효화 로직 개선</h3>
+<p class="font-body-sm text-[12px] text-secondary line-clamp-2 text-opacity-80">오래된 노드 참조를 정리하는 가비지 컬렉션 주기 단축.</p>
+</div>
+</div>
+</aside>
+<!-- Right Pane: Interactive Graph Visualization -->
+<section class="flex-1 relative bg-surface-bright overflow-hidden">
+<!-- Ambient Background Layer -->
+<div class="absolute inset-0 grid-pattern pointer-events-none"></div>
+<!-- Tools Overlay (Top Left of Graph) -->
+<div class="absolute top-4 left-4 flex gap-2 z-10 bg-surface/80 backdrop-blur-sm p-1.5 rounded-lg border border-outline-variant shadow-sm">
+<button class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-primary hover:bg-surface-variant transition-colors" title="Zoom In">
+<span class="material-symbols-outlined text-[20px]">zoom_in</span>
+</button>
+<button class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-primary hover:bg-surface-variant transition-colors" title="Zoom Out">
+<span class="material-symbols-outlined text-[20px]">zoom_out</span>
+</button>
+<div class="w-px h-6 bg-outline-variant self-center mx-1"></div>
+<button class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-primary hover:bg-surface-variant transition-colors" title="Reset View">
+<span class="material-symbols-outlined text-[20px]">filter_center_focus</span>
+</button>
+</div>
+<!-- Graph Canvas Area (Simulated) -->
+<div class="relative w-full h-full cursor-grab active:cursor-grabbing">
+<!-- SVG layer for Edges (drawn behind nodes) -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none">
+<defs>
+<!-- Arrowhead marker for directed edges -->
+<marker id="arrow-selected" markerheight="6" markerwidth="6" orient="auto-start-reverse" refx="28" refy="5" viewbox="0 0 10 10">
+<path class="fill-tertiary" d="M 0 0 L 10 5 L 0 10 z"></path>
+</marker>
+<marker id="arrow-muted" markerheight="6" markerwidth="6" orient="auto-start-reverse" refx="28" refy="5" viewbox="0 0 10 10">
+<path class="fill-outline-variant" d="M 0 0 L 10 5 L 0 10 z"></path>
+</marker>
+<marker id="arrow-strong" markerheight="6" markerwidth="6" orient="auto-start-reverse" refx="28" refy="5" viewbox="0 0 10 10">
+<path class="fill-secondary" d="M 0 0 L 10 5 L 0 10 z"></path>
+</marker>
+</defs>
+<!-- Edge: Main Node to Dependency 1 (Strong/Selected context) -->
+<!-- Coordinates match center of nodes -->
+<path class="stroke-tertiary fill-none" d="M 400 350 Q 550 250 700 200" marker-end="url(#arrow-selected)" stroke-width="2"></path>
+<!-- Label for edge -->
+<rect class="fill-surface stroke-tertiary stroke-[1]" height="20" rx="4" width="84" x="525" y="260"></rect>
+<text class="fill-tertiary font-label-caps text-[10px] font-bold" text-anchor="middle" x="567" y="273">DEPENDS_ON</text>
+<!-- Edge: Main Node to Dependency 2 (Contextual) -->
+<path class="stroke-outline fill-none" d="M 400 350 Q 500 500 600 550" marker-end="url(#arrow-strong)" stroke-dasharray="4 4" stroke-width="1.5"></path>
+<rect class="fill-surface stroke-outline-variant stroke-[1]" height="20" rx="4" width="60" x="470" y="450"></rect>
+<text class="fill-secondary font-label-caps text-[10px] font-bold" text-anchor="middle" x="500" y="463">MUTATES</text>
+<!-- Edge: Background Node to Background Node -->
+<path class="stroke-outline-variant fill-none" d="M 700 200 Q 750 350 600 550" marker-end="url(#arrow-muted)" stroke-width="1"></path>
+</svg>
+<!-- HTML Layer for Nodes -->
+<!-- Main Selected Node (MEM-492-A) -->
+<div class="absolute left-[400px] top-[350px] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer">
+<!-- Glow effect -->
+<div class="absolute inset-0 bg-tertiary opacity-10 rounded-full blur-xl transform scale-150"></div>
+<div class="relative w-16 h-16 rounded-2xl bg-tertiary-fixed border-2 border-tertiary flex items-center justify-center shadow-[0_8px_24px_rgba(36,0,128,0.15)] ring-4 ring-tertiary-fixed/50 z-10 transition-transform hover:scale-105">
+<span class="material-symbols-outlined text-[28px] text-tertiary">schema</span>
+</div>
+<div class="mt-2 text-center bg-surface/90 backdrop-blur px-2 py-1 rounded border border-outline-variant shadow-sm z-10">
+<p class="font-code-md text-[11px] text-tertiary font-bold">MEM-492-A</p>
+</div>
+</div>
+<!-- Secondary Node (MEM-488-B) -->
+<div class="absolute left-[700px] top-[200px] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer">
+<div class="w-12 h-12 rounded-2xl bg-surface border border-outline flex items-center justify-center shadow-sm z-10 transition-colors hover:border-tertiary hover:bg-surface-variant">
+<span class="material-symbols-outlined text-[20px] text-secondary group-hover:text-tertiary">check_circle</span>
+</div>
+<div class="mt-2 text-center bg-surface/90 backdrop-blur px-2 py-1 rounded border border-outline-variant shadow-sm opacity-80 group-hover:opacity-100 z-10">
+<p class="font-code-md text-[10px] text-secondary group-hover:text-tertiary">MEM-488-B</p>
+</div>
+</div>
+<!-- Tertiary Node (MEM-450-X) -->
+<div class="absolute left-[600px] top-[550px] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer">
+<div class="w-12 h-12 rounded-full bg-surface border border-outline border-dashed flex items-center justify-center shadow-sm z-10 transition-colors hover:border-tertiary hover:bg-surface-variant">
+<span class="material-symbols-outlined text-[20px] text-secondary group-hover:text-tertiary">route</span>
+</div>
+<div class="mt-2 text-center bg-surface/90 backdrop-blur px-2 py-1 rounded border border-outline-variant shadow-sm opacity-80 group-hover:opacity-100 z-10">
+<p class="font-code-md text-[10px] text-secondary group-hover:text-tertiary">MEM-450-X</p>
+</div>
+</div>
+<!-- Distant Background Node -->
+<div class="absolute left-[200px] top-[150px] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center opacity-40">
+<div class="w-8 h-8 rounded-full bg-surface-variant border border-outline-variant flex items-center justify-center">
+</div>
+</div>
+</div>
+<!-- Memory Details Inspector (Floating Panel on Right) -->
+<aside class="absolute top-6 right-6 w-[340px] bg-surface/95 backdrop-blur-md border border-outline-variant rounded-xl shadow-[0_12px_32px_rgba(0,0,0,0.08)] flex flex-col z-20 max-h-[calc(100%-48px)] overflow-hidden">
+<!-- Inspector Header -->
+<div class="px-5 py-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+<h3 class="font-headline-md text-[16px] font-semibold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-[20px]">info</span>
+                        Node Inspector
+                    </h3>
+<button class="w-6 h-6 rounded flex items-center justify-center text-secondary hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<!-- Inspector Content -->
+<div class="p-5 overflow-y-auto flex-1 flex flex-col gap-5">
+<!-- Identity -->
+<div>
+<div class="flex items-center gap-2 mb-1">
+<span class="font-code-md text-[13px] font-bold text-tertiary bg-tertiary-fixed px-2 py-0.5 rounded border border-tertiary/20">MEM-492-A</span>
+<span class="font-label-caps text-[10px] text-on-surface-variant bg-surface-variant px-2 py-1 rounded border border-outline-variant tracking-widest">SCHEMA_UPDATE</span>
+</div>
+<h4 class="font-body-lg text-[16px] font-semibold text-on-surface mt-2 leading-tight">Orca 새 워크트리 State Store 스키마 초기화</h4>
+</div>
+<div class="h-px w-full bg-outline-variant/50"></div>
+<!-- Metrics / Scores -->
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-3 relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<p class="font-label-caps text-label-caps text-secondary mb-1">Importance</p>
+<div class="flex items-end gap-1">
+<span class="font-headline-md text-[20px] font-bold text-on-surface leading-none">0.92</span>
+<span class="font-body-sm text-[11px] text-primary bg-primary-fixed px-1 rounded-sm mb-0.5">High</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-3 relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-tertiary"></div>
+<p class="font-label-caps text-label-caps text-secondary mb-1">Confidence</p>
+<div class="flex items-end gap-1">
+<span class="font-headline-md text-[20px] font-bold text-on-surface leading-none">0.88</span>
+<span class="font-body-sm text-[11px] text-tertiary bg-tertiary-fixed px-1 rounded-sm mb-0.5">Solid</span>
+</div>
+</div>
+</div>
+<!-- Summary -->
+<div>
+<h5 class="font-label-caps text-[11px] text-secondary mb-2 uppercase tracking-wider">Summary</h5>
+<p class="font-body-sm text-body-sm text-on-surface-variant bg-surface-container-lowest border border-outline-variant rounded-lg p-3 leading-relaxed">
+                            워크트리 실행 중 상태를 추적하기 위해 SQLite 기반의 새로운 스키마 구조를 정의하고 초기화함. 이전 버전과의 호환성을 유지하면서 동시성 제어를 위한 잠금 메커니즘 필드가 추가됨.
+                        </p>
+</div>
+<!-- Metadata -->
+<div>
+<h5 class="font-label-caps text-[11px] text-secondary mb-2 uppercase tracking-wider">Metadata</h5>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden">
+<div class="flex items-center justify-between p-2.5 border-b border-outline-variant text-body-sm font-body-sm">
+<span class="text-secondary">Created By</span>
+<span class="text-on-surface font-code-md text-[12px]">Agent_Orca_Core</span>
+</div>
+<div class="flex items-center justify-between p-2.5 border-b border-outline-variant text-body-sm font-body-sm">
+<span class="text-secondary">Timestamp</span>
+<span class="text-on-surface font-code-md text-[12px]">2023-10-27T14:32Z</span>
+</div>
+<div class="flex items-center justify-between p-2.5 text-body-sm font-body-sm">
+<span class="text-secondary">Vector Sync</span>
+<span class="flex items-center gap-1 text-primary">
+<span class="material-symbols-outlined text-[14px]">cloud_done</span> Sync
+                                </span>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="mt-2 pt-4 border-t border-outline-variant flex gap-2">
+<button class="flex-1 bg-surface-container-highest border border-outline hover:bg-outline-variant text-on-surface font-body-sm font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">edit_note</span> Edit Context
+                        </button>
+<button class="flex-1 bg-primary text-on-primary font-body-sm font-semibold py-2 rounded-lg shadow-sm hover:bg-primary-container transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">explore</span> Traverse
+                        </button>
+</div>
+</div>
+</aside>
+</section>
+</main>
+</body></html>

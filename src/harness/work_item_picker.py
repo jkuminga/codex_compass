@@ -115,6 +115,10 @@ def read_and_validate_request(path: Path) -> dict[str, Any]:
             raise SelectionFileError("work_items entries must be objects")
         for field in ("id", "title", "goal", "priority"):
             _required_string(work_item, field)
+        if "kind" in work_item:
+            _required_string(work_item, "kind")
+        if "is_draft" in work_item and not isinstance(work_item["is_draft"], bool):
+            raise SelectionFileError("work_items is_draft must be a boolean")
     return request
 
 
@@ -160,7 +164,19 @@ def run_picker(request_path: Path) -> None:
     """Run the external-terminal selection flow for one request file."""
 
     request = read_and_validate_request(request_path)
-    lines = [f"{item['id']}\t{item['priority']}\t{item['title']}\t{item['goal']}" for item in request["work_items"]]
+    lines = [
+        "\t".join(
+            (
+                str(item["id"]),
+                "DRAFT" if item.get("is_draft") else "READY",
+                str(item["priority"]),
+                str(item.get("kind", "work")),
+                str(item["title"]),
+                str(item["goal"]),
+            )
+        )
+        for item in request["work_items"]
+    ]
     selected_line = run_fzf(lines)
     if utc_now() >= parse_timestamp(request["expires_at"], "expires_at"):
         return

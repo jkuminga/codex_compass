@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Harness v2 - Runs &amp; Evidence</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#faf8ff",
+                        "on-tertiary-fixed-variant": "#441cc8",
+                        "surface-container-low": "#f3f2ff",
+                        "outline-variant": "#c1c8c2",
+                        "on-tertiary-fixed": "#1a0063",
+                        "surface-container-high": "#e4e7fe",
+                        "on-secondary-container": "#646561",
+                        "on-primary-fixed-variant": "#274e3d",
+                        "surface-variant": "#dee1f8",
+                        "primary-fixed-dim": "#a5d0b9",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#240080",
+                        "primary": "#012d1d",
+                        "outline": "#717973",
+                        "tertiary-container": "#3900bb",
+                        "inverse-on-surface": "#eff0ff",
+                        "primary-container": "#1b4332",
+                        "on-secondary-fixed-variant": "#464744",
+                        "primary-fixed": "#c1ecd4",
+                        "tertiary-fixed": "#e5deff",
+                        "surface-dim": "#d6d9ef",
+                        "secondary-fixed-dim": "#c7c7c2",
+                        "tertiary-fixed-dim": "#c9bfff",
+                        "on-primary-fixed": "#002114",
+                        "secondary": "#5e5f5b",
+                        "on-tertiary-container": "#a799ff",
+                        "inverse-surface": "#2c3041",
+                        "surface-container-lowest": "#ffffff",
+                        "on-background": "#171b2b",
+                        "inverse-primary": "#a5d0b9",
+                        "on-surface-variant": "#414844",
+                        "surface-container": "#ebedff",
+                        "on-error-container": "#93000a",
+                        "on-primary-container": "#86af99",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#faf8ff",
+                        "on-error": "#ffffff",
+                        "surface-tint": "#3f6653",
+                        "secondary-fixed": "#e3e3de",
+                        "on-primary": "#ffffff",
+                        "surface-container-highest": "#dee1f8",
+                        "on-secondary-fixed": "#1b1c19",
+                        "secondary-container": "#e3e3de",
+                        "on-tertiary": "#ffffff",
+                        "on-surface": "#171b2b",
+                        "background": "#faf8ff",
+                        "on-secondary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "component-padding-y": "8px",
+                        "component-padding-x": "12px",
+                        "container-margin": "32px",
+                        "gutter": "16px",
+                        "section-gap": "48px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Literata"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "display-lg": ["Literata"],
+                        "code-md": ["JetBrains Mono"],
+                        "headline-lg": ["Literata"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "label-caps": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.4", "fontWeight": "600" }],
+                        "body-sm": ["13px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "body-md": ["15px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "display-lg": ["40px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "code-md": ["14px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .icon-filled { font-variation-settings: 'FILL' 1; }
+        
+        /* Custom scrollbar for data density */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: theme('colors.outline-variant'); border-radius: theme('borderRadius.full'); }
+        ::-webkit-scrollbar-thumb:hover { background: theme('colors.outline'); }
+    </style>
+</head>
+<body class="antialiased min-h-screen overflow-hidden flex font-body-md text-body-md">
+<!-- Shell: SideNavBar -->
+<nav class="fixed left-0 top-0 h-screen w-[280px] bg-surface-container-low border-r border-outline-variant flex flex-col py-component-padding-y px-component-padding-x z-20">
+<!-- Brand -->
+<div class="px-3 py-4 mb-6">
+<h1 class="font-headline-md text-headline-md font-bold text-primary flex items-center gap-2">
+<span class="material-symbols-outlined icon-filled text-primary">hexagon</span>
+                Harness_v2
+            </h1>
+<p class="font-label-caps text-label-caps text-secondary mt-1">AI Orchestration Workspace</p>
+</div>
+<!-- Navigation Tabs -->
+<div class="flex-1 space-y-1">
+<!-- Inactive -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">dashboard</span>
+<span class="font-body-sm text-body-sm group-hover:text-primary transition-colors">Overview</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">extension</span>
+<span class="font-body-sm text-body-sm group-hover:text-primary transition-colors">Features</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">list_alt</span>
+<span class="font-body-sm text-body-sm group-hover:text-primary transition-colors">Work Items</span>
+</a>
+<!-- Active Tab (Runs) based on intent -->
+<a class="flex items-center gap-3 px-3 py-2.5 bg-surface-variant text-on-tertiary-fixed-variant font-bold border-r-2 border-tertiary transform scale-[0.98] transition-transform duration-150" href="#">
+<span class="material-symbols-outlined icon-filled">play_circle</span>
+<span class="font-body-sm text-body-sm">Runs</span>
+</a>
+<!-- Inactive -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">description</span>
+<span class="font-body-sm text-body-sm group-hover:text-primary transition-colors">Evidence</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">psychology</span>
+<span class="font-body-sm text-body-sm group-hover:text-primary transition-colors">Memory Candidates</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">account_tree</span>
+<span class="font-body-sm text-body-sm group-hover:text-primary transition-colors">MemoryGraph</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">history</span>
+<span class="font-body-sm text-body-sm group-hover:text-primary transition-colors">Activity Timeline</span>
+</a>
+</div>
+<!-- Footer Tabs -->
+<div class="mt-auto pt-4 border-t border-outline-variant space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">analytics</span>
+<span class="font-body-sm text-body-sm">Health Status</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">terminal</span>
+<span class="font-body-sm text-body-sm">System Logs</span>
+</a>
+</div>
+</nav>
+<!-- Shell: TopAppBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-280px)] h-16 bg-surface border-b border-outline-variant flex items-center justify-between px-container-margin z-10">
+<!-- Breadcrumbs -->
+<div class="flex items-center text-secondary gap-2">
+<a class="font-body-sm text-body-sm hover:text-primary transition-colors" href="#">Harness v2</a>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<a class="font-body-sm text-body-sm hover:text-primary transition-colors" href="#">main</a>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<a class="font-body-sm text-body-sm font-semibold text-primary border-b-2 border-primary pb-0.5" href="#">Worktree</a>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-4">
+<button class="p-1.5 text-secondary hover:text-primary hover:bg-surface-variant rounded-full transition-colors" title="Database">
+<span class="material-symbols-outlined text-[20px]">database</span>
+</button>
+<button class="p-1.5 text-secondary hover:text-primary hover:bg-surface-variant rounded-full transition-colors" title="Search">
+<span class="material-symbols-outlined text-[20px]">search</span>
+</button>
+<button class="p-1.5 text-secondary hover:text-primary hover:bg-surface-variant rounded-full transition-colors" title="Toggle Theme">
+<span class="material-symbols-outlined text-[20px]">dark_mode</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center ml-2 border border-outline-variant overflow-hidden">
+<img alt="User Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZawl_kJfNshvXRD3KKJ7M77Df3AvxmRMoUiS6LPnLxirYhVQkzN5AccXKK1BKyWH_O_hgoQ4nCRjRKiSUmlJGPleYFo6nIILpYs_2VYU3lqJWRTa9wZvqe_yGg2Fjq02GpZTaoqXlHwCJFvwtow8aCP3dqYjgqEmqmZcyb1Np0aMvA4Ev9bEDZ0KgpMJR6eu655yJynkycDazCXIqOfDHP1n2Vx6hRrer2wd2ehOAhF_7WmAOixF6Yw"/>
+</div>
+</div>
+</header>
+<!-- Main Workspace Area -->
+<main class="ml-[280px] mt-16 w-[calc(100%-280px)] h-[calc(100vh-64px)] flex bg-surface">
+<!-- Left Pane: Runs Timeline (Master) -->
+<section class="w-2/5 min-w-[360px] border-r border-outline-variant bg-surface-bright flex flex-col h-full">
+<div class="p-4 border-b border-outline-variant bg-surface-container-lowest sticky top-0 z-10 flex justify-between items-center">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary m-0">실행 내역</h2>
+<p class="font-label-caps text-label-caps text-secondary mt-1">RUNS TIMELINE</p>
+</div>
+<button class="text-primary hover:bg-surface-variant p-2 rounded-DEFAULT transition-colors">
+<span class="material-symbols-outlined">filter_list</span>
+</button>
+</div>
+<!-- Scrollable List -->
+<div class="flex-1 overflow-y-auto p-4 space-y-3">
+<!-- Run Item: Active & Success -->
+<button class="w-full text-left bg-surface-container-lowest border border-primary ring-1 ring-primary/20 rounded-lg p-4 shadow-sm hover:bg-surface-container-low transition-colors group relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined icon-filled text-[#059669] text-[18px]">check_circle</span>
+<span class="font-code-md text-code-md font-semibold text-primary">RUN-0892</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary bg-surface-variant px-2 py-0.5 rounded-DEFAULT">WI-442</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface line-clamp-2 mb-3">새 워크트리 상태 저장소 초기화 흐름 진단</p>
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-[#059669] bg-[#d1fae5] px-2 py-1 rounded-DEFAULT border border-[#34d399]">SUCCEEDED</span>
+<span class="font-body-sm text-body-sm text-outline">2m ago</span>
+</div>
+</button>
+<!-- Run Item: Failed Example -->
+<button class="w-full text-left bg-surface-container-lowest border border-outline-variant rounded-lg p-4 hover:bg-surface-container-low transition-colors group">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined icon-filled text-error text-[18px]">cancel</span>
+<span class="font-code-md text-code-md font-medium text-on-surface-variant">RUN-0891</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary bg-surface-variant px-2 py-0.5 rounded-DEFAULT">WI-440</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface line-clamp-2 mb-3">데이터베이스 마이그레이션 스크립트 검증 및 스키마 적용</p>
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-error bg-error-container px-2 py-1 rounded-DEFAULT border border-error/30">FAILED</span>
+<span class="font-body-sm text-body-sm text-outline">15m ago</span>
+</div>
+</button>
+<!-- Run Item: Success (Inactive) -->
+<button class="w-full text-left bg-surface-container-lowest border border-outline-variant rounded-lg p-4 hover:bg-surface-container-low transition-colors group">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-outline text-[18px]">check_circle</span>
+<span class="font-code-md text-code-md font-medium text-on-surface-variant">RUN-0890</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary bg-surface-variant px-2 py-0.5 rounded-DEFAULT">WI-439</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface line-clamp-2 mb-3">AI 오케스트레이션 메모리 노드 연결 테스트</p>
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-secondary border border-outline-variant px-2 py-1 rounded-DEFAULT">SUCCEEDED</span>
+<span class="font-body-sm text-body-sm text-outline">1h ago</span>
+</div>
+</button>
+</div>
+</section>
+<!-- Right Pane: Evidence Detail (Detail) -->
+<section class="flex-1 bg-surface-container-lowest overflow-y-auto flex flex-col relative">
+<!-- Detail Header -->
+<div class="p-8 pb-6 border-b border-outline-variant bg-surface flex justify-between items-end sticky top-0 z-10">
+<div>
+<div class="flex items-center gap-3 mb-2">
+<span class="font-label-caps text-label-caps text-primary bg-primary-fixed px-2 py-1 rounded-DEFAULT">RUN DETAIL</span>
+<span class="font-code-md text-code-md text-secondary">RUN-0892</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-primary mb-2">새 워크트리 상태 저장소 초기화 흐름 진단</h2>
+<p class="font-body-md text-body-md text-secondary max-w-2xl">This run validates the state store initialization sequence for dynamic worktrees, ensuring isolation between orchestration sessions.</p>
+</div>
+<div class="flex gap-2">
+<button class="px-4 py-2 border border-primary text-primary hover:bg-surface-variant rounded-DEFAULT font-body-sm text-body-sm font-semibold transition-colors">
+                        Re-run
+                    </button>
+<button class="px-4 py-2 bg-primary text-on-primary hover:bg-primary-container rounded-DEFAULT font-body-sm text-body-sm font-semibold transition-colors flex items-center gap-2">
+                        View Logs
+                        <span class="material-symbols-outlined text-[16px]">open_in_new</span>
+</button>
+</div>
+</div>
+<!-- Content Canvas -->
+<div class="p-8 space-y-12">
+<!-- 1. Explicit Visual Links (The Traceability Chain) -->
+<div>
+<h3 class="font-label-caps text-label-caps text-outline mb-4">TRACEABILITY CHAIN</h3>
+<div class="flex items-stretch bg-surface border border-outline-variant rounded-lg p-6 overflow-x-auto">
+<!-- Node 1: WorkItem -->
+<div class="flex flex-col items-center min-w-[140px] group cursor-pointer">
+<div class="w-12 h-12 rounded-full border-2 border-outline-variant group-hover:border-primary bg-surface-container-lowest flex items-center justify-center mb-3 transition-colors">
+<span class="material-symbols-outlined text-secondary group-hover:text-primary transition-colors">list_alt</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary mb-1">WORK ITEM</span>
+<span class="font-code-md text-code-md font-medium text-primary">WI-442</span>
+</div>
+<!-- Connector -->
+<div class="flex-1 flex items-center px-4">
+<div class="h-[2px] w-full bg-outline-variant relative">
+<div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 border-t-2 border-r-2 border-outline-variant rotate-45 transform origin-center"></div>
+</div>
+</div>
+<!-- Node 2: Run -->
+<div class="flex flex-col items-center min-w-[140px] group cursor-pointer">
+<div class="w-12 h-12 rounded-full border-2 border-primary bg-primary-fixed flex items-center justify-center mb-3 shadow-sm">
+<span class="material-symbols-outlined text-primary">play_circle</span>
+</div>
+<span class="font-label-caps text-label-caps text-primary mb-1 font-bold">RUN</span>
+<span class="font-code-md text-code-md font-medium text-primary">RUN-0892</span>
+</div>
+<!-- Connector -->
+<div class="flex-1 flex items-center px-4">
+<div class="h-[2px] w-full bg-outline-variant relative">
+<div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 border-t-2 border-r-2 border-outline-variant rotate-45 transform origin-center"></div>
+</div>
+</div>
+<!-- Node 3: Artifact -->
+<div class="flex flex-col items-center min-w-[140px] group cursor-pointer">
+<div class="w-12 h-12 rounded-full border-2 border-outline-variant group-hover:border-primary bg-surface-container-lowest flex items-center justify-center mb-3 transition-colors">
+<span class="material-symbols-outlined text-secondary group-hover:text-primary transition-colors">description</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary mb-1">ARTIFACT</span>
+<span class="font-code-md text-code-md text-secondary">test_run.xml</span>
+</div>
+<!-- Connector -->
+<div class="flex-1 flex items-center px-4">
+<div class="h-[2px] w-full bg-outline-variant relative">
+<div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 border-t-2 border-r-2 border-outline-variant rotate-45 transform origin-center"></div>
+</div>
+</div>
+<!-- Node 4: Acceptance Criterion -->
+<div class="flex flex-col items-center min-w-[140px] group cursor-pointer text-center">
+<div class="w-12 h-12 rounded-full border-2 border-[#34d399] bg-[#d1fae5] flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-[#059669]">verified</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary mb-1">CRITERION</span>
+<span class="font-body-sm text-body-sm text-primary line-clamp-2 px-2">상태 저장소 수명주기 준수</span>
+</div>
+</div>
+</div>
+<!-- 2. Evidence Detail Bento Grid -->
+<div>
+<div class="flex items-center justify-between mb-4">
+<h3 class="font-label-caps text-label-caps text-outline">EVIDENCE DETAIL</h3>
+<span class="font-body-sm text-body-sm text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+                            Generated 2 mins ago
+                        </span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Artifact Meta -->
+<div class="col-span-1 bg-surface border border-outline-variant p-5 rounded-lg flex flex-col justify-between">
+<div>
+<span class="font-label-caps text-label-caps text-secondary mb-2 block">ARTIFACT KIND</span>
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary">science</span>
+<span class="font-body-lg text-body-lg font-medium text-primary">test_run</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary mb-2 block">VERIFICATION STATUS</span>
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 rounded-full bg-[#059669]"></div>
+<span class="font-headline-md text-headline-md text-primary">Passed</span>
+</div>
+</div>
+</div>
+<!-- Summary & URI -->
+<div class="col-span-1 md:col-span-2 flex flex-col gap-6">
+<!-- Summary Card -->
+<div class="bg-surface border border-outline-variant p-5 rounded-lg">
+<span class="font-label-caps text-label-caps text-secondary mb-3 block">SUMMARY</span>
+<div class="bg-primary-fixed/20 border border-primary-fixed-dim rounded p-4 text-on-primary-fixed-variant flex gap-3">
+<span class="material-symbols-outlined mt-0.5">check_circle</span>
+<p class="font-body-md text-body-md leading-relaxed">
+<strong>State Store 수명주기 테스트 2건 통과</strong><br/>
+                                        초기화 및 격리 환경 마운트 검증 완료. 오케스트레이터 세션 간 데이터 누수 없음 확인.
+                                    </p>
+</div>
+</div>
+<!-- URI / Code Reference -->
+<div class="bg-[#1e1e1e] border border-outline-variant p-5 rounded-lg relative group">
+<span class="font-label-caps text-label-caps text-outline mb-3 block">URI / REFERENCE</span>
+<button class="absolute top-4 right-4 text-outline hover:text-white transition-colors">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+<pre class="font-code-md text-code-md text-[#d4d4d4] overflow-x-auto pb-2"><span class="text-[#569cd6]">protocol</span>: s3
+<span class="text-[#569cd6]">bucket</span>: <span class="text-[#ce9178]">"harness-artifacts-v2-prod"</span>
+<span class="text-[#569cd6]">path</span>: <span class="text-[#ce9178]">"/evidence/runs/0892/test_results_lifecycle.xml"</span>
+<span class="text-[#569cd6]">checksum</span>: <span class="text-[#b5cea8]">"sha256:9f86d081884c7d659a2feaa0c55ad015..."</span></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</body></html>

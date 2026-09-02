@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS work_items (
     'migration', 'verification', 'maintenance'
   )),
   goal TEXT NOT NULL CHECK (length(trim(goal)) > 0),
+  description TEXT,
+  is_draft INTEGER NOT NULL DEFAULT 0 CHECK (is_draft IN (0, 1)),
   status TEXT NOT NULL DEFAULT 'backlog'
     CHECK (status IN ('backlog', 'ready', 'in_progress', 'blocked', 'done', 'cancelled')),
   priority TEXT NOT NULL DEFAULT 'normal'
@@ -208,6 +210,23 @@ WHEN OLD.status <> NEW.status
   )
 BEGIN
   SELECT RAISE(ABORT, 'running run must finish first');
+END;
+
+CREATE TRIGGER IF NOT EXISTS draft_work_items_must_stay_in_backlog
+BEFORE UPDATE OF status, is_draft ON work_items
+WHEN NEW.is_draft = 1 AND NEW.status <> 'backlog'
+BEGIN
+  SELECT RAISE(ABORT, 'Draft WorkItem must be refined before it becomes executable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS draft_work_items_cannot_have_criteria
+BEFORE INSERT ON acceptance_criteria
+WHEN EXISTS (
+  SELECT 1 FROM work_items
+  WHERE id = NEW.work_item_id AND is_draft = 1
+)
+BEGIN
+  SELECT RAISE(ABORT, 'Draft WorkItem cannot have Acceptance Criteria');
 END;
 
 CREATE TRIGGER IF NOT EXISTS acceptance_criteria_require_valid_evidence_on_pass

@@ -13,6 +13,8 @@ enabled_tools = [
   "create_feature",
   "update_feature",
   "create_work_item",
+  "create_draft_work_item",
+  "refine_draft_work_item",
   "revise_work_item",
   "change_work_item_state",
   "manage_criterion",

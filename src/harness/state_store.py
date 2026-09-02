@@ -137,6 +137,7 @@ def initialize_database(
     database = open_database(database_path)
     try:
         database.executescript(Path(schema_path).read_text())
+        _migrate_work_item_draft_fields(database)
         _migrate_run_recall_fields(database)
         _migrate_memory_candidate_finalize_fields(database)
         database.commit()
@@ -145,6 +146,19 @@ def initialize_database(
     finally:
         database.close()
     return check_database_health(database_path)
+
+
+def _migrate_work_item_draft_fields(database: sqlite3.Connection) -> None:
+    """Add optional Draft WorkItem fields to databases created before Draft support."""
+
+    columns = {row["name"] for row in database.execute("PRAGMA table_info(work_items)")}
+    if "description" not in columns:
+        database.execute("ALTER TABLE work_items ADD COLUMN description TEXT")
+    if "is_draft" not in columns:
+        database.execute(
+            "ALTER TABLE work_items ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0 "
+            "CHECK (is_draft IN (0, 1))"
+        )
 
 
 def _migrate_run_recall_fields(database: sqlite3.Connection) -> None:
@@ -562,6 +576,120 @@ def create_work_item(
         )
 
 
+def create_draft_work_item(
+    *,
+    title: str,
+    kind: str,
+    goal: str,
+    actor: str,
+    description: str | None = None,
+    work_item_id: str | None = None,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Create a user-authored Draft WorkItem with no executable plan yet."""
+
+    identifier = work_item_id or _generate_id("WI")
+    now = _utc_now()
+    cleaned_description = description.strip() if description and description.strip() else None
+    with _transaction(database_path) as database:
+        database.execute(
+            """
+            INSERT INTO work_items (
+              id, title, kind, goal, description, is_draft, status, priority,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 1, 'backlog', 'normal', ?, ?)
+            """,
+            (identifier, title, kind, goal, cleaned_description, now, now),
+        )
+        _append_state_event(
+            database,
+            entity_type="work_item",
+            entity_id=identifier,
+            event_type="draft_created",
+            actor=actor,
+            to_status="backlog",
+            payload={"is_draft": True},
+            created_at=now,
+        )
+        return _require_row(
+            database, "SELECT * FROM work_items WHERE id = ?", (identifier,), "WorkItem"
+        )
+
+
+def refine_draft_work_item(
+    work_item_id: str,
+    *,
+    priority: str,
+    next_action: str,
+    acceptance_criteria: Sequence[str],
+    actor: str,
+    feature_id: str | None = None,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Turn one Draft WorkItem into a ready WorkItem and create its Criteria atomically."""
+
+    cleaned_next_action = next_action.strip()
+    cleaned_criteria = [criterion.strip() for criterion in acceptance_criteria]
+    if not cleaned_next_action:
+        raise ConflictError("Draft refinement requires next_action")
+    if not cleaned_criteria or any(not criterion for criterion in cleaned_criteria):
+        raise ConflictError("Draft refinement requires non-empty Acceptance Criteria")
+
+    now = _utc_now()
+    with _transaction(database_path) as database:
+        draft = _require_row(
+            database, "SELECT * FROM work_items WHERE id = ?", (work_item_id,), "WorkItem"
+        )
+        if draft["status"] != "backlog" or not draft["is_draft"]:
+            raise ConflictError("only a backlog Draft WorkItem can be refined")
+        if database.execute(
+            "SELECT 1 FROM acceptance_criteria WHERE work_item_id = ? LIMIT 1", (work_item_id,)
+        ).fetchone():
+            raise ConflictError("Draft WorkItem already has Acceptance Criteria")
+
+        database.execute(
+            """
+            UPDATE work_items
+            SET feature_id = ?, priority = ?, next_action = ?, is_draft = 0,
+                status = 'ready', updated_at = ?
+            WHERE id = ?
+            """,
+            (feature_id, priority, cleaned_next_action, now, work_item_id),
+        )
+        for sort_order, criterion in enumerate(cleaned_criteria, start=1):
+            criterion_id = _generate_id("AC")
+            database.execute(
+                """
+                INSERT INTO acceptance_criteria (id, work_item_id, description, status, sort_order)
+                VALUES (?, ?, ?, 'pending', ?)
+                """,
+                (criterion_id, work_item_id, criterion, sort_order),
+            )
+            _append_state_event(
+                database,
+                entity_type="acceptance_criterion",
+                entity_id=criterion_id,
+                event_type="created",
+                actor=actor,
+                to_status="pending",
+                created_at=now,
+            )
+        _append_state_event(
+            database,
+            entity_type="work_item",
+            entity_id=work_item_id,
+            event_type="draft_refined",
+            actor=actor,
+            from_status="backlog",
+            to_status="ready",
+            payload={"is_draft": False, "criterion_count": len(cleaned_criteria)},
+            created_at=now,
+        )
+        return _require_row(
+            database, "SELECT * FROM work_items WHERE id = ?", (work_item_id,), "WorkItem"
+        )
+
+
 def revise_work_item(
     work_item_id: str,
     *,
@@ -700,6 +828,36 @@ def list_ready_work_items(
         database.close()
 
 
+def list_selectable_work_items(
+    *, database_path: str | Path = DEFAULT_DATABASE_PATH
+) -> list[dict[str, Any]]:
+    """Return ready WorkItems plus Drafts for an explicit ``w/`` selection."""
+
+    database = open_database(database_path)
+    try:
+        items = [
+            dict(row)
+            for row in database.execute(
+                """
+                SELECT * FROM work_items
+                WHERE status = 'ready' OR (status = 'backlog' AND is_draft = 1)
+                ORDER BY
+                  CASE WHEN is_draft = 1 THEN 0 ELSE 1 END,
+                  CASE priority
+                    WHEN 'urgent' THEN 1 WHEN 'high' THEN 2
+                    WHEN 'normal' THEN 3 WHEN 'low' THEN 4
+                  END,
+                  created_at, id
+                """
+            )
+        ]
+        for item in items:
+            item["is_draft"] = bool(item["is_draft"])
+        return items
+    finally:
+        database.close()
+
+
 def search_work_items(
     terms: Sequence[str],
     *,
@@ -795,6 +953,8 @@ def add_criterion(
         )
         if work_item["status"] in {"done", "cancelled"}:
             raise ConflictError("cannot add a Criterion to a terminal WorkItem")
+        if work_item["is_draft"]:
+            raise ConflictError("Draft WorkItem must be refined before adding Criteria")
         order = sort_order
         if order is None:
             order = database.execute(
@@ -965,6 +1125,8 @@ def change_work_item_status(
         )
         if current["status"] == status:
             return current
+        if current["is_draft"] and status != "backlog":
+            raise ConflictError("Draft WorkItem must be refined before it becomes executable")
         if status in {"ready", "blocked", "done", "cancelled"}:
             _require_no_running_run(database, work_item_id)
         if status == "done":
@@ -1019,6 +1181,8 @@ def start_run(
         )
         if work_item["status"] != "ready":
             raise ConflictError("WorkItem must be ready before starting a Run")
+        if work_item["is_draft"]:
+            raise ConflictError("Draft WorkItem must be refined before starting a Run")
         database.execute(
             """
             UPDATE work_items

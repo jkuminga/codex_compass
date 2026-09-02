@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+
+<html class="light" lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Harness v2 - Work Items</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;700&amp;family=JetBrains+Mono:wght@400&amp;family=Literata:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#faf8ff",
+                        "on-tertiary-fixed-variant": "#441cc8",
+                        "surface-container-low": "#f3f2ff",
+                        "outline-variant": "#c1c8c2",
+                        "on-tertiary-fixed": "#1a0063",
+                        "surface-container-high": "#e4e7fe",
+                        "on-secondary-container": "#646561",
+                        "on-primary-fixed-variant": "#274e3d",
+                        "surface-variant": "#dee1f8",
+                        "primary-fixed-dim": "#a5d0b9",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#240080",
+                        "primary": "#012d1d",
+                        "outline": "#717973",
+                        "tertiary-container": "#3900bb",
+                        "inverse-on-surface": "#eff0ff",
+                        "primary-container": "#1b4332",
+                        "on-secondary-fixed-variant": "#464744",
+                        "primary-fixed": "#c1ecd4",
+                        "tertiary-fixed": "#e5deff",
+                        "surface-dim": "#d6d9ef",
+                        "secondary-fixed-dim": "#c7c7c2",
+                        "tertiary-fixed-dim": "#c9bfff",
+                        "on-primary-fixed": "#002114",
+                        "secondary": "#5e5f5b",
+                        "on-tertiary-container": "#a799ff",
+                        "inverse-surface": "#2c3041",
+                        "surface-container-lowest": "#ffffff",
+                        "on-background": "#171b2b",
+                        "inverse-primary": "#a5d0b9",
+                        "on-surface-variant": "#414844",
+                        "surface-container": "#ebedff",
+                        "on-error-container": "#93000a",
+                        "on-primary-container": "#86af99",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#faf8ff",
+                        "on-error": "#ffffff",
+                        "surface-tint": "#3f6653",
+                        "secondary-fixed": "#e3e3de",
+                        "on-primary": "#ffffff",
+                        "surface-container-highest": "#dee1f8",
+                        "on-secondary-fixed": "#1b1c19",
+                        "secondary-container": "#e3e3de",
+                        "on-tertiary": "#ffffff",
+                        "on-surface": "#171b2b",
+                        "background": "#faf8ff",
+                        "on-secondary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "component-padding-y": "8px",
+                        "component-padding-x": "12px",
+                        "container-margin": "32px",
+                        "gutter": "16px",
+                        "section-gap": "48px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Literata"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "display-lg": ["Literata"],
+                        "code-md": ["JetBrains Mono"],
+                        "headline-lg": ["Literata"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "label-caps": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.4", "fontWeight": "600" }],
+                        "body-sm": ["13px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "body-md": ["15px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "display-lg": ["40px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "code-md": ["14px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+        /* Custom scrollbar for dense data panels */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: theme('colors.outline-variant'); border-radius: theme('borderRadius.full'); }
+        ::-webkit-scrollbar-thumb:hover { background: theme('colors.outline'); }
+        
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden antialiased font-body-md text-body-md">
+<!-- SideNavBar (Shared Component) -->
+<nav class="bg-surface-container-low fixed left-0 top-0 h-screen w-[280px] border-r border-outline-variant flex flex-col h-full py-component-padding-y px-component-padding-x z-20">
+<div class="mb-gutter mt-component-padding-y px-component-padding-x">
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Harness_v2</h1>
+<p class="font-label-caps text-label-caps text-secondary mt-1">AI Orchestration Workspace</p>
+</div>
+<div class="flex-1 overflow-y-auto">
+<ul class="space-y-1">
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="dashboard">dashboard</span>
+<span class="font-body-md text-body-md">Overview</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="extension">extension</span>
+<span class="font-body-md text-body-md">Features</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-on-tertiary-fixed-variant font-bold border-r-2 border-tertiary bg-surface-variant hover:bg-surface-variant transition-colors active:scale-[0.98] transition-transform duration-150" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="list_alt">list_alt</span>
+<span class="font-body-md text-body-md">Work Items</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="play_circle">play_circle</span>
+<span class="font-body-md text-body-md">Runs</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="description">description</span>
+<span class="font-body-md text-body-md">Evidence</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="psychology">psychology</span>
+<span class="font-body-md text-body-md">Memory Candidates</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="account_tree">account_tree</span>
+<span class="font-body-md text-body-md">MemoryGraph</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="history">history</span>
+<span class="font-body-md text-body-md">Activity Timeline</span>
+</a>
+</li>
+</ul>
+</div>
+<div class="mt-auto pt-gutter border-t border-outline-variant">
+<ul class="space-y-1">
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="analytics">analytics</span>
+<span class="font-body-md text-body-md">Health Status</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-component-padding-x py-component-padding-y rounded-DEFAULT text-secondary hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="terminal">terminal</span>
+<span class="font-body-md text-body-md">System Logs</span>
+</a>
+</li>
+</ul>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 ml-[280px] flex flex-col h-screen relative">
+<!-- TopAppBar (Shared Component) -->
+<header class="bg-surface fixed top-0 right-0 w-[calc(100%-280px)] h-16 border-b border-outline-variant flex items-center justify-between px-container-margin z-10">
+<div class="flex items-center gap-4">
+<nav aria-label="Breadcrumb">
+<ol class="flex items-center space-x-2 font-label-caps text-label-caps text-secondary">
+<li><a class="hover:text-primary transition-colors" href="#">Breadcrumbs</a></li>
+<li><span class="material-symbols-outlined text-[16px]">chevron_right</span></li>
+<li><a class="hover:text-primary transition-colors" href="#">main</a></li>
+<li><span class="material-symbols-outlined text-[16px]">chevron_right</span></li>
+<li aria-current="page" class="text-primary font-semibold border-b-2 border-primary active:opacity-80 transition-opacity">Worktree</li>
+</ol>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-secondary hover:text-primary transition-colors p-2 rounded-full hover:bg-surface-variant">
+<span class="material-symbols-outlined" data-icon="database">database</span>
+</button>
+<button class="text-secondary hover:text-primary transition-colors p-2 rounded-full hover:bg-surface-variant">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</button>
+<button class="text-secondary hover:text-primary transition-colors p-2 rounded-full hover:bg-surface-variant">
+<span class="material-symbols-outlined" data-icon="dark_mode">dark_mode</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary" data-icon="person">person</span>
+</div>
+</div>
+</header>
+<!-- Workspace (Three Column Layout) -->
+<main class="flex-1 mt-16 flex overflow-hidden bg-background">
+<!-- Column 1: Filters (Left) -->
+<aside class="w-[240px] flex-shrink-0 border-r border-outline-variant bg-surface-bright overflow-y-auto flex flex-col">
+<div class="p-4 border-b border-outline-variant">
+<h2 class="font-headline-md text-body-lg font-semibold text-primary mb-4">Filters</h2>
+<div class="space-y-4">
+<!-- Status Filter -->
+<div>
+<h3 class="font-label-caps text-label-caps text-secondary mb-2 uppercase tracking-wider">Status</h3>
+<ul class="space-y-1">
+<li>
+<label class="flex items-center justify-between group cursor-pointer p-1.5 rounded hover:bg-surface-variant transition-colors">
+<div class="flex items-center gap-2">
+<input checked="" class="rounded border-outline-variant text-primary focus:ring-primary-container bg-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface">In Progress</span>
+</div>
+<span class="font-code-md text-[11px] text-secondary bg-surface-container px-1.5 rounded">3</span>
+</label>
+</li>
+<li>
+<label class="flex items-center justify-between group cursor-pointer p-1.5 rounded hover:bg-surface-variant transition-colors">
+<div class="flex items-center gap-2">
+<input class="rounded border-outline-variant text-primary focus:ring-primary-container bg-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-secondary group-hover:text-on-surface transition-colors">Ready</span>
+</div>
+<span class="font-code-md text-[11px] text-secondary bg-surface-container px-1.5 rounded">8</span>
+</label>
+</li>
+<li>
+<label class="flex items-center justify-between group cursor-pointer p-1.5 rounded hover:bg-surface-variant transition-colors">
+<div class="flex items-center gap-2">
+<input class="rounded border-outline-variant text-primary focus:ring-primary-container bg-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-secondary group-hover:text-on-surface transition-colors">Backlog</span>
+</div>
+<span class="font-code-md text-[11px] text-secondary bg-surface-container px-1.5 rounded">24</span>
+</label>
+</li>
+<li>
+<label class="flex items-center justify-between group cursor-pointer p-1.5 rounded hover:bg-surface-variant transition-colors">
+<div class="flex items-center gap-2">
+<input class="rounded border-outline-variant text-primary focus:ring-primary-container bg-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-secondary group-hover:text-on-surface transition-colors">Blocked</span>
+</div>
+<span class="font-code-md text-[11px] text-error bg-error-container px-1.5 rounded">1</span>
+</label>
+</li>
+<li>
+<label class="flex items-center justify-between group cursor-pointer p-1.5 rounded hover:bg-surface-variant transition-colors">
+<div class="flex items-center gap-2">
+<input class="rounded border-outline-variant text-primary focus:ring-primary-container bg-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-secondary group-hover:text-on-surface transition-colors">Done</span>
+</div>
+<span class="font-code-md text-[11px] text-secondary bg-surface-container px-1.5 rounded">142</span>
+</label>
+</li>
+</ul>
+</div>
+<!-- Kind Filter -->
+<div class="pt-2">
+<h3 class="font-label-caps text-label-caps text-secondary mb-2 uppercase tracking-wider">Kind</h3>
+<ul class="space-y-1">
+<li>
+<label class="flex items-center justify-between group cursor-pointer p-1.5 rounded hover:bg-surface-variant transition-colors">
+<div class="flex items-center gap-2">
+<input checked="" class="rounded border-outline-variant text-primary focus:ring-primary-container bg-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface">Bug</span>
+</div>
+</label>
+</li>
+<li>
+<label class="flex items-center justify-between group cursor-pointer p-1.5 rounded hover:bg-surface-variant transition-colors">
+<div class="flex items-center gap-2">
+<input class="rounded border-outline-variant text-primary focus:ring-primary-container bg-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-secondary group-hover:text-on-surface transition-colors">Implementation</span>
+</div>
+</label>
+</li>
+<li>
+<label class="flex items-center justify-between group cursor-pointer p-1.5 rounded hover:bg-surface-variant transition-colors">
+<div class="flex items-center gap-2">
+<input class="rounded border-outline-variant text-primary focus:ring-primary-container bg-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-secondary group-hover:text-on-surface transition-colors">Research</span>
+</div>
+</label>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</aside>
+<!-- Column 2: Work Items List (Center) -->
+<section class="flex-1 min-w-[400px] border-r border-outline-variant bg-surface flex flex-col h-full">
+<div class="p-4 border-b border-outline-variant bg-surface-bright flex items-center justify-between sticky top-0 z-10">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]" data-icon="list">list</span>
+<h2 class="font-headline-md text-body-lg font-semibold text-primary">Active Work Items</h2>
+</div>
+<div class="text-secondary font-code-md text-body-sm">3 visible</div>
+</div>
+<div class="flex-1 overflow-y-auto p-4 space-y-3">
+<!-- Selected Item Card -->
+<div class="bg-surface-container-lowest border-2 border-primary rounded-lg p-4 cursor-pointer relative shadow-[0_2px_8px_rgba(1,45,29,0.08)]">
+<div class="flex items-start justify-between mb-2">
+<div class="flex items-center gap-2">
+<span class="font-code-md text-body-sm font-semibold text-primary bg-primary-fixed-dim/20 px-2 py-0.5 rounded">WI-8a3f12</span>
+<span class="flex items-center gap-1 font-label-caps text-[10px] text-error bg-error-container/50 px-1.5 py-0.5 rounded border border-error/20">
+<span class="material-symbols-outlined text-[12px]" data-icon="bug_report">bug_report</span> Bug
+                                </span>
+</div>
+<span class="flex items-center gap-1 font-label-caps text-[10px] text-on-tertiary-fixed-variant bg-tertiary-fixed px-1.5 py-0.5 rounded border border-tertiary/20">
+<span class="material-symbols-outlined text-[12px] fill" data-icon="clock_loader_40">clock_loader_40</span> In Progress
+                            </span>
+</div>
+<h3 class="font-headline-md text-body-md font-semibold text-on-surface mb-2 leading-snug">새 워크트리 State Store 스키마 누락 진단</h3>
+<div class="flex items-center gap-4 text-secondary font-body-sm text-body-sm mt-3 pt-3 border-t border-outline-variant/50">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="flag">flag</span>
+<span class="text-error font-medium">High</span>
+</div>
+<div class="flex items-center gap-1 truncate" title="Orca 워크트리 상태 저장소 안정화">
+<span class="material-symbols-outlined text-[14px]" data-icon="dataset">dataset</span>
+<span class="truncate">Orca 워크트리...</span>
+</div>
+</div>
+</div>
+<!-- Unselected Item Card -->
+<div class="bg-surface-container-lowest border border-outline-variant hover:border-outline rounded-lg p-4 cursor-pointer transition-colors opacity-70 hover:opacity-100">
+<div class="flex items-start justify-between mb-2">
+<div class="flex items-center gap-2">
+<span class="font-code-md text-body-sm text-secondary bg-surface-variant px-2 py-0.5 rounded">WI-9b4c21</span>
+<span class="flex items-center gap-1 font-label-caps text-[10px] text-primary bg-surface-variant px-1.5 py-0.5 rounded">
+<span class="material-symbols-outlined text-[12px]" data-icon="code">code</span> Impl
+                                </span>
+</div>
+<span class="flex items-center gap-1 font-label-caps text-[10px] text-secondary bg-surface-variant px-1.5 py-0.5 rounded">
+                                Ready
+                            </span>
+</div>
+<h3 class="font-body-md text-body-md text-on-surface mb-2 leading-snug">Agent 메모리 컨텍스트 주입 파이프라인 최적화</h3>
+<div class="flex items-center gap-4 text-secondary font-body-sm text-body-sm mt-3 pt-3 border-t border-outline-variant/30">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="flag">flag</span>
+<span>Medium</span>
+</div>
+<div class="flex items-center gap-1 truncate">
+<span class="material-symbols-outlined text-[14px]" data-icon="dataset">dataset</span>
+<span class="truncate">Memory Graph API</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Column 3: Detail Panel (Right) -->
+<aside class="w-[480px] flex-shrink-0 bg-surface-container-lowest flex flex-col h-full overflow-hidden shadow-[-4px_0_12px_rgba(27,67,50,0.02)] z-10">
+<!-- Detail Header -->
+<div class="px-6 py-5 border-b border-outline-variant bg-surface-bright flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<span class="font-code-md text-body-md font-semibold text-primary bg-primary-fixed-dim/20 px-2 py-1 rounded">WI-8a3f12</span>
+<span class="flex items-center gap-1 font-label-caps text-[11px] text-error bg-error-container/50 px-2 py-1 rounded border border-error/20">
+<span class="material-symbols-outlined text-[14px]" data-icon="bug_report">bug_report</span> Bug
+                            </span>
+</div>
+<div class="flex gap-2">
+<button class="text-secondary hover:text-primary p-1.5 rounded hover:bg-surface-variant transition-colors border border-transparent hover:border-outline-variant" title="상세 보기">
+<span class="material-symbols-outlined text-[18px]" data-icon="open_in_new">open_in_new</span>
+</button>
+<button class="text-secondary hover:text-primary p-1.5 rounded hover:bg-surface-variant transition-colors border border-transparent hover:border-outline-variant" title="Evidence 보기">
+<span class="material-symbols-outlined text-[18px]" data-icon="description">description</span>
+</button>
+</div>
+</div>
+<h2 class="font-headline-lg text-headline-md font-bold text-on-surface leading-tight mt-1">새 워크트리 State Store 스키마 누락 진단</h2>
+<div class="flex flex-wrap gap-x-6 gap-y-2 mt-2">
+<div class="flex items-center gap-2">
+<span class="font-label-caps text-label-caps text-secondary uppercase">Status</span>
+<span class="font-body-sm text-body-sm text-on-tertiary-fixed-variant font-medium">In Progress</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-caps text-label-caps text-secondary uppercase">Priority</span>
+<span class="font-body-sm text-body-sm text-error font-medium">High</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-caps text-label-caps text-secondary uppercase">Feature</span>
+<span class="font-body-sm text-body-sm text-primary font-medium">Orca 워크트리 상태 저장소 안정화</span>
+</div>
+</div>
+</div>
+<!-- Detail Body -->
+<div class="flex-1 overflow-y-auto p-6 space-y-8">
+<!-- Goal Section -->
+<section>
+<h3 class="flex items-center gap-2 font-label-caps text-label-caps text-secondary mb-3 uppercase tracking-wide border-b border-outline-variant/50 pb-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="track_changes">track_changes</span> Goal
+                        </h3>
+<div class="bg-surface p-4 rounded-lg border border-outline-variant font-body-md text-body-md text-on-surface-variant leading-relaxed">
+                            v2 마이그레이션 중 특정 노드에서 State Store 스키마가 초기화되지 않아 발생하는 NullReferenceException 해결. 데이터 정합성 보장 필요.
+                        </div>
+</section>
+<!-- Next Action Section -->
+<section>
+<h3 class="flex items-center gap-2 font-label-caps text-label-caps text-secondary mb-3 uppercase tracking-wide border-b border-outline-variant/50 pb-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="play_arrow">play_arrow</span> Next Action
+                        </h3>
+<div class="bg-surface-container-high/30 p-4 rounded-lg border border-primary/20 font-body-md text-body-md text-on-surface font-medium">
+<p>Setup에 스냅샷 복원 실패 시 스키마 초기화 fallback 추가</p>
+<div class="mt-3 bg-surface p-3 rounded border border-outline-variant font-code-md text-code-md text-secondary text-sm overflow-x-auto">
+<pre><code>if (!snapshotRestoreSuccess) {
+    logger.Warn("Snapshot failed, initializing fallback schema");
+    await StateStore.InitializeSchemaAsync(FallbackOptions.Safe);
+}</code></pre>
+</div>
+</div>
+</section>
+<!-- Acceptance Criteria -->
+<section>
+<h3 class="flex items-center gap-2 font-label-caps text-label-caps text-secondary mb-3 uppercase tracking-wide border-b border-outline-variant/50 pb-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="fact_check">fact_check</span> Acceptance Criteria
+                        </h3>
+<ul class="space-y-3">
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-primary text-[20px] mt-0.5" data-icon="check_box">check_box</span>
+<div class="flex-1">
+<p class="font-body-md text-body-md text-on-surface line-through opacity-70">로그에서 NullReferenceException 패턴 확인 및 재현</p>
+<div class="mt-1">
+<a class="inline-flex items-center gap-1 font-body-sm text-body-sm text-tertiary-container hover:underline bg-tertiary-fixed/30 px-2 py-0.5 rounded border border-tertiary/10" href="#">
+<span class="material-symbols-outlined text-[14px]" data-icon="description">description</span> Log_Trace_Artifact_01
+                                        </a>
+</div>
+</div>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-outline text-[20px] mt-0.5" data-icon="check_box_outline_blank">check_box_outline_blank</span>
+<div class="flex-1">
+<p class="font-body-md text-body-md text-on-surface">Fallback 초기화 로직 구현 및 단위 테스트 작성</p>
+</div>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-outline text-[20px] mt-0.5" data-icon="check_box_outline_blank">check_box_outline_blank</span>
+<div class="flex-1">
+<p class="font-body-md text-body-md text-on-surface">통합 환경(Staging)에서 워크트리 재시작 시 정상 복구 확인</p>
+</div>
+</li>
+</ul>
+</section>
+</div>
+<!-- Detail Footer Actions -->
+<div class="px-6 py-4 border-t border-outline-variant bg-surface flex justify-end gap-3">
+<button class="px-4 py-2 rounded font-body-sm text-body-sm font-medium border border-primary text-primary hover:bg-primary-fixed/20 transition-colors">
+                        상세 보기
+                    </button>
+<button class="px-4 py-2 rounded font-body-sm text-body-sm font-medium bg-primary text-on-primary hover:bg-primary-container transition-colors shadow-sm">
+                        상태 업데이트
+                    </button>
+</div>
+</aside>
+</main>
+</div>
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-on-surface/40 backdrop-blur-sm" id="create-workitem-modal">
+<div class="bg-surface-container-lowest w-full max-w-[560px] rounded-xl shadow-[0_8px_32px_rgba(1,45,29,0.15)] border border-outline-variant overflow-hidden">
+<!-- Modal Header -->
+<div class="px-6 py-4 border-b border-outline-variant flex items-center justify-between bg-surface-bright">
+<h2 class="font-headline-md text-headline-md text-primary">새 Draft WI 생성</h2>
+<button class="text-secondary hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<!-- Modal Body / Form -->
+<div class="p-6 space-y-6">
+<!-- Title Input -->
+<div class="space-y-1.5">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-wider">Title</label>
+<input class="w-full px-3 py-2 rounded border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface font-body-md text-on-surface transition-all" placeholder="워크아이템 제목을 입력하세요" type="text"/>
+</div>
+<!-- Kind Select -->
+<div class="space-y-1.5">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-wider">Kind</label>
+<div class="relative">
+<select class="w-full px-3 py-2 rounded border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface font-body-md text-on-surface appearance-none transition-all">
+<option value="bug">Bug</option>
+<option value="implementation">Implementation</option>
+<option value="research">Research</option>
+<option value="decision">Decision</option>
+<option value="refactor">Refactor</option>
+<option value="migration">Migration</option>
+<option value="verification">Verification</option>
+<option value="maintenance">Maintenance</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary pointer-events-none">expand_more</span>
+</div>
+</div>
+<!-- Goal Textarea -->
+<div class="space-y-1.5">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-wider">Goal</label>
+<textarea class="w-full px-3 py-2 rounded border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface font-body-md text-on-surface transition-all resize-none" placeholder="달성하고자 하는 목표를 설명하세요" rows="3"></textarea>
+</div>
+<!-- Description Textarea -->
+<div class="space-y-1.5">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-wider">Description <span class="lowercase opacity-70">(optional)</span></label>
+<textarea class="w-full px-3 py-2 rounded border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-surface font-body-md text-on-surface transition-all" placeholder="상세 내용을 입력하세요" rows="6"></textarea>
+</div>
+</div>
+<!-- Modal Footer -->
+<div class="px-6 py-4 border-t border-outline-variant bg-surface flex justify-end gap-3">
+<button class="px-6 py-2 rounded font-body-sm font-medium border border-outline text-secondary hover:bg-surface-variant transition-colors">
+        취소
+      </button>
+<button class="px-6 py-2 rounded font-body-sm font-medium bg-primary text-on-primary hover:bg-primary-container transition-colors shadow-sm">
+        Draft 생성
+      </button>
+</div>
+</div>
+</div></body></html>

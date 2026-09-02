@@ -184,6 +184,62 @@ def create_server(
             database_path=database_path,
         )
 
+    @server.tool(name="create_draft_work_item")
+    def create_draft_work_item(
+        title: str,
+        kind: Literal[
+            "implementation",
+            "bug",
+            "research",
+            "decision",
+            "refactor",
+            "migration",
+            "verification",
+            "maintenance",
+        ],
+        goal: str,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a Draft WorkItem from the user's short task memo.
+
+        A Draft remains backlog-only and has no Acceptance Criteria until Codex
+        refines it after the user explicitly selects it with ``w/``.
+        """
+
+        return state_store.create_draft_work_item(
+            title=title,
+            kind=kind,
+            goal=goal,
+            description=description,
+            actor="web_console",
+            database_path=database_path,
+        )
+
+    @server.tool(name="refine_draft_work_item")
+    def refine_draft_work_item(
+        work_item_id: str,
+        priority: Literal["urgent", "high", "normal", "low"],
+        next_action: str,
+        acceptance_criteria: list[str],
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist Codex's executable plan for one selected Draft WorkItem.
+
+        This is not a web-console action. Call it only after a user selected a
+        Draft through ``w/`` and Codex has decided its next action and outcome
+        focused Acceptance Criteria. On success it makes the WorkItem ready.
+        """
+
+        return state_store.refine_draft_work_item(
+            work_item_id,
+            priority=priority,
+            next_action=next_action,
+            acceptance_criteria=acceptance_criteria,
+            feature_id=feature_id,
+            actor="codex",
+            database_path=database_path,
+        )
+
     @server.tool(name="revise_work_item")
     def revise_work_item(
         work_item_id: str,

@@ -87,7 +87,14 @@ def write_selection_request(
             created_at + timedelta(seconds=timeout_seconds)
         ),
         "work_items": [
-            {"id": item["id"], "title": item["title"], "goal": item["goal"], "priority": item["priority"]}
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "goal": item["goal"],
+                "kind": item["kind"],
+                "priority": item["priority"],
+                "is_draft": bool(item["is_draft"]),
+            }
             for item in work_items
         ],
     }
@@ -222,7 +229,11 @@ def validate_selection_result(
     if selected is None:
         raise HookInputError("selected WorkItem was not in the request")
     return _selection_packet(
-        "selected", work_item_id=selected["id"], title=selected["title"], request=request_text
+        "selected",
+        work_item_id=selected["id"],
+        title=selected["title"],
+        is_draft=bool(selected.get("is_draft", False)),
+        request=request_text,
     )
 
 
@@ -283,7 +294,7 @@ def dispatch_user_prompt_submit(
         cleanup_expired_selection_files(selections_directory)
         request_path = write_selection_request(
             request_id=str(uuid4()), session_id=session_id, turn_id=turn_id,
-            work_items=state_store.list_ready_work_items(database_path=database_path),
+            work_items=state_store.list_selectable_work_items(database_path=database_path),
             selections_directory=selections_directory,
         )
     except Exception as error:

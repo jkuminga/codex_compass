@@ -63,9 +63,37 @@ class UserPromptSubmitHookTests(unittest.TestCase):
 
         context = output["hookSpecificOutput"]["additionalContext"]
         packet = json.loads(context.split("\n", 1)[1].rsplit("\n", 1)[0])
-        self.assertEqual(packet, {"selection_status": "selected", "work_item_id": work_item["id"], "title": work_item["title"], "request": "로그인 구현"})
+        self.assertEqual(packet, {"selection_status": "selected", "work_item_id": work_item["id"], "title": work_item["title"], "is_draft": False, "request": "로그인 구현"})
         selections_directory = self.root / "selections"
         self.assertFalse(selections_directory.exists() and list(selections_directory.iterdir()))
+
+    def test_work_prompt_includes_a_draft_and_marks_it_in_the_context_packet(self) -> None:
+        draft = state_store.create_draft_work_item(
+            title="초안 선택",
+            kind="research",
+            goal="선택기에서 Draft 표시를 확인한다.",
+            actor="test",
+            database_path=self.database_path,
+        )
+
+        def write_selected_result(request_path: Path) -> None:
+            request = work_item_picker.read_json_object(request_path)
+            item = next(item for item in request["work_items"] if item["id"] == draft["id"])
+            self.assertTrue(item["is_draft"])
+            self.assertEqual(item["kind"], "research")
+            work_item_picker.atomic_write_json(work_item_picker.result_path_for(request_path), {
+                "schema_version": 1, "request_id": request["request_id"], "session_id": request["session_id"],
+                "turn_id": request["turn_id"], "created_at": work_item_picker.format_timestamp(work_item_picker.utc_now()),
+                "status": "selected", "work_item_id": draft["id"],
+            })
+
+        with patch.object(user_prompt_submit, "launch_terminal_picker", side_effect=write_selected_result):
+            output = user_prompt_submit.dispatch_user_prompt_submit(self.event(), database_path=self.database_path)
+
+        context = output["hookSpecificOutput"]["additionalContext"]
+        packet = json.loads(context.split("\n", 1)[1].rsplit("\n", 1)[0])
+        self.assertTrue(packet["is_draft"])
+        self.assertEqual(packet["work_item_id"], draft["id"])
 
     def test_rejects_result_for_an_unlisted_work_item(self) -> None:
         request_path = user_prompt_submit.write_selection_request(

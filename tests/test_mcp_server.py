@@ -101,6 +101,34 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "pending",
         )
 
+    async def test_codex_can_create_and_refine_a_draft_through_mcp(self) -> None:
+        async with Client(create_server(self.database_path)) as client:
+            draft_result = await client.call_tool(
+                "create_draft_work_item",
+                {
+                    "title": "Draft 작업",
+                    "kind": "research",
+                    "goal": "초안을 실행 가능한 조사로 다듬는다.",
+                    "description": "웹 콘솔에서 생성되는 메모다.",
+                },
+            )
+            draft = draft_result.structured_content
+            refine_result = await client.call_tool(
+                "refine_draft_work_item",
+                {
+                    "work_item_id": draft["id"],
+                    "priority": "normal",
+                    "next_action": "조사 범위를 정리한다.",
+                    "acceptance_criteria": ["조사 결과를 문서로 남긴다."],
+                },
+            )
+
+        self.assertFalse(draft_result.is_error)
+        self.assertEqual(draft["is_draft"], 1)
+        self.assertFalse(refine_result.is_error)
+        self.assertEqual(refine_result.structured_content["status"], "ready")
+        self.assertEqual(refine_result.structured_content["is_draft"], 0)
+
     async def test_codex_can_execute_verify_and_finish_work_through_mcp(self) -> None:
         work_item = state_store.create_work_item(
             title="MCP 실행 흐름",
@@ -520,6 +548,8 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "create_feature",
             "update_feature",
             "create_work_item",
+            "create_draft_work_item",
+            "refine_draft_work_item",
             "revise_work_item",
             "change_work_item_state",
             "manage_criterion",

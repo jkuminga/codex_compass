@@ -270,6 +270,53 @@ class StateStoreLifecycleTests(unittest.TestCase):
                 disposable["id"], database_path=self.database_path
             )
 
+    def test_draft_work_item_is_refined_atomically_before_it_can_run(self) -> None:
+        draft = state_store.create_draft_work_item(
+            title="웹 콘솔 초안 생성",
+            kind="implementation",
+            goal="사용자가 간단한 메모로 작업을 남긴다.",
+            description="설명은 선택 입력이다.",
+            actor="web_console",
+            database_path=self.database_path,
+        )
+
+        self.assertEqual(draft["status"], "backlog")
+        self.assertEqual(draft["is_draft"], 1)
+        self.assertEqual(draft["description"], "설명은 선택 입력이다.")
+        self.assertEqual(
+            state_store.list_selectable_work_items(database_path=self.database_path)[0]["id"],
+            draft["id"],
+        )
+        with self.assertRaisesRegex(state_store.ConflictError, "refined"):
+            state_store.change_work_item_status(
+                draft["id"], "ready", next_action="바로 실행", actor="test",
+                reason="Draft를 우회하려는 시도", database_path=self.database_path,
+            )
+        with self.assertRaisesRegex(state_store.ConflictError, "refined"):
+            state_store.add_criterion(
+                draft["id"], "초안에 AC를 추가한다.", actor="test",
+                database_path=self.database_path,
+            )
+
+        refined = state_store.refine_draft_work_item(
+            draft["id"],
+            priority="high",
+            next_action="Draft 생성 API를 구현한다.",
+            acceptance_criteria=["제목·종류·목표로 Draft를 저장할 수 있다."],
+            actor="codex",
+            database_path=self.database_path,
+        )
+
+        self.assertEqual(refined["status"], "ready")
+        self.assertEqual(refined["is_draft"], 0)
+        self.assertEqual(refined["priority"], "high")
+        context = state_store.get_work_item_context(
+            draft["id"], database_path=self.database_path
+        )
+        self.assertEqual(len(context["acceptance_criteria"]), 1)
+        run = self.start_run(draft["id"], actor="codex", database_path=self.database_path)
+        self.assertEqual(run["status"], "running")
+
     def test_work_items_are_searched_by_weighted_open_fields(self) -> None:
         title_match = state_store.create_work_item(
             title="Recall 정책 결정",

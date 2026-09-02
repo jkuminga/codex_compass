@@ -40,6 +40,19 @@ description: 사용자 요청을 기존 WorkItem에 연결하거나 새 WorkItem
 
 ## 4. WorkItem 결정
 
+`selection_status`가 `selected`이면 사용자가 `w/` 선택기에서 고른 `work_item_id`를 이번 작업의 대상으로 사용한다. 후보 비교·검색·새 WorkItem 생성은 하지 않는다.
+
+선택한 WorkItem의 `is_draft`가 `true`이면 먼저 `get_work_context(work_item_id)`를 호출한다. 제목·종류·목표·선택 메모(`description`)를 읽고, 이번 작업을 실제로 시작할 수 있도록 다음을 판단한다.
+
+- `priority`
+- `feature_id`: 명확히 속하는 Feature가 있을 때만 설정
+- `next_action`
+- 결과 중심 Acceptance Criteria 1개 이상
+
+그 결과를 `refine_draft_work_item()`에 한 번 전달한다. 이 도구는 Draft를 `ready`로 바꾸고 Acceptance Criteria를 함께 저장한다. 성공 후에는 `get_work_context(work_item_id)`를 다시 호출하고 5단계로 간다. 구체화 또는 저장에 실패하면 Run과 프로젝트 변경을 시작하지 않는다.
+
+`selection_status`가 없을 때만 아래의 자동 결정 절차를 사용한다.
+
 1. `ready_candidates` 최대 3개를 비교한다. “이 요청의 완료가 기존 WorkItem의 `goal` 달성에 필요한가?”가 명확히 참인 항목만 재사용한다. 제목보다 `goal`과 `next_action`을 우선한다.
 2. 맞는 후보가 없으면 요청에서 구별력 있는 핵심어 2~5개를 만들고 `search_work_items(terms, statuses=["backlog", "ready", "blocked"], limit=5)`를 한 번만 호출한다.
 3. 검색 결과가 여러 개라 목표를 구분할 수 없으면 사용자에게 짧게 확인한다.
