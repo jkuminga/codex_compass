@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
+cd "$project_root"
+
+port="${HARNESS_CONTROL_CENTER_PORT:-8765}"
+exec uv run uvicorn src.harness.control_center.app:app \
+  --host 127.0.0.1 \
+  --port "$port" \
+  "$@"

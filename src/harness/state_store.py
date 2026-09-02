@@ -858,6 +858,31 @@ def list_selectable_work_items(
         database.close()
 
 
+def list_work_items(
+    *, database_path: str | Path = DEFAULT_DATABASE_PATH
+) -> list[dict[str, Any]]:
+    """Return every WorkItem with its optional Feature title for management UIs."""
+
+    database = open_database(database_path)
+    try:
+        items = [
+            dict(row)
+            for row in database.execute(
+                """
+                SELECT work_item.*, feature.title AS feature_title
+                FROM work_items AS work_item
+                LEFT JOIN features AS feature ON feature.id = work_item.feature_id
+                ORDER BY work_item.updated_at DESC, work_item.id DESC
+                """
+            )
+        ]
+        for item in items:
+            item["is_draft"] = bool(item["is_draft"])
+        return items
+    finally:
+        database.close()
+
+
 def search_work_items(
     terms: Sequence[str],
     *,

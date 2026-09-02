@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Harness Control Center</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="side-nav" aria-label="주 메뉴">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">H</div>
+          <div>
+            <strong>Harness_v2</strong>
+            <span>AI Orchestration Workspace</span>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <a href="#" aria-disabled="true"><span>◫</span>Overview</a>
+          <a href="#" aria-disabled="true"><span>◇</span>Features</a>
+          <a class="active" href="/" aria-current="page"><span>≡</span>Work Items</a>
+          <a href="#" aria-disabled="true"><span>▷</span>Runs</a>
+          <a href="#" aria-disabled="true"><span>▤</span>Evidence</a>
+          <a href="#" aria-disabled="true"><span>◎</span>Memory Candidates</a>
+          <a href="#" aria-disabled="true"><span>⌘</span>MemoryGraph</a>
+          <a href="#" aria-disabled="true"><span>◷</span>Activity Timeline</a>
+        </nav>
+
+        <div class="nav-footer">
+          <div class="health-row">
+            <span class="health-dot" id="health-dot"></span>
+            <span id="health-label">State DB 확인 중</span>
+          </div>
+          <div class="workspace-label">LOCAL WORKSPACE</div>
+        </div>
+      </aside>
+
+      <div class="main-shell">
+        <header class="top-bar">
+          <div class="crumbs"><span>main</span><b>/</b><strong>Work Items</strong></div>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">PROJECT CONTROL</p>
+              <div class="title-line">
+                <h1>Work Items</h1>
+                <span class="visible-count" id="visible-count">0 visible</span>
+              </div>
+            </div>
+            <button class="primary-button" id="open-draft-modal" type="button">
+              <span aria-hidden="true">＋</span> 새 Draft WI 생성
+            </button>
+          </div>
+        </header>
+
+        <main class="workspace">
+          <aside class="filters" aria-label="WorkItem 필터">
+            <div class="panel-heading">
+              <span class="eyebrow">FILTERS</span>
+              <button class="text-button" id="clear-filters" type="button">초기화</button>
+            </div>
+
+            <fieldset>
+              <legend>Status</legend>
+              <div id="status-filters" class="filter-list"></div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Kind</legend>
+              <div id="kind-filters" class="filter-list"></div>
+            </fieldset>
+          </aside>
+
+          <section class="items-pane" aria-label="WorkItem 목록">
+            <div class="list-toolbar">
+              <div>
+                <strong>Active Work Items</strong>
+                <span>목표와 실행 상태를 한눈에 확인하세요.</span>
+              </div>
+              <button class="icon-button" id="refresh-items" type="button" title="목록 새로고침" aria-label="목록 새로고침">↻</button>
+            </div>
+            <div class="loading-state" id="loading-state">
+              <span class="spinner"></span>
+              <p>WorkItem을 불러오는 중입니다.</p>
+            </div>
+            <div class="items-list" id="items-list"></div>
+          </section>
+
+          <aside class="detail-pane" id="detail-pane" aria-label="WorkItem 상세">
+            <div class="empty-detail" id="empty-detail">
+              <div class="empty-mark">WI</div>
+              <h2>WorkItem을 선택하세요</h2>
+              <p>목록에서 작업을 고르면 목표, 다음 행동, 완료 조건과 최근 Run을 보여줍니다.</p>
+            </div>
+            <div class="detail-content hidden" id="detail-content"></div>
+          </aside>
+        </main>
+
+        <footer class="status-dock">
+          <div><span class="pulse-dot"></span><strong>Control Center</strong></div>
+          <span id="dock-summary">WorkItem 상태를 읽는 중</span>
+          <span class="dock-hint">SQLite · Local only</span>
+        </footer>
+      </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="draft-modal" role="presentation">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="draft-modal-title">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">QUICK CAPTURE</p>
+            <h2 id="draft-modal-title">새 Draft WI 생성</h2>
+          </div>
+          <button class="icon-button" id="close-draft-modal" type="button" aria-label="닫기">×</button>
+        </header>
+
+        <form id="draft-form" novalidate>
+          <div class="form-error hidden" id="form-error" role="alert"></div>
+          <label class="field">
+            <span>Title <b>필수</b></span>
+            <input id="draft-title" name="title" type="text" maxlength="200" placeholder="예: 상태 저장소 대시보드 개선" autocomplete="off" />
+            <small class="field-error" data-error-for="title"></small>
+          </label>
+
+          <label class="field">
+            <span>Kind <b>필수</b></span>
+            <select id="draft-kind" name="kind">
+              <option value="implementation">Implementation · 구현</option>
+              <option value="bug">Bug · 오류 수정</option>
+              <option value="research">Research · 조사</option>
+              <option value="decision">Decision · 설계/결정</option>
+              <option value="refactor">Refactor · 구조 개선</option>
+              <option value="migration">Migration · 이전</option>
+              <option value="verification">Verification · 검증</option>
+              <option value="maintenance">Maintenance · 유지보수</option>
+            </select>
+            <small class="field-error" data-error-for="kind"></small>
+          </label>
+
+          <label class="field">
+            <span>Goal <b>필수</b></span>
+            <textarea id="draft-goal" name="goal" rows="3" maxlength="2000" placeholder="이 작업으로 얻고 싶은 결과를 적어주세요."></textarea>
+            <small class="field-error" data-error-for="goal"></small>
+          </label>
+
+          <label class="field">
+            <span>Description <em>선택</em></span>
+            <textarea id="draft-description" name="description" rows="5" maxlength="5000" placeholder="배경, 아이디어, 참고사항을 자유롭게 남겨주세요."></textarea>
+            <small class="field-hint">Codex가 WorkItem을 구체화할 때 참고하는 메모입니다.</small>
+            <small class="field-error" data-error-for="description"></small>
+          </label>
+
+          <footer class="modal-actions">
+            <button class="secondary-button" id="cancel-draft" type="button">취소</button>
+            <button class="primary-button" id="submit-draft" type="submit">
+              <span class="submit-label">Draft 생성</span>
+              <span class="button-spinner hidden" aria-hidden="true"></span>
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  </body>
+</html>
