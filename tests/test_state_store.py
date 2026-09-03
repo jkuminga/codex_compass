@@ -307,6 +307,92 @@ class StateStoreLifecycleTests(unittest.TestCase):
                 disposable["id"], database_path=self.database_path
             )
 
+    def test_work_item_management_capabilities_follow_lifecycle_rules(self) -> None:
+        draft = state_store.create_draft_work_item(
+            title="수정 가능한 Draft",
+            kind="implementation",
+            goal="웹 관리 규칙을 검증한다.",
+            actor="test",
+            database_path=self.database_path,
+        )
+        draft_capabilities = state_store.get_work_item_management_capabilities(
+            draft["id"], database_path=self.database_path
+        )
+        self.assertEqual(
+            draft_capabilities["editable_fields"],
+            ["title", "kind", "goal", "description"],
+        )
+        self.assertEqual(draft_capabilities["allowed_statuses"], [])
+        self.assertTrue(draft_capabilities["can_delete"])
+
+        backlog = state_store.create_work_item(
+            title="일반 Backlog",
+            kind="research",
+            goal="웹에서 Ready 전이를 막는다.",
+            actor="test",
+            database_path=self.database_path,
+        )
+        backlog_capabilities = state_store.get_work_item_management_capabilities(
+            backlog["id"], database_path=self.database_path
+        )
+        self.assertEqual(backlog_capabilities["allowed_statuses"], ["cancelled"])
+
+        state_store.change_work_item_status(
+            backlog["id"],
+            "ready",
+            next_action="실행한다.",
+            actor="test",
+            reason="내부 계획 흐름에서 준비 완료",
+            database_path=self.database_path,
+        )
+        run = self.start_run(backlog["id"], actor="test", database_path=self.database_path)
+        running_capabilities = state_store.get_work_item_management_capabilities(
+            backlog["id"], database_path=self.database_path
+        )
+        self.assertEqual(
+            running_capabilities["editable_fields"],
+            ["title", "description", "priority"],
+        )
+        self.assertEqual(running_capabilities["allowed_statuses"], [])
+        self.assertFalse(running_capabilities["can_delete"])
+        self.assertIn("in_progress", running_capabilities["delete_reason"])
+
+    def test_revise_work_item_supports_description_and_protects_active_plan(self) -> None:
+        work_item = state_store.create_work_item(
+            title="실행 중 수정 규칙",
+            kind="implementation",
+            goal="실행 중 계획 변경을 막는다.",
+            next_action="테스트를 실행한다.",
+            actor="test",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="테스트를 실행한다.",
+            actor="test",
+            reason="실행 준비",
+            database_path=self.database_path,
+        )
+        self.start_run(work_item["id"], actor="test", database_path=self.database_path)
+
+        revised = state_store.revise_work_item(
+            work_item["id"],
+            title="실행 중 제목 수정",
+            description="현재 작업을 방해하지 않는 메모",
+            priority="high",
+            actor="web_console",
+            database_path=self.database_path,
+        )
+        self.assertEqual(revised["description"], "현재 작업을 방해하지 않는 메모")
+        with self.assertRaisesRegex(state_store.ConflictError, "in_progress"):
+            state_store.revise_work_item(
+                work_item["id"],
+                goal="실행 중 목표 교체",
+                actor="web_console",
+                database_path=self.database_path,
+            )
+
     def test_draft_work_item_is_refined_atomically_before_it_can_run(self) -> None:
         draft = state_store.create_draft_work_item(
             title="웹 콘솔 초안 생성",

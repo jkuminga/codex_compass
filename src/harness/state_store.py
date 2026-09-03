@@ -778,11 +778,12 @@ def revise_work_item(
     title: str | None = None,
     kind: str | None = None,
     goal: str | None = None,
+    description: str | None | object = _UNSET,
     priority: str | None = None,
     next_action: str | None | object = _UNSET,
     database_path: str | Path = DEFAULT_DATABASE_PATH,
 ) -> dict[str, Any]:
-    """Revise a non-terminal WorkItem while preserving its execution history."""
+    """Revise allowed WorkItem fields while preserving its execution history."""
 
     now = _utc_now()
     with _transaction(database_path) as database:
@@ -803,6 +804,16 @@ def revise_work_item(
         }
         if next_action is not _UNSET:
             changes["next_action"] = next_action
+        if description is not _UNSET:
+            changes["description"] = description.strip() or None if isinstance(description, str) else None
+        changes = {
+            field: value for field, value in changes.items() if current.get(field) != value
+        }
+        protected_during_run = {"kind", "goal", "next_action"}
+        if current["status"] == "in_progress" and protected_during_run.intersection(changes):
+            raise ConflictError(
+                "in_progress WorkItem cannot change kind, goal, or next_action"
+            )
         if not changes:
             return current
         assignments = ", ".join(f"{field} = ?" for field in changes)
@@ -822,6 +833,60 @@ def revise_work_item(
         return _require_row(
             database, "SELECT * FROM work_items WHERE id = ?", (work_item_id,), "WorkItem"
         )
+
+
+def get_work_item_management_capabilities(
+    work_item_id: str,
+    *,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Return the edit, web-status, and deletion actions currently safe for one WI."""
+
+    database = open_database(database_path)
+    try:
+        work_item = _require_row(
+            database, "SELECT * FROM work_items WHERE id = ?", (work_item_id,), "WorkItem"
+        )
+        has_run_history = database.execute(
+            "SELECT 1 FROM runs WHERE work_item_id = ? LIMIT 1", (work_item_id,)
+        ).fetchone() is not None
+    finally:
+        database.close()
+
+    status = work_item["status"]
+    if work_item["is_draft"]:
+        editable_fields = ["title", "kind", "goal", "description"]
+        allowed_statuses: list[str] = []
+    elif status in {"backlog", "ready", "blocked"}:
+        editable_fields = [
+            "title", "kind", "goal", "description", "priority", "next_action"
+        ]
+        allowed_statuses = {
+            "backlog": ["cancelled"],
+            "ready": ["cancelled"],
+            "blocked": ["ready", "cancelled"],
+        }[status]
+    elif status == "in_progress":
+        editable_fields = ["title", "description", "priority"]
+        allowed_statuses = []
+    else:
+        editable_fields = []
+        allowed_statuses = []
+
+    can_delete = status == "backlog" and not has_run_history
+    if can_delete:
+        delete_reason = None
+    elif status != "backlog":
+        delete_reason = f"{status} WorkItem은 실행 기록 보존을 위해 삭제할 수 없습니다."
+    else:
+        delete_reason = "Run 기록이 있는 WorkItem은 삭제할 수 없습니다."
+    return {
+        "can_edit": bool(editable_fields),
+        "editable_fields": editable_fields,
+        "allowed_statuses": allowed_statuses,
+        "can_delete": can_delete,
+        "delete_reason": delete_reason,
+    }
 
 
 def delete_backlog_work_item(

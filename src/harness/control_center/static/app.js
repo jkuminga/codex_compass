@@ -22,6 +22,7 @@ const KIND_OPTIONS = [
 const state = {
   items: [],
   selectedId: null,
+  selectedContext: null,
   statusFilters: new Set(),
   kindFilters: new Set(),
 };
@@ -39,6 +40,12 @@ const elements = {
   form: document.querySelector("#draft-form"),
   formError: document.querySelector("#form-error"),
   submitButton: document.querySelector("#submit-draft"),
+  editModal: document.querySelector("#edit-modal"),
+  editForm: document.querySelector("#edit-form"),
+  editFormError: document.querySelector("#edit-form-error"),
+  deleteModal: document.querySelector("#delete-modal"),
+  deleteConfirmation: document.querySelector("#delete-confirmation"),
+  confirmDelete: document.querySelector("#confirm-delete"),
 };
 
 function statusOf(item) {
@@ -162,7 +169,9 @@ function emptySection(message) {
 }
 
 function renderDetail(context) {
+  state.selectedContext = context;
   const item = context.work_item;
+  const capabilities = context.capabilities || {};
   const virtualStatus = statusOf(item);
   const criteria = context.acceptance_criteria || [];
   const runs = [context.running_run, ...(context.recent_runs || [])].filter(Boolean);
@@ -177,6 +186,12 @@ function renderDetail(context) {
     ? `<ul class="runs-list">${runs.map((run) => `
         <li class="run-row"><code>${escapeHtml(run.id)}</code><span>${escapeHtml(run.status)} · ${escapeHtml(formatDate(run.started_at))}</span></li>`).join("")}</ul>`
     : emptySection(item.is_draft ? "Draft에는 아직 Run이 없습니다." : "실행 기록이 없습니다.");
+  const statusOptions = (capabilities.allowed_statuses || []).map((target) => `
+    <button type="button" role="menuitem" data-status-target="${escapeHtml(target)}">
+      ${escapeHtml(labelFor(STATUS_OPTIONS, target))}로 변경
+    </button>`).join("");
+  const deleteDisabled = capabilities.can_delete ? "" : "disabled";
+  const editDisabled = capabilities.can_edit ? "" : "disabled";
 
   elements.detail.innerHTML = `
     <header class="detail-header">
@@ -184,7 +199,16 @@ function renderDetail(context) {
         <div class="card-meta">
           <span class="wi-id">${escapeHtml(item.id)}</span>
           <span class="badge kind-badge">${escapeHtml(labelFor(KIND_OPTIONS, item.kind))}</span>
-          <span class="badge status-${escapeHtml(virtualStatus)}">${escapeHtml(labelFor(STATUS_OPTIONS, virtualStatus))}</span>
+        </div>
+        <div class="detail-actions">
+          <div class="status-control">
+            <button class="status-button badge status-${escapeHtml(virtualStatus)}" id="status-menu-button" type="button" aria-haspopup="menu" aria-expanded="false" ${statusOptions ? "" : "disabled"}>
+              ${escapeHtml(labelFor(STATUS_OPTIONS, virtualStatus))}${statusOptions ? " ▾" : ""}
+            </button>
+            ${statusOptions ? `<div class="status-menu" id="status-menu" role="menu">${statusOptions}</div>` : ""}
+          </div>
+          <button class="detail-action-button" id="edit-work-item" type="button" ${editDisabled}>수정</button>
+          <button class="detail-action-button danger" id="delete-work-item" type="button" ${deleteDisabled} title="${escapeHtml(capabilities.delete_reason || "WorkItem 삭제")}">삭제</button>
         </div>
       </div>
       <h2>${escapeHtml(item.title)}</h2>
@@ -206,6 +230,35 @@ function renderDetail(context) {
   `;
   elements.emptyDetail.classList.add("hidden");
   elements.detail.classList.remove("hidden");
+  bindDetailActions();
+}
+
+function bindDetailActions() {
+  const statusButton = document.querySelector("#status-menu-button");
+  const statusControl = statusButton?.closest(".status-control");
+  statusButton?.addEventListener("click", () => {
+    const opened = statusControl.classList.toggle("open");
+    statusButton.setAttribute("aria-expanded", String(opened));
+  });
+  document.querySelectorAll("[data-status-target]").forEach((button) => {
+    button.addEventListener("click", () => changeSelectedStatus(button.dataset.statusTarget));
+  });
+  document.querySelector("#edit-work-item")?.addEventListener("click", openEditModal);
+  document.querySelector("#delete-work-item")?.addEventListener("click", openDeleteModal);
+}
+
+async function changeSelectedStatus(target) {
+  const item = state.selectedContext?.work_item;
+  if (!item || !window.confirm(`${labelFor(STATUS_OPTIONS, target)} 상태로 변경할까요?`)) return;
+  try {
+    const context = await api(`/api/work-items/${encodeURIComponent(item.id)}/status`, {
+      method: "PATCH", body: JSON.stringify({ status: target }),
+    });
+    await loadItems({ selectId: context.work_item.id });
+  } catch (error) {
+    window.alert(error.status === 409 ? `${error.message}\n최신 상태를 다시 불러옵니다.` : error.message);
+    await loadItems({ selectId: item.id });
+  }
 }
 
 async function selectItem(workItemId) {
@@ -263,6 +316,84 @@ function closeModal() {
   document.querySelector("#open-draft-modal").focus();
 }
 
+function openEditModal() {
+  const context = state.selectedContext;
+  if (!context?.capabilities?.can_edit) return;
+  const item = context.work_item;
+  const editable = new Set(context.capabilities.editable_fields || []);
+  for (const field of elements.editForm.querySelectorAll("[data-edit-field]")) {
+    field.classList.toggle("hidden", !editable.has(field.dataset.editField));
+  }
+  for (const name of ["title", "kind", "goal", "description", "priority", "next_action"]) {
+    const input = elements.editForm.elements.namedItem(name);
+    if (input) input.value = item[name] ?? "";
+  }
+  elements.editFormError.classList.add("hidden");
+  elements.editModal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  elements.editForm.elements.namedItem("title")?.focus();
+}
+
+function closeEditModal() {
+  elements.editModal.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+async function submitEdit(event) {
+  event.preventDefault();
+  const context = state.selectedContext;
+  if (!context) return;
+  const editable = new Set(context.capabilities.editable_fields || []);
+  const data = new FormData(elements.editForm);
+  const payload = {};
+  for (const name of editable) payload[name] = data.get(name) || null;
+  elements.editFormError.classList.add("hidden");
+  try {
+    const updated = await api(`/api/work-items/${encodeURIComponent(context.work_item.id)}`, {
+      method: "PATCH", body: JSON.stringify(payload),
+    });
+    closeEditModal();
+    await loadItems({ selectId: updated.work_item.id });
+  } catch (error) {
+    elements.editFormError.textContent = error.message;
+    elements.editFormError.classList.remove("hidden");
+    if (error.status === 409) await loadItems({ selectId: context.work_item.id });
+  }
+}
+
+function openDeleteModal() {
+  const context = state.selectedContext;
+  if (!context?.capabilities?.can_delete) return;
+  document.querySelector("#delete-work-item-id").textContent = context.work_item.id;
+  elements.deleteConfirmation.value = "";
+  elements.confirmDelete.disabled = true;
+  document.querySelector("#delete-error").classList.add("hidden");
+  elements.deleteModal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  elements.deleteConfirmation.focus();
+}
+
+function closeDeleteModal() {
+  elements.deleteModal.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+async function deleteSelectedItem() {
+  const item = state.selectedContext?.work_item;
+  if (!item || elements.deleteConfirmation.value !== item.id) return;
+  try {
+    await api(`/api/work-items/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    state.selectedId = null;
+    state.selectedContext = null;
+    closeDeleteModal();
+    await loadItems();
+  } catch (error) {
+    const target = document.querySelector("#delete-error");
+    target.textContent = error.message;
+    target.classList.remove("hidden");
+  }
+}
+
 function showFormError(error) {
   clearFormErrors();
   const details = error.payload?.error;
@@ -318,7 +449,22 @@ document.querySelector("#clear-filters").addEventListener("click", () => {
   renderItems();
 });
 elements.form.addEventListener("submit", submitDraft);
+elements.editForm.addEventListener("submit", submitEdit);
+document.querySelector("#close-edit-modal").addEventListener("click", closeEditModal);
+document.querySelector("#cancel-edit").addEventListener("click", closeEditModal);
+document.querySelector("#cancel-delete").addEventListener("click", closeDeleteModal);
+elements.deleteConfirmation.addEventListener("input", () => {
+  elements.confirmDelete.disabled = elements.deleteConfirmation.value !== state.selectedContext?.work_item?.id;
+});
+elements.confirmDelete.addEventListener("click", deleteSelectedItem);
 elements.modal.addEventListener("click", (event) => { if (event.target === elements.modal) closeModal(); });
-document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !elements.modal.classList.contains("hidden")) closeModal(); });
+elements.editModal.addEventListener("click", (event) => { if (event.target === elements.editModal) closeEditModal(); });
+elements.deleteModal.addEventListener("click", (event) => { if (event.target === elements.deleteModal) closeDeleteModal(); });
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!elements.deleteModal.classList.contains("hidden")) closeDeleteModal();
+  else if (!elements.editModal.classList.contains("hidden")) closeEditModal();
+  else if (!elements.modal.classList.contains("hidden")) closeModal();
+});
 
 loadItems();

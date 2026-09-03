@@ -54,6 +54,64 @@ Codex는 Draft의 제목·종류·목표·선택 메모를 읽고 필요한 경�
 
 `create_ready_work_item()`은 실행 계획과 Acceptance Criteria를 하나의 DB 트랜잭션으로 저장하고, `is_draft = false`, `status = ready`인 WorkItem을 만든다. 이 경로는 미래 작업을 등록하는 것만 하므로 Run은 생성하지 않는다. 제목이나 목표를 정할 근거가 부족할 때만 생성 전에 짧게 확인한다.
 
+## WorkItem 수정·삭제 설계
+
+WorkItem 수정·삭제의 규칙과 트랜잭션은 `state_store.py`가 맡고, 웹 API와 MCP는 얇은 연결층으로 둔다.
+
+### 수정
+
+- `revise_work_item()`은 제목·종류·목표·설명·우선순위·`next_action` 같은 **계획 필드**만 수정한다.
+- 상태는 `change_work_item_state()`, Acceptance Criteria는 `manage_criterion()`으로 별도 처리한다. 한 번의 일반 수정 요청으로 상태나 AC를 몰래 바꾸지 않는다.
+- `done`·`cancelled` WorkItem은 최종 기록이므로 수정하지 않는다.
+- `in_progress`에서 실행 중인 Run의 작업 의도를 바꿀 수 있는 `goal`·`kind`·`next_action` 수정은 거부한다. 먼저 Run을 끝내거나 WorkItem을 다시 준비 상태로 돌린다.
+- 저장은 검증과 State Event 기록을 포함한 하나의 트랜잭션으로 처리한다.
+
+### 상세 패널 UI 흐름
+
+WorkItem 목록의 오른쪽 상세 패널 상단을 두 영역으로 나눈다.
+
+```text
+[WI ID] [Kind]                 [Status ▾] [수정] [삭제]
+WorkItem 제목
+Priority · Feature · Created
+```
+
+- 기존 제목 위의 상태 pill은 왼쪽 메타데이터에서 빼고 우측 액션 영역으로 옮긴다.
+- 상태 pill은 현재 상태를 보여주는 동시에 상태 변경 메뉴를 여는 버튼으로 사용한다.
+- 마우스를 올리면 메뉴를 미리 보여주고, 클릭·키보드 포커스로도 열고 선택할 수 있게 한다. 모바일·키보드 환경 때문에 hover만 유일한 조작법으로 사용하지 않는다.
+- `수정` 버튼은 기존 값을 채운 편집 모달을 연다. 제목·종류·목표·설명·우선순위·`next_action`만 다루며 상태와 Acceptance Criteria는 별도 흐름으로 유지한다.
+- `삭제` 버튼은 위험 색상을 사용하고 확인 모달을 연다. 서버가 삭제 가능하다고 판단한 WorkItem에만 활성화한다.
+
+상태 메뉴에는 전체 enum을 그대로 보여주지 않고 현재 상태에서 허용되는 다음 상태만 표시한다.
+
+| 현재 표시 | 상태 메뉴 |
+| --- | --- |
+| Draft | 상태 변경 없음. `w/` 구체화 후 `ready`가 된다는 안내만 표시 |
+| `backlog` | `cancelled` |
+| `ready` | `cancelled`; `in_progress`는 `start_work()`만 변경 가능 |
+| `blocked` | `ready`, `cancelled` |
+| `in_progress` | 직접 변경 불가. 활성 Run을 `finish_work()`로 종료해야 한다는 안내 표시 |
+| `done`, `cancelled` | 최종 상태이므로 변경 메뉴 비활성화 |
+
+상태 변경은 일반 필드 수정과 분리한 `PATCH /api/work-items/{id}/status`로 요청한다. 서버는 `change_work_item_status()`를 호출해 실제 상태 전이, 활성 Run, `next_action`, `block_reason` 규칙을 다시 검사한다. 화면은 `allowed_statuses`, `can_edit`, `can_delete`, `delete_reason`처럼 서버가 돌려준 허용 정보를 사용하고 자체적으로 DB 규칙을 추측하지 않는다.
+
+웹 콘솔에서는 일반 `backlog → ready` 전이를 제공하지 않는다. 버튼만 숨기는 데 그치지 않고 웹 API가 직접 만든 우회 요청도 거부한다. 실행 계획을 완성하는 Codex 내부 흐름은 계속 `state_store.py`의 핵심 상태 변경 함수를 사용할 수 있으므로, Draft 구체화나 계획 확정 뒤의 정상적인 `ready` 전이는 유지된다.
+
+변경 성공 후에는 목록 카드와 상세 패널을 다시 읽는다. 요청 중에는 버튼을 잠그고, `409 Conflict`가 발생하면 다른 세션에서 상태가 바뀐 것이므로 최신 상세 정보를 다시 불러온 뒤 짧은 안내를 표시한다.
+
+### 삭제
+
+- 실제 삭제는 `backlog`이고 Run 이력이 전혀 없는 WorkItem에만 허용한다.
+- 삭제할 때 연결된 Acceptance Criteria도 같은 트랜잭션에서 정리하고, 삭제 사실은 State Event로 남긴다.
+- `ready`·`in_progress`·`blocked`·`done`·`cancelled`는 이력 보존을 위해 삭제하지 않는다. 더 이상 필요하지 않으면 상태를 `cancelled`로 바꾼다.
+- 첫 연결은 웹 콘솔의 삭제 기능으로 제한하고, 모델이 임의로 전체 WorkItem을 지우는 MCP 삭제 도구는 제공하지 않는다.
+
+### 연결 범위와 검증
+
+- 웹 콘솔에는 `PATCH /api/work-items/{id}`와 `DELETE /api/work-items/{id}`를 추가한다.
+- 수정·삭제가 허용되는 경우와 거부되는 경우(종료 상태, 실행 중 Run, Run 이력 보유)를 상태 저장소 테스트로 검증한다.
+- 존재하지 않는 ID, 잘못된 값, 상태 충돌은 각각 일관된 `404`, `422`, `409` 오류로 반환한다.
+
 ## 아직 하지 않는 것
 
 - 사용자가 모든 WI 필드와 AC를 직접 입력하게 만들지 않는다.

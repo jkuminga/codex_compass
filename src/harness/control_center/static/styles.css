@@ -158,6 +158,27 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
 .empty-detail p { max-width: 330px; margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
 .detail-header { padding: 22px 24px 20px; background: #fbfaf6; border-bottom: 1px solid var(--line); }
 .detail-header-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.detail-actions { display: flex; align-items: center; gap: 7px; }
+.detail-action-button, .danger-button {
+  min-height: 29px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 5px;
+  background: var(--paper-bright); color: var(--ink-soft); font-size: 10px; font-weight: 700;
+}
+.detail-action-button:hover { background: var(--paper-muted); color: var(--forest); }
+.detail-action-button.danger { color: var(--red); }
+.detail-action-button:disabled, .status-button:disabled { cursor: not-allowed; opacity: .46; }
+.status-control { position: relative; }
+.status-button { min-height: 29px; border-style: solid; cursor: pointer; }
+.status-menu {
+  position: absolute; top: calc(100% + 5px); right: 0; z-index: 15; min-width: 150px;
+  padding: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-bright);
+  box-shadow: 0 10px 28px rgba(20,43,33,.14); opacity: 0; visibility: hidden; transform: translateY(-3px);
+  transition: opacity .12s, transform .12s, visibility .12s;
+}
+.status-control:hover .status-menu, .status-control:focus-within .status-menu, .status-control.open .status-menu {
+  opacity: 1; visibility: visible; transform: translateY(0);
+}
+.status-menu button { width: 100%; padding: 8px 9px; border: 0; border-radius: 5px; background: transparent; color: var(--ink); text-align: left; font-size: 11px; }
+.status-menu button:hover, .status-menu button:focus { background: var(--paper-muted); color: var(--forest); }
 .detail-header h2 { margin: 14px 0 13px; font: 650 23px/1.28 var(--serif); letter-spacing: -.02em; }
 .detail-metadata { display: flex; flex-wrap: wrap; gap: 13px 22px; }
 .metadata-pair { display: flex; align-items: baseline; gap: 7px; }
@@ -189,7 +210,7 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
 .modal { width: min(560px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--paper-bright); box-shadow: var(--shadow); }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 19px 22px 17px; border-bottom: 1px solid var(--line); }
 .modal-header h2 { margin: 0; color: var(--forest); font: 650 23px/1.2 var(--serif); }
-#draft-form { padding: 21px 22px 0; }
+#draft-form, #edit-form { padding: 21px 22px 0; }
 .field { display: grid; gap: 7px; margin-bottom: 17px; }
 .field > span { color: var(--ink-soft); font: 700 10px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; }
 .field > span b { margin-left: 4px; color: var(--forest-mid); font-size: 9px; }
@@ -204,6 +225,12 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
 .form-error { margin-bottom: 17px; padding: 10px 12px; border: 1px solid #e4bab5; border-radius: 6px; background: var(--red-pale); color: #832d26; font-size: 11px; line-height: 1.5; }
 .modal-actions { margin: 22px -22px 0; padding: 15px 22px; display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid var(--line); background: var(--paper); }
 .button-spinner { width: 14px; height: 14px; border-color: rgba(255,255,255,.35); border-top-color: white; }
+.compact-modal { width: min(470px, 100%); }
+.confirm-body { padding: 20px 22px 0; }
+.confirm-body p { margin: 0 0 17px; color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
+.confirm-body code { color: var(--forest); font: 700 11px/1 var(--mono); }
+.danger-button { border-color: var(--red); background: var(--red); color: white; }
+.danger-button:disabled { cursor: not-allowed; opacity: .45; }
 
 ::-webkit-scrollbar { width: 7px; height: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -247,4 +274,6 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
   .filter-row input, .filter-count { display: none; }
   .items-pane { min-height: calc(100vh - 175px); border-right: 0; }
   .dock-hint { display: none; }
+  .detail-header-top { align-items: flex-start; flex-wrap: wrap; }
+  .detail-actions { width: 100%; justify-content: flex-end; }
 }

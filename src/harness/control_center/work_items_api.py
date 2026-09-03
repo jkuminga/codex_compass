@@ -32,6 +32,9 @@ WorkItemStatusFilter = Literal[
     "cancelled",
 ]
 
+WorkItemPriority = Literal["urgent", "high", "normal", "low"]
+WebStatusTarget = Literal["ready", "cancelled"]
+
 
 class DraftWorkItemRequest(BaseModel):
     """User-authored fields accepted when creating one Draft WorkItem."""
@@ -47,6 +50,31 @@ class DraftWorkItemRequest(BaseModel):
     @classmethod
     def empty_description_becomes_none(cls, value: str | None) -> str | None:
         return value or None
+
+
+class ReviseWorkItemRequest(BaseModel):
+    """Planning fields that the web console may request to revise."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    kind: WorkItemKind | None = None
+    goal: str | None = Field(default=None, min_length=1, max_length=2000)
+    description: str | None = Field(default=None, max_length=5000)
+    priority: WorkItemPriority | None = None
+    next_action: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("description", "next_action")
+    @classmethod
+    def empty_optional_text_becomes_none(cls, value: str | None) -> str | None:
+        return value or None
+
+
+class ChangeWorkItemStatusRequest(BaseModel):
+    """A status selected from the web console's deliberately small transition set."""
+
+    model_config = ConfigDict(extra="forbid")
+    status: WebStatusTarget
 
 
 def _database_path(request: Request) -> Path:
@@ -94,6 +122,17 @@ def _created_draft(item: dict[str, object]) -> dict[str, object]:
             "created_at",
         )
     }
+
+
+def _detail(work_item_id: str, database_path: Path) -> dict[str, object]:
+    """Build one detail response with server-owned management permissions."""
+
+    context = state_store.get_work_item_context(work_item_id, database_path=database_path)
+    context["work_item"]["is_draft"] = bool(context["work_item"]["is_draft"])
+    context["capabilities"] = state_store.get_work_item_management_capabilities(
+        work_item_id, database_path=database_path
+    )
+    return context
 
 
 def _matches_status(item: dict[str, object], filters: set[str]) -> bool:
@@ -150,10 +189,69 @@ def create_router() -> APIRouter:
 
     @router.get("/work-items/{work_item_id}")
     def get_item(work_item_id: str, request: Request) -> dict[str, object]:
-        context = state_store.get_work_item_context(
-            work_item_id, database_path=_database_path(request)
+        return _detail(work_item_id, _database_path(request))
+
+    @router.patch("/work-items/{work_item_id}")
+    def revise_item(
+        work_item_id: str, payload: ReviseWorkItemRequest, request: Request
+    ) -> dict[str, object]:
+        database_path = _database_path(request)
+        changes = payload.model_dump(exclude_unset=True)
+        capabilities = state_store.get_work_item_management_capabilities(
+            work_item_id, database_path=database_path
         )
-        context["work_item"]["is_draft"] = bool(context["work_item"]["is_draft"])
-        return context
+        disallowed = sorted(set(changes).difference(capabilities["editable_fields"]))
+        if disallowed:
+            raise state_store.ConflictError(
+                f"현재 WorkItem에서는 수정할 수 없는 필드입니다: {', '.join(disallowed)}"
+            )
+        if changes:
+            state_store.revise_work_item(
+                work_item_id,
+                actor="web_console",
+                database_path=database_path,
+                **changes,
+            )
+        return _detail(work_item_id, database_path)
+
+    @router.patch("/work-items/{work_item_id}/status")
+    def change_status(
+        work_item_id: str, payload: ChangeWorkItemStatusRequest, request: Request
+    ) -> dict[str, object]:
+        database_path = _database_path(request)
+        current = state_store.get_work_item(work_item_id, database_path=database_path)
+        capabilities = state_store.get_work_item_management_capabilities(
+            work_item_id, database_path=database_path
+        )
+        if payload.status not in capabilities["allowed_statuses"]:
+            raise state_store.ConflictError(
+                f"웹 콘솔에서는 {current['status']} → {payload.status} 상태 변경을 허용하지 않습니다."
+            )
+        state_store.change_work_item_status(
+            work_item_id,
+            payload.status,
+            actor="web_console",
+            reason="웹 콘솔에서 상태 변경",
+            next_action=current["next_action"] if payload.status == "ready" else None,
+            block_reason=None,
+            database_path=database_path,
+        )
+        return _detail(work_item_id, database_path)
+
+    @router.delete("/work-items/{work_item_id}")
+    def delete_item(work_item_id: str, request: Request) -> dict[str, object]:
+        database_path = _database_path(request)
+        capabilities = state_store.get_work_item_management_capabilities(
+            work_item_id, database_path=database_path
+        )
+        if not capabilities["can_delete"]:
+            raise state_store.ConflictError(str(capabilities["delete_reason"]))
+        state_store.delete_backlog_work_item(
+            work_item_id,
+            actor="web_console",
+            reason="웹 콘솔에서 삭제",
+            database_path=database_path,
+        )
+        return {"deleted_work_item_id": work_item_id}
 
     return router

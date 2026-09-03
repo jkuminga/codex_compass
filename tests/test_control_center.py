@@ -114,6 +114,95 @@ class ControlCenterApiTests(unittest.TestCase):
         self.assertEqual(context["acceptance_criteria"], [])
         self.assertIsNone(context["running_run"])
         self.assertEqual(context["recent_runs"], [])
+        self.assertTrue(context["capabilities"]["can_edit"])
+        self.assertTrue(context["capabilities"]["can_delete"])
+        self.assertEqual(context["capabilities"]["allowed_statuses"], [])
+
+    def test_edit_updates_user_managed_fields(self) -> None:
+        draft = self.create_draft()
+
+        response = self.client.patch(
+            f"/api/work-items/{draft['id']}",
+            json={
+                "title": "수정된 Draft",
+                "goal": "웹에서 계획을 수정한다.",
+                "description": None,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["work_item"]["title"], "수정된 Draft")
+        self.assertIsNone(response.json()["work_item"]["description"])
+
+    def test_web_api_rejects_backlog_to_ready_even_when_crafted(self) -> None:
+        backlog = state_store.create_work_item(
+            title="준비 전 작업",
+            kind="implementation",
+            goal="웹에서 Ready로 우회하지 못한다.",
+            actor="test",
+            database_path=self.database_path,
+        )
+
+        response = self.client.patch(
+            f"/api/work-items/{backlog['id']}/status", json={"status": "ready"}
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            state_store.get_work_item(backlog["id"], database_path=self.database_path)["status"],
+            "backlog",
+        )
+
+    def test_blocked_work_item_can_return_to_ready_from_web(self) -> None:
+        work_item = state_store.create_work_item(
+            title="차단된 작업",
+            kind="bug",
+            goal="차단 해제 흐름을 검증한다.",
+            next_action="원인을 확인한다.",
+            actor="test",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"], "ready", next_action="원인을 확인한다.",
+            actor="test", reason="준비", database_path=self.database_path,
+        )
+        run = state_store.start_run(
+            work_item["id"], intent="차단 상태를 만든다.", recall_query="차단 상태",
+            actor="test", database_path=self.database_path,
+        )
+        state_store.finish_run(
+            run["id"], run_status="interrupted", work_item_status="blocked",
+            summary="권한 부족으로 중단", termination_reason="권한 없음",
+            next_action="권한을 기다린다.", block_reason="권한 없음",
+            actor="test", reason="차단",
+            database_path=self.database_path,
+        )
+
+        response = self.client.patch(
+            f"/api/work-items/{work_item['id']}/status", json={"status": "ready"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["work_item"]["status"], "ready")
+        self.assertEqual(response.json()["work_item"]["next_action"], "권한을 기다린다.")
+        self.assertIsNone(response.json()["work_item"]["block_reason"])
+
+    def test_delete_is_limited_to_unstarted_backlog_items(self) -> None:
+        draft = self.create_draft()
+        response = self.client.delete(f"/api/work-items/{draft['id']}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deleted_work_item_id"], draft["id"])
+
+        ready = state_store.create_work_item(
+            title="삭제하면 안 되는 작업", kind="research", goal="기록을 보존한다.",
+            actor="test", database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            ready["id"], "ready", next_action="실행한다.", actor="test",
+            reason="준비", database_path=self.database_path,
+        )
+        blocked = self.client.delete(f"/api/work-items/{ready['id']}")
+        self.assertEqual(blocked.status_code, 409)
 
     def test_missing_work_item_returns_not_found_envelope(self) -> None:
         response = self.client.get("/api/work-items/WI-missing")
