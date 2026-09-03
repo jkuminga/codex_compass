@@ -210,6 +210,48 @@ class ControlCenterApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["error"]["code"], "not_found")
 
+    def test_detail_exposes_run_history_fields_for_recent_runs_cards(self) -> None:
+        work_item = state_store.create_work_item(
+            title="Run 카드 데이터",
+            kind="verification",
+            goal="Recent Runs 카드가 실행 목적과 결과를 표시한다.",
+            next_action="검증을 실행한다.",
+            actor="test",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"], "ready", next_action="검증을 실행한다.",
+            actor="test", reason="검증 준비", database_path=self.database_path,
+        )
+        failed_run = state_store.start_run(
+            work_item["id"], intent="실패한 검증을 실행한다.", recall_query="Run 카드",
+            actor="test", database_path=self.database_path,
+        )
+        state_store.finish_run(
+            failed_run["id"], run_status="failed", work_item_status="ready",
+            summary="검증 명령이 실패했다.", termination_reason="테스트 환경 오류",
+            next_action="환경을 고친 뒤 다시 실행한다.", actor="test",
+            reason="검증 실패", database_path=self.database_path,
+        )
+        current_run = state_store.start_run(
+            work_item["id"], intent="현재 검증을 실행한다.", recall_query="현재 검증",
+            actor="test", database_path=self.database_path,
+        )
+
+        response = self.client.get(f"/api/work-items/{work_item['id']}")
+
+        self.assertEqual(response.status_code, 200)
+        context = response.json()
+        self.assertEqual(context["running_run"]["id"], current_run["id"])
+        self.assertEqual(context["running_run"]["intent"], "현재 검증을 실행한다.")
+        recent = context["recent_runs"][0]
+        self.assertEqual(recent["id"], failed_run["id"])
+        self.assertEqual(recent["status"], "failed")
+        self.assertEqual(recent["summary"], "검증 명령이 실패했다.")
+        self.assertEqual(recent["termination_reason"], "테스트 환경 오류")
+        self.assertIsNotNone(recent["started_at"])
+        self.assertIsNotNone(recent["ended_at"])
+
 
 if __name__ == "__main__":
     unittest.main()
