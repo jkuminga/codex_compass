@@ -67,6 +67,61 @@ function formatDate(value) {
   return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
+function formatRunDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
+function formatElapsed(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  if (hours) return `${hours}시간 ${minutes}분 ${remainder}초`;
+  if (minutes) return `${minutes}분 ${remainder}초`;
+  return `${remainder}초`;
+}
+
+function elapsedSeconds(startedAt, endedAt = null, now = Date.now()) {
+  const started = new Date(startedAt).getTime();
+  const ended = endedAt ? new Date(endedAt).getTime() : now;
+  if (Number.isNaN(started) || Number.isNaN(ended)) return null;
+  return Math.max(0, Math.floor((ended - started) / 1000));
+}
+
+function durationLabel(run) {
+  if (!run.started_at) return "시간 미상";
+  const totalSeconds = elapsedSeconds(run.started_at, run.ended_at);
+  if (totalSeconds === null) return "시간 미상";
+  const elapsed = formatElapsed(totalSeconds);
+  return run.status === "running" ? `${elapsed} 경과 중` : `${elapsed} 소요`;
+}
+
+function updateRunningDurations(now = Date.now()) {
+  document.querySelectorAll("[data-run-elapsed]").forEach((element) => {
+    const totalSeconds = elapsedSeconds(element.dataset.startedAt, null, now);
+    if (totalSeconds !== null) {
+      element.textContent = `${formatElapsed(totalSeconds)} 경과 중`;
+    }
+  });
+}
+
+function runStatusLabel(value) {
+  return {
+    running: "Running", succeeded: "Succeeded", failed: "Failed",
+    interrupted: "Interrupted", cancelled: "Cancelled",
+  }[value] || value;
+}
+
+function runStatusClass(value) {
+  return ["running", "succeeded", "failed", "interrupted", "cancelled"].includes(value)
+    ? value : "unknown";
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -183,8 +238,30 @@ function renderDetail(context) {
         </li>`).join("")}</ul>`
     : emptySection(item.is_draft ? "구체화 전이라 완료 조건이 아직 없습니다." : "등록된 완료 조건이 없습니다.");
   const runsHtml = runs.length
-    ? `<ul class="runs-list">${runs.map((run) => `
-        <li class="run-row"><code>${escapeHtml(run.id)}</code><span>${escapeHtml(run.status)} · ${escapeHtml(formatDate(run.started_at))}</span></li>`).join("")}</ul>`
+    ? `<ul class="runs-list">${runs.map((run) => {
+        const status = runStatusClass(run.status);
+        const result = run.summary || (run.status === "running" ? "현재 실행 중입니다." : "실행 결과가 기록되지 않았습니다.");
+        return `
+        <li class="run-card run-card-${status}">
+          <div class="run-card-header">
+            <div class="run-card-identity">
+              <span class="run-status-pill run-status-${status}"><span class="run-status-dot"></span>${escapeHtml(runStatusLabel(run.status))}</span>
+              <code>${escapeHtml(run.id)}</code>
+            </div>
+            <div class="run-card-time">
+              <time>${escapeHtml(formatRunDate(run.started_at))}</time>
+              <span class="run-elapsed ${run.status === "running" ? "is-running" : ""}" ${run.status === "running" ? `data-run-elapsed data-started-at="${escapeHtml(run.started_at || "")}"` : ""}>${escapeHtml(durationLabel(run))}</span>
+            </div>
+          </div>
+          <div class="run-card-body">
+            <div class="run-field"><span>실행 목적</span><p>${escapeHtml(run.intent || "실행 목적이 기록되지 않았습니다.")}</p></div>
+            <div class="run-field"><span>실행 결과</span>${run.status === "running"
+              ? '<div class="run-result is-running"><span class="run-live-status" role="status" aria-label="실행 중"><span class="run-progress-ring" aria-hidden="true"></span><span>현재 실행 중입니다.</span></span></div>'
+              : `<p class="run-result">${escapeHtml(result)}</p>`}</div>
+            ${run.termination_reason ? `<div class="run-termination"><span class="run-warning-icon">△</span><span>경고: ${escapeHtml(run.termination_reason)}</span></div>` : ""}
+          </div>
+        </li>`;
+      }).join("")}</ul>`
     : emptySection(item.is_draft ? "Draft에는 아직 Run이 없습니다." : "실행 기록이 없습니다.");
   const statusOptions = (capabilities.allowed_statuses || []).map((target) => `
     <button type="button" role="menuitem" data-status-target="${escapeHtml(target)}">
@@ -225,7 +302,7 @@ function renderDetail(context) {
       ${item.description ? `<section class="detail-section"><h3>Description</h3><p class="detail-block">${escapeHtml(item.description)}</p></section>` : ""}
       <section class="detail-section"><h3>Next Action</h3>${item.next_action ? `<p class="detail-block next-action">${escapeHtml(item.next_action)}</p>` : emptySection("다음 행동은 구체화 과정에서 정해집니다.")}</section>
       <section class="detail-section"><h3>Acceptance Criteria</h3>${criteriaHtml}</section>
-      <section class="detail-section"><h3>Recent Runs</h3>${runsHtml}</section>
+      <section class="detail-section runs-section"><div class="runs-section-heading"><h3>Recent Runs</h3>${runs.length ? `<span class="runs-count">총 ${runs.length}건</span>` : ""}</div>${runsHtml}</section>
     </div>
   `;
   elements.emptyDetail.classList.add("hidden");
@@ -467,4 +544,5 @@ document.addEventListener("keydown", (event) => {
   else if (!elements.modal.classList.contains("hidden")) closeModal();
 });
 
+window.setInterval(updateRunningDurations, 1000);
 loadItems();

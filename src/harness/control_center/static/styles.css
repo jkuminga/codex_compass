@@ -197,6 +197,41 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
 .run-row { justify-content: space-between; align-items: center; }
 .run-row code { font: 10px/1 var(--mono); color: var(--forest); }
 .run-row span { color: var(--ink-soft); text-transform: capitalize; }
+.runs-section-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 7px; border-bottom: 1px solid #e4e4dd; }
+.runs-section-heading h3 { margin: 0; padding: 0; border: 0; }
+.runs-count { padding: 3px 7px; border-radius: 9px; background: var(--paper-muted); color: var(--ink-soft); font: 10px/1 var(--mono); }
+.run-card { padding: 13px 14px; border: 1px solid #e3e3dc; border-radius: 7px; background: var(--paper-bright); box-shadow: 0 2px 7px rgba(20,43,33,.035); }
+.run-card-running { border: 2px solid var(--forest); padding: 12px 13px; background: #f2f7f2; }
+.run-card-failed, .run-card-interrupted, .run-card-cancelled { border-color: #e6beba; }
+.run-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 9px; border-bottom: 1px solid #e5e5de; }
+.run-card-running .run-card-header { border-bottom-color: #cddfd1; }
+.run-card-identity, .run-card-time { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.run-card-identity code { color: var(--forest); font: 11px/1.2 var(--mono); white-space: nowrap; }
+.run-card-time { justify-content: flex-end; flex-wrap: wrap; color: var(--ink-soft); font: 9px/1.35 var(--mono); text-align: right; }
+.run-card-time span { padding: 3px 5px; border-radius: 4px; background: var(--paper-muted); white-space: nowrap; }
+.run-card-running .run-card-time span { background: #dcebe2; color: var(--forest); }
+.run-elapsed.is-running { font-variant-numeric: tabular-nums; }
+.run-result.is-running { margin: 0; color: var(--ink-soft); font-style: normal; }
+.run-live-status { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft); font: italic 11px/1.55 var(--sans); }
+.run-progress-ring { width: 13px; height: 13px; flex: 0 0 13px; padding: 0 !important; border: 2px solid #b9d7c1; border-top-color: var(--forest); border-right-color: var(--forest); border-radius: 50%; background: transparent !important; animation: run-ring-spin .9s linear infinite; }
+@keyframes run-ring-spin { to { transform: rotate(360deg); } }
+.run-status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid transparent; border-radius: 4px; font: 700 9px/1 var(--sans); letter-spacing: .035em; }
+.run-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.run-status-running { border-color: #9ec8a9; background: #dcebe2; color: var(--forest); }
+.run-status-running .run-status-dot { animation: run-dot-pulse 1.4s ease-in-out infinite; }
+@keyframes run-dot-pulse { 50% { opacity: .4; transform: scale(.7); } }
+.run-status-succeeded { border-color: #bed6c5; background: #e4eee8; color: #387055; }
+.run-status-failed, .run-status-interrupted { border-color: #e6beba; background: var(--red-pale); color: var(--red); }
+.run-status-cancelled { border-color: var(--line); background: var(--paper-muted); color: var(--ink-soft); }
+.run-card-body { display: grid; gap: 10px; padding-top: 10px; }
+.run-field > span { display: block; margin-bottom: 3px; color: #7d8580; font: 700 9px/1 var(--sans); letter-spacing: .09em; text-transform: uppercase; }
+.run-field p { margin: 0; color: var(--ink); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
+.run-field p.run-result { color: #4b554f; }
+.run-termination { display: flex; align-items: flex-start; gap: 7px; padding: 9px 10px; border: 1px solid #e6beba; border-radius: 5px; background: #fff1ef; color: #832d26; font: 10px/1.45 var(--mono); overflow-wrap: anywhere; }
+.run-warning-icon { flex: 0 0 auto; color: var(--red); font-size: 14px; line-height: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .run-progress-ring, .run-status-running .run-status-dot { animation-duration: 2.4s; }
+}
 .draft-notice { padding: 11px 13px; border-left: 3px solid var(--violet); background: var(--violet-pale); color: #49378e; font-size: 11px; line-height: 1.55; }
 .subtle-empty { padding: 12px; border: 1px dashed var(--line); border-radius: 6px; color: #858d88; text-align: center; font-size: 11px; }
 
@@ -276,4 +311,6 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
   .dock-hint { display: none; }
   .detail-header-top { align-items: flex-start; flex-wrap: wrap; }
   .detail-actions { width: 100%; justify-content: flex-end; }
+  .run-card-header { align-items: flex-start; flex-direction: column; }
+  .run-card-time { width: 100%; justify-content: flex-start; text-align: left; }
 }
