@@ -6,7 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from src.harness import state_store, work_item_picker
+from src.harness import runtime_binding, state_store, work_item_picker
 from src.harness.hooks import user_prompt_submit
 
 
@@ -64,9 +64,133 @@ class UserPromptSubmitHookTests(unittest.TestCase):
 
         context = output["hookSpecificOutput"]["additionalContext"]
         packet = json.loads(context.split("\n", 1)[1].rsplit("\n", 1)[0])
-        self.assertEqual(packet, {"selection_status": "selected", "work_item_id": work_item["id"], "title": work_item["title"], "is_draft": False, "request": "로그인 구현"})
+        self.assertEqual(
+            packet,
+            {
+                "selection_status": "selected",
+                "work_item_id": work_item["id"],
+                "title": work_item["title"],
+                "is_draft": False,
+                "request": "로그인 구현",
+                "recovery": {
+                    "status": "none",
+                    "run_id": None,
+                    "binding_deleted": False,
+                    "database_ok": True,
+                    "active_work_items": [],
+                    "warnings": [],
+                },
+            },
+        )
         selections_directory = self.root / "selections"
         self.assertFalse(selections_directory.exists() and list(selections_directory.iterdir()))
+
+    def test_work_prompt_recovers_previous_turn_before_building_picker_context(self) -> None:
+        work_item = self.create_ready_work_item()
+        run = state_store.start_run(
+            work_item["id"],
+            intent="이전 Turn에서 중단된 작업",
+            recall_query="UPS 복구",
+            actor="test",
+            database_path=self.database_path,
+        )
+        bindings_directory = self.root / "bindings"
+        runtime_binding.save_binding(
+            session_id="session-current",
+            turn_id="turn-previous",
+            work_item_id=work_item["id"],
+            run_id=run["id"],
+            bindings_directory=bindings_directory,
+        )
+
+        def write_selected_result(request_path: Path) -> None:
+            request = work_item_picker.read_json_object(request_path)
+            self.assertIn(
+                work_item["id"], {item["id"] for item in request["work_items"]}
+            )
+            work_item_picker.atomic_write_json(
+                work_item_picker.result_path_for(request_path),
+                {
+                    "schema_version": 1,
+                    "request_id": request["request_id"],
+                    "session_id": request["session_id"],
+                    "turn_id": request["turn_id"],
+                    "created_at": work_item_picker.format_timestamp(work_item_picker.utc_now()),
+                    "status": "selected",
+                    "work_item_id": work_item["id"],
+                },
+            )
+
+        with (
+            patch.object(user_prompt_submit, "launch_terminal_picker", side_effect=write_selected_result),
+            patch.dict("os.environ", {"HARNESS_BINDINGS_DIRECTORY": str(bindings_directory)}),
+        ):
+            output = user_prompt_submit.dispatch_user_prompt_submit(
+                self.event(), database_path=self.database_path
+            )
+
+        context = output["hookSpecificOutput"]["additionalContext"]
+        packet = json.loads(context.split("\n", 1)[1].rsplit("\n", 1)[0])
+        self.assertEqual(packet["recovery"]["status"], "recovered")
+        self.assertEqual(packet["recovery"]["run_id"], run["id"])
+        self.assertTrue(packet["recovery"]["binding_deleted"])
+        self.assertEqual(
+            state_store.get_run(run["id"], database_path=self.database_path)["status"],
+            "interrupted",
+        )
+
+    def test_work_prompt_reports_other_session_without_taking_it_over(self) -> None:
+        work_item = self.create_ready_work_item()
+        run = state_store.start_run(
+            work_item["id"],
+            intent="다른 세션의 작업",
+            recall_query="세션 충돌",
+            actor="test",
+            database_path=self.database_path,
+        )
+        bindings_directory = self.root / "bindings"
+        runtime_binding.save_binding(
+            session_id="session-other",
+            turn_id="turn-other",
+            work_item_id=work_item["id"],
+            run_id=run["id"],
+            bindings_directory=bindings_directory,
+        )
+
+        def write_cancelled_result(request_path: Path) -> None:
+            request = work_item_picker.read_json_object(request_path)
+            work_item_picker.atomic_write_json(
+                work_item_picker.result_path_for(request_path),
+                {
+                    "schema_version": 1,
+                    "request_id": request["request_id"],
+                    "session_id": request["session_id"],
+                    "turn_id": request["turn_id"],
+                    "created_at": work_item_picker.format_timestamp(work_item_picker.utc_now()),
+                    "status": "cancelled",
+                },
+            )
+
+        with (
+            patch.object(user_prompt_submit, "launch_terminal_picker", side_effect=write_cancelled_result),
+            patch.dict("os.environ", {"HARNESS_BINDINGS_DIRECTORY": str(bindings_directory)}),
+        ):
+            output = user_prompt_submit.dispatch_user_prompt_submit(
+                self.event(), database_path=self.database_path
+            )
+
+        context = output["hookSpecificOutput"]["additionalContext"]
+        packet = json.loads(context.split("\n", 1)[1].rsplit("\n", 1)[0])
+        self.assertEqual(packet["selection_status"], "cancelled")
+        self.assertEqual(packet["recovery"]["status"], "warning")
+        self.assertEqual(
+            packet["recovery"]["active_work_items"][0]["ownership"],
+            "other_session",
+        )
+        self.assertEqual(
+            state_store.get_run(run["id"], database_path=self.database_path)["status"],
+            "running",
+        )
 
     def test_selected_picker_result_is_closed_by_the_hook_after_it_is_read(self) -> None:
         work_item = self.create_ready_work_item()

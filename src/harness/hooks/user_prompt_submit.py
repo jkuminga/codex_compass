@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from uuid import uuid4
 
-from .. import state_store, work_item_picker
+from .. import runtime_binding, state_store, work_item_picker
+from . import ups_recovery
 
 
 SELECTION_TIMEOUT_SECONDS = 300
@@ -309,9 +310,26 @@ def dispatch_user_prompt_submit(
     request_text = strip_work_prefix(prompt)
     if request_text is None:
         return _hook_output()
+    recovery: ups_recovery.RecoveryReport | None = None
     try:
         session_id = _required_string(event, "session_id")
         turn_id = _required_string(event, "turn_id")
+        bindings_directory = os.environ.get("HARNESS_BINDINGS_DIRECTORY") or runtime_binding.DEFAULT_BINDINGS_DIRECTORY
+        recovery = ups_recovery.reconcile_current_session(
+            session_id=session_id,
+            current_turn_id=turn_id,
+            database_path=database_path,
+            bindings_directory=bindings_directory,
+        )
+        if not recovery.can_continue:
+            return _hook_output(
+                _selection_packet(
+                    "error",
+                    reason=(recovery.warnings[0] if recovery.warnings else "recovery_failed"),
+                    recovery=recovery.as_packet(),
+                    request=request_text,
+                )
+            )
         selections_directory = _selection_directory(database_path)
         cleanup_expired_selection_files(selections_directory)
         request_path = write_selection_request(
@@ -320,19 +338,41 @@ def dispatch_user_prompt_submit(
             selections_directory=selections_directory,
         )
     except Exception as error:
-        return _hook_output(_selection_packet("error", reason=type(error).__name__))
+        return _hook_output(
+            _selection_packet(
+                "error",
+                reason=type(error).__name__,
+                recovery=recovery.as_packet() if recovery else None,
+                request=request_text,
+            )
+        )
     try:
         launch_terminal_picker(request_path)
         result = wait_for_selection_result(request_path)
         if result is None:
-            return _hook_output(_selection_packet("timed_out"))
+            return _hook_output(
+                _selection_packet(
+                    "timed_out",
+                    recovery=recovery.as_packet() if recovery else None,
+                    request=request_text,
+                )
+            )
         packet = validate_selection_result(
             request_path, result, request_text=request_text
         )
+        if recovery is not None:
+            packet["recovery"] = recovery.as_packet()
         close_terminal_picker(request_path)
         return _hook_output(packet)
     except Exception as error:
-        return _hook_output(_selection_packet("error", reason=type(error).__name__))
+        return _hook_output(
+            _selection_packet(
+                "error",
+                reason=type(error).__name__,
+                recovery=recovery.as_packet() if recovery else None,
+                request=request_text,
+            )
+        )
     finally:
         cleanup_selection_files(request_path)
 
