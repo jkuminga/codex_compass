@@ -206,5 +206,34 @@
         </footer>
       </section>
     </div>
+
+    <div class="modal-backdrop hidden" id="memo-modal" role="presentation">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="memo-modal-title">
+        <header class="modal-header">
+          <div><p class="eyebrow">WORK ITEM NOTE</p><h2 id="memo-modal-title">새 메모</h2></div>
+          <button class="icon-button" id="close-memo-modal" type="button" aria-label="닫기">×</button>
+        </header>
+        <form id="memo-form" novalidate>
+          <div class="form-error hidden" id="memo-form-error" role="alert"></div>
+          <label class="field memo-title-field"><span>Title <b>필수</b></span><input name="title" type="text" maxlength="200" placeholder="메모 제목" /></label>
+          <label class="field memo-kind-field"><span>Kind <b>필수</b></span>
+            <div class="memo-kind-options">
+              <label><input type="radio" name="kind" value="general" checked /><span>일반</span></label>
+              <label><input type="radio" name="kind" value="decision" /><span>결정</span></label>
+              <label><input type="radio" name="kind" value="problem" /><span>문제</span></label>
+              <label><input type="radio" name="kind" value="idea" /><span>아이디어</span></label>
+              <label><input type="radio" name="kind" value="question" /><span>질문</span></label>
+              <label><input type="radio" name="kind" value="reference" /><span>참고</span></label>
+            </div>
+          </label>
+          <label class="field memo-author-field"><span>Author <em>선택</em></span><input name="author" type="text" maxlength="200" placeholder="(선택사항)" /></label>
+          <label class="field memo-content-field"><span>Content <b>필수</b></span><textarea name="content" rows="6" maxlength="100000" placeholder="Markdown으로 메모를 작성하세요."></textarea><small class="field-hint">입력 중 미리보기는 제공하지 않으며, 저장 후 안전하게 Markdown으로 표시합니다.</small></label>
+          <footer class="modal-actions">
+            <button class="secondary-button" id="cancel-memo" type="button">취소</button>
+            <button class="primary-button" id="submit-memo" type="submit"><span class="memo-submit-label">메모 저장</span><span class="button-spinner hidden" aria-hidden="true"></span></button>
+          </footer>
+        </form>
+      </section>
+    </div>
   </body>
 </html>

@@ -32,7 +32,7 @@ class StateStoreSchemaTests(unittest.TestCase):
             (work_item_id, status, next_action),
         )
 
-    def test_schema_builds_the_eight_state_store_tables(self) -> None:
+    def test_schema_builds_the_nine_state_store_tables(self) -> None:
         database = self.open_database()
 
         table_names = {
@@ -57,6 +57,7 @@ class StateStoreSchemaTests(unittest.TestCase):
                 "criterion_evidence",
                 "state_events",
                 "memory_candidates",
+                "work_item_memos",
             },
         )
 

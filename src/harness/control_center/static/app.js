@@ -19,12 +19,22 @@ const KIND_OPTIONS = [
   ["maintenance", "Maintenance"],
 ];
 
+const MEMO_KIND_OPTIONS = [
+  ["general", "일반"], ["decision", "결정"], ["problem", "문제"],
+  ["idea", "아이디어"], ["question", "질문"], ["reference", "참고"],
+];
+const MEMO_STATUS_OPTIONS = [["", "전체 상태"], ["open", "확인 필요"], ["closed", "정리됨"]];
+
 const state = {
   items: [],
   selectedId: null,
   selectedContext: null,
   statusFilters: new Set(),
   kindFilters: new Set(),
+  memoStatusFilter: "",
+  memoKindFilter: "",
+  editingMemoId: null,
+  detailTab: "overview",
 };
 
 const elements = {
@@ -46,6 +56,10 @@ const elements = {
   deleteModal: document.querySelector("#delete-modal"),
   deleteConfirmation: document.querySelector("#delete-confirmation"),
   confirmDelete: document.querySelector("#confirm-delete"),
+  memoModal: document.querySelector("#memo-modal"),
+  memoForm: document.querySelector("#memo-form"),
+  memoFormError: document.querySelector("#memo-form-error"),
+  submitMemo: document.querySelector("#submit-memo"),
 };
 
 function statusOf(item) {
@@ -129,6 +143,186 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function renderMarkdown(value) {
+  // Escape first: user-authored HTML never becomes executable markup.
+  const source = escapeHtml(value);
+  const lines = source.split("\n");
+  const output = [];
+  let inCode = false;
+  let listOpen = false;
+  const inline = (line) => line
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/_([^_]+)_/g, "<em>$1</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+  const closeList = () => {
+    if (listOpen) { output.push("</ul>"); listOpen = false; }
+  };
+  for (const line of lines) {
+    if (line.startsWith("```")) {
+      if (inCode) { output.push("</code></pre>"); inCode = false; }
+      else { closeList(); output.push("<pre><code>"); inCode = true; }
+      continue;
+    }
+    if (inCode) { output.push(`${line}\n`); continue; }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (heading) { closeList(); output.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`); }
+    else if (bullet) { if (!listOpen) { output.push("<ul>"); listOpen = true; } output.push(`<li>${inline(bullet[1])}</li>`); }
+    else if (!line.trim()) { closeList(); }
+    else { closeList(); output.push(`<p>${inline(line)}</p>`); }
+  }
+  closeList();
+  if (inCode) output.push("</code></pre>");
+  return output.join("");
+}
+
+function memoKindLabel(value) {
+  return labelFor(MEMO_KIND_OPTIONS, value);
+}
+
+function memoSectionHtml() {
+  const statusOptions = [["", "전체 상태"], ...MEMO_STATUS_OPTIONS].map(([value, label]) =>
+    `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("");
+  const kindOptions = [["", "전체 종류"], ...MEMO_KIND_OPTIONS].map(([value, label]) =>
+    `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("");
+  return `
+    <section class="detail-section memo-section">
+      <div class="memo-heading"><div class="section-heading-inline"><h3>작업 메모 <small>(WORK MEMOS)</small></h3><span class="memo-count" id="memo-count">총 0건</span></div><button class="primary-button memo-add-button" id="add-memo" type="button">＋ 새 메모 추가</button></div>
+      <div class="memo-toolbar" role="group" aria-label="메모 필터">
+        <label class="memo-filter-control"><span>상태:</span><select id="memo-status-filter">${statusOptions}</select></label>
+        <label class="memo-filter-control"><span>종류:</span><select id="memo-kind-filter">${kindOptions}</select></label>
+      </div>
+      <div class="memo-filter-summary"><span id="memo-filter-summary">전체 0건 표시 중</span><span class="memo-filter-divider" aria-hidden="true">•</span><span>작성자: ALL</span><button type="button" id="reset-memo-filters"><span aria-hidden="true">↻</span> 필터 초기화</button></div>
+      <p class="memo-filter-hint hidden" id="memo-filter-hint">필터 적용 중 · 순서 변경은 전체 보기에서만 가능합니다.</p>
+      <div class="memo-list" id="memo-list"></div>
+    </section>`;
+}
+
+function detailTabsHtml(activeTab) {
+  const memoCount = (state.selectedContext?.memos || []).length;
+  return `
+    <nav class="detail-tabs" id="detail-tabs" aria-label="WorkItem 상세 메뉴">
+      <button type="button" class="detail-tab ${activeTab === "overview" ? "active" : ""}" data-detail-tab="overview" aria-selected="${activeTab === "overview" ? "true" : "false"}">Overview</button>
+      <button type="button" class="detail-tab ${activeTab === "memos" ? "active" : ""}" data-detail-tab="memos" aria-selected="${activeTab === "memos" ? "true" : "false"}">Memo <span>${memoCount}</span></button>
+      <span class="detail-tab-id">${escapeHtml(state.selectedContext?.work_item?.id || "")}</span>
+    </nav>`;
+}
+
+function setDetailTab(tab) {
+  state.detailTab = tab === "memos" ? "memos" : "overview";
+  document.querySelectorAll("[data-detail-tab]").forEach((button) => {
+    const active = button.dataset.detailTab === state.detailTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelector("#overview-panel")?.classList.toggle("hidden", state.detailTab !== "overview");
+  document.querySelector("#memos-panel")?.classList.toggle("hidden", state.detailTab !== "memos");
+}
+
+function visibleMemos() {
+  const memos = state.selectedContext?.memos || [];
+  return memos.filter((memo) =>
+    (!state.memoStatusFilter || memo.status === state.memoStatusFilter) &&
+    (!state.memoKindFilter || memo.kind === state.memoKindFilter));
+}
+
+function renderMemoCards() {
+  const list = document.querySelector("#memo-list");
+  const count = document.querySelector("#memo-count");
+  if (!list || !count) return;
+  const statusFilter = document.querySelector("#memo-status-filter");
+  const kindFilter = document.querySelector("#memo-kind-filter");
+  if (statusFilter) statusFilter.value = state.memoStatusFilter;
+  if (kindFilter) kindFilter.value = state.memoKindFilter;
+  const memos = visibleMemos();
+  const total = (state.selectedContext?.memos || []).length;
+  count.textContent = `총 ${total}건`;
+  const filtered = Boolean(state.memoStatusFilter || state.memoKindFilter);
+  const summary = document.querySelector("#memo-filter-summary");
+  if (summary) summary.textContent = `${filtered ? "필터 결과 " : "전체 "}${memos.length}건 표시 중`;
+  const hint = document.querySelector("#memo-filter-hint");
+  hint?.classList.toggle("hidden", !filtered);
+  if (!memos.length) {
+    list.innerHTML = `<div class="subtle-empty">표시할 메모가 없습니다.</div>`;
+    return;
+  }
+  list.innerHTML = memos.map((memo) => `
+    <article class="memo-card ${memo.is_pinned ? "is-pinned" : ""} ${memo.status === "closed" ? "is-closed" : ""}" data-memo-id="${escapeHtml(memo.id)}" data-pinned="${memo.is_pinned ? "true" : "false"}" draggable="${filtered ? "false" : "true"}">
+      <div class="memo-card-top"><span class="memo-drag-handle" aria-hidden="true">⋮⋮</span><div class="memo-card-title"><h4>${escapeHtml(memo.title)}</h4><span class="memo-kind">${escapeHtml(memoKindLabel(memo.kind))}</span><span class="memo-status">${escapeHtml(memo.status === "open" ? "확인 필요" : "정리됨")}</span></div><div class="memo-card-actions"><button type="button" data-memo-action="pin" title="${memo.is_pinned ? "고정 해제" : "상단 고정"}">${memo.is_pinned ? "★" : "☆"}</button><button type="button" data-memo-action="edit" title="메모 수정">✎</button><button type="button" data-memo-action="delete" title="메모 삭제">×</button></div></div>
+      <div class="memo-content">${renderMarkdown(memo.content)}</div>
+      <div class="memo-card-footer"><span>${escapeHtml(memo.author || "anon")}</span><time>${escapeHtml(formatDate(memo.updated_at || memo.created_at))}</time><button type="button" data-memo-action="status">${memo.status === "open" ? "정리됨으로 표시" : "확인 필요로 되돌리기"}</button></div>
+    </article>`).join("");
+}
+
+async function refreshSelectedDetail() {
+  const item = state.selectedContext?.work_item;
+  if (item) await selectItem(item.id);
+}
+
+async function handleMemoAction(event) {
+  const button = event.target.closest("[data-memo-action]");
+  const card = event.target.closest("[data-memo-id]");
+  if (!button || !card) return;
+  const item = state.selectedContext?.work_item;
+  const memoId = card.dataset.memoId;
+  const memo = (state.selectedContext?.memos || []).find((entry) => entry.id === memoId);
+  if (!item || !memo) return;
+  const action = button.dataset.memoAction;
+  try {
+    if (action === "edit") return openMemoModal(memoId);
+    if (action === "delete") {
+      if (!window.confirm(`“${memo.title}” 메모를 삭제할까요? 삭제 후 복구할 수 없습니다.`)) return;
+      await api(`/api/work-items/${encodeURIComponent(item.id)}/memos/${encodeURIComponent(memoId)}`, { method: "DELETE" });
+    } else if (action === "status" || action === "pin") {
+      const payload = action === "status" ? { status: memo.status === "open" ? "closed" : "open" } : { is_pinned: !memo.is_pinned };
+      await api(`/api/work-items/${encodeURIComponent(item.id)}/memos/${encodeURIComponent(memoId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+    }
+    await refreshSelectedDetail();
+  } catch (error) { window.alert(error.message); }
+}
+
+async function saveMemoOrder() {
+  const item = state.selectedContext?.work_item;
+  const list = document.querySelector("#memo-list");
+  if (!item || !list || state.memoStatusFilter || state.memoKindFilter) return;
+  const memoIds = [...list.querySelectorAll("[data-memo-id]")].map((node) => node.dataset.memoId);
+  try {
+    const payload = await api(`/api/work-items/${encodeURIComponent(item.id)}/memos/reorder`, { method: "POST", body: JSON.stringify({ memo_ids: memoIds }) });
+    state.selectedContext.memos = payload.memos;
+    renderMemoCards();
+  } catch (error) { window.alert(error.message); await refreshSelectedDetail(); }
+}
+
+function bindMemoInteractions() {
+  const list = document.querySelector("#memo-list");
+  document.querySelector("#memo-status-filter")?.addEventListener("change", (event) => { state.memoStatusFilter = event.target.value; renderMemoCards(); });
+  document.querySelector("#memo-kind-filter")?.addEventListener("change", (event) => { state.memoKindFilter = event.target.value; renderMemoCards(); });
+  document.querySelector("#reset-memo-filters")?.addEventListener("click", () => {
+    state.memoStatusFilter = ""; state.memoKindFilter = "";
+    document.querySelector("#memo-status-filter").value = ""; document.querySelector("#memo-kind-filter").value = ""; renderMemoCards();
+  });
+  document.querySelector("#add-memo")?.addEventListener("click", () => openMemoModal());
+  list?.addEventListener("click", handleMemoAction);
+  list?.addEventListener("dragstart", (event) => {
+    const card = event.target.closest("[data-memo-id]");
+    if (!card || state.memoStatusFilter || state.memoKindFilter) { event.preventDefault(); return; }
+    card.classList.add("dragging"); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", card.dataset.memoId);
+  });
+  list?.addEventListener("dragend", (event) => event.target.closest("[data-memo-id]")?.classList.remove("dragging"));
+  list?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    const target = event.target.closest("[data-memo-id]");
+    const source = list.querySelector(".dragging");
+    if (!target || !source || target === source || target.dataset.pinned !== source.dataset.pinned) return;
+    const rect = target.getBoundingClientRect();
+    target.parentNode.insertBefore(source, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+  });
+  list?.addEventListener("drop", (event) => { event.preventDefault(); saveMemoOrder(); });
 }
 
 async function api(path, options = {}) {
@@ -296,21 +490,32 @@ function renderDetail(context) {
         <div class="metadata-pair"><span>Created</span><strong>${escapeHtml(formatDate(item.created_at))}</strong></div>
       </div>
     </header>
+    ${detailTabsHtml(state.detailTab)}
     <div class="detail-body">
-      ${item.is_draft ? `<div class="draft-notice"><strong>Draft WorkItem</strong><br />아직 실행 계획과 완료 조건을 다듬기 전입니다. <code>w/</code>로 선택하면 Codex가 먼저 구체화합니다.</div>` : ""}
-      <section class="detail-section"><h3>Goal</h3><p class="detail-block">${escapeHtml(item.goal)}</p></section>
-      ${item.description ? `<section class="detail-section"><h3>Description</h3><p class="detail-block">${escapeHtml(item.description)}</p></section>` : ""}
-      <section class="detail-section"><h3>Next Action</h3>${item.next_action ? `<p class="detail-block next-action">${escapeHtml(item.next_action)}</p>` : emptySection("다음 행동은 구체화 과정에서 정해집니다.")}</section>
-      <section class="detail-section"><h3>Acceptance Criteria</h3>${criteriaHtml}</section>
-      <section class="detail-section runs-section"><div class="runs-section-heading"><h3>Recent Runs</h3>${runs.length ? `<span class="runs-count">총 ${runs.length}건</span>` : ""}</div>${runsHtml}</section>
+      <div id="overview-panel" class="detail-panel ${state.detailTab === "overview" ? "" : "hidden"}">
+        ${item.is_draft ? `<div class="draft-notice"><strong>Draft WorkItem</strong><br />아직 실행 계획과 완료 조건을 다듬기 전입니다. <code>w/</code>로 선택하면 Codex가 먼저 구체화합니다.</div>` : ""}
+        <section class="detail-section"><h3>Goal</h3><p class="detail-block">${escapeHtml(item.goal)}</p></section>
+        ${item.description ? `<section class="detail-section"><h3>Description</h3><p class="detail-block">${escapeHtml(item.description)}</p></section>` : ""}
+        <section class="detail-section"><h3>Next Action</h3>${item.next_action ? `<p class="detail-block next-action">${escapeHtml(item.next_action)}</p>` : emptySection("다음 행동은 구체화 과정에서 정해집니다.")}</section>
+        <section class="detail-section"><h3>Acceptance Criteria</h3>${criteriaHtml}</section>
+        <section class="detail-section runs-section"><div class="runs-section-heading"><h3>Recent Runs</h3>${runs.length ? `<span class="runs-count">총 ${runs.length}건</span>` : ""}</div>${runsHtml}</section>
+      </div>
+      <div id="memos-panel" class="detail-panel ${state.detailTab === "memos" ? "" : "hidden"}">
+        ${memoSectionHtml()}
+      </div>
     </div>
   `;
   elements.emptyDetail.classList.add("hidden");
   elements.detail.classList.remove("hidden");
   bindDetailActions();
+  renderMemoCards();
+  bindMemoInteractions();
 }
 
 function bindDetailActions() {
+  document.querySelectorAll("[data-detail-tab]").forEach((button) => {
+    button.addEventListener("click", () => setDetailTab(button.dataset.detailTab));
+  });
   const statusButton = document.querySelector("#status-menu-button");
   const statusControl = statusButton?.closest(".status-control");
   statusButton?.addEventListener("click", () => {
@@ -471,6 +676,64 @@ async function deleteSelectedItem() {
   }
 }
 
+function openMemoModal(memoId = null) {
+  const memo = (state.selectedContext?.memos || []).find((entry) => entry.id === memoId);
+  if (!state.selectedContext || (memoId && !memo)) return;
+  state.editingMemoId = memoId;
+  elements.memoForm.reset();
+  elements.memoForm.elements.namedItem("kind").value = "general";
+  if (memo) {
+    document.querySelector("#memo-modal-title").textContent = "메모 수정";
+    elements.memoForm.elements.namedItem("title").value = memo.title;
+    elements.memoForm.elements.namedItem("content").value = memo.content;
+    elements.memoForm.elements.namedItem("author").value = memo.author || "";
+    const kind = elements.memoForm.querySelector(`input[name="kind"][value="${CSS.escape(memo.kind)}"]`);
+    if (kind) kind.checked = true;
+  } else {
+    document.querySelector("#memo-modal-title").textContent = "새 메모";
+  }
+  elements.memoFormError.classList.add("hidden");
+  elements.memoFormError.textContent = "";
+  elements.memoModal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  elements.memoForm.elements.namedItem("title")?.focus();
+}
+
+function closeMemoModal() {
+  elements.memoModal.classList.add("hidden");
+  document.body.style.overflow = "";
+  state.editingMemoId = null;
+}
+
+async function submitMemo(event) {
+  event.preventDefault();
+  const item = state.selectedContext?.work_item;
+  if (!item) return;
+  const data = new FormData(elements.memoForm);
+  const payload = {
+    title: data.get("title"), content: data.get("content"), kind: data.get("kind"),
+    author: data.get("author") || null,
+  };
+  elements.submitMemo.disabled = true;
+  elements.submitMemo.querySelector(".memo-submit-label").textContent = "저장 중";
+  elements.submitMemo.querySelector(".button-spinner").classList.remove("hidden");
+  try {
+    const base = `/api/work-items/${encodeURIComponent(item.id)}/memos`;
+    await api(state.editingMemoId ? `${base}/${encodeURIComponent(state.editingMemoId)}` : base, {
+      method: state.editingMemoId ? "PATCH" : "POST", body: JSON.stringify(payload),
+    });
+    closeMemoModal();
+    await refreshSelectedDetail();
+  } catch (error) {
+    elements.memoFormError.textContent = error.message;
+    elements.memoFormError.classList.remove("hidden");
+  } finally {
+    elements.submitMemo.disabled = false;
+    elements.submitMemo.querySelector(".memo-submit-label").textContent = "메모 저장";
+    elements.submitMemo.querySelector(".button-spinner").classList.add("hidden");
+  }
+}
+
 function showFormError(error) {
   clearFormErrors();
   const details = error.payload?.error;
@@ -530,6 +793,9 @@ elements.editForm.addEventListener("submit", submitEdit);
 document.querySelector("#close-edit-modal").addEventListener("click", closeEditModal);
 document.querySelector("#cancel-edit").addEventListener("click", closeEditModal);
 document.querySelector("#cancel-delete").addEventListener("click", closeDeleteModal);
+document.querySelector("#close-memo-modal").addEventListener("click", closeMemoModal);
+document.querySelector("#cancel-memo").addEventListener("click", closeMemoModal);
+elements.memoForm.addEventListener("submit", submitMemo);
 elements.deleteConfirmation.addEventListener("input", () => {
   elements.confirmDelete.disabled = elements.deleteConfirmation.value !== state.selectedContext?.work_item?.id;
 });
@@ -537,11 +803,13 @@ elements.confirmDelete.addEventListener("click", deleteSelectedItem);
 elements.modal.addEventListener("click", (event) => { if (event.target === elements.modal) closeModal(); });
 elements.editModal.addEventListener("click", (event) => { if (event.target === elements.editModal) closeEditModal(); });
 elements.deleteModal.addEventListener("click", (event) => { if (event.target === elements.deleteModal) closeDeleteModal(); });
+elements.memoModal.addEventListener("click", (event) => { if (event.target === elements.memoModal) closeMemoModal(); });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!elements.deleteModal.classList.contains("hidden")) closeDeleteModal();
   else if (!elements.editModal.classList.contains("hidden")) closeEditModal();
   else if (!elements.modal.classList.contains("hidden")) closeModal();
+  else if (!elements.memoModal.classList.contains("hidden")) closeMemoModal();
 });
 
 window.setInterval(updateRunningDurations, 1000);

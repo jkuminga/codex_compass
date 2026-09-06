@@ -1,7 +1,9 @@
 """Safe, workflow-oriented access to the Harness v2 SQLite state store.
 
 Callers use the functions in this module instead of issuing SQL directly. Each
-write function owns its validation, transaction, and State Event recording.
+workflow write function owns its validation, transaction, and State Event
+recording; user WorkItem memo writes are deliberately excluded from workflow
+events as documented by the memo schema.
 """
 
 from __future__ import annotations
@@ -35,6 +37,8 @@ class ConflictError(StateStoreError):
 
 _UNSET = object()
 _SEARCHABLE_WORK_ITEM_STATUSES = frozenset({"backlog", "ready", "blocked"})
+_MEMO_KINDS = frozenset({"general", "decision", "problem", "idea", "question", "reference"})
+_MEMO_STATUSES = frozenset({"open", "closed"})
 _EXECUTION_ARTIFACT_KINDS = frozenset({"test_run", "lint_run", "build_run"})
 _EXECUTION_ARTIFACT_URI = re.compile(
     r"^command:(?P<family>[a-z0-9](?:[a-z0-9-]*[a-z0-9])?):"
@@ -50,6 +54,7 @@ _REQUIRED_TABLES = frozenset(
         "criterion_evidence",
         "state_events",
         "memory_candidates",
+        "work_item_memos",
     }
 )
 _REQUIRED_VIEWS = frozenset(
@@ -140,6 +145,7 @@ def initialize_database(
         _migrate_work_item_draft_fields(database)
         _migrate_run_recall_fields(database)
         _migrate_memory_candidate_finalize_fields(database)
+        _migrate_work_item_memos(database)
         database.commit()
     except (OSError, sqlite3.Error) as error:
         raise StateStoreError(f"database initialization failed: {error}") from error
@@ -195,6 +201,43 @@ def _migrate_memory_candidate_finalize_fields(database: sqlite3.Connection) -> N
             "ALTER TABLE memory_candidates ADD COLUMN plan_fingerprint TEXT "
             "CHECK (plan_fingerprint IS NULL OR length(trim(plan_fingerprint)) = 64)"
         )
+
+
+def _migrate_work_item_memos(database: sqlite3.Connection) -> None:
+    """Create the WorkItem memo table for databases from before memo support."""
+
+    database.execute(
+        """
+        CREATE TABLE IF NOT EXISTS work_item_memos (
+          id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+          work_item_id TEXT NOT NULL REFERENCES work_items(id),
+          title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+          content TEXT NOT NULL CHECK (length(trim(content)) > 0),
+          kind TEXT NOT NULL CHECK (kind IN (
+            'general', 'decision', 'problem', 'idea', 'question', 'reference'
+          )),
+          author TEXT NOT NULL DEFAULT 'anon' CHECK (length(trim(author)) > 0),
+          status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+          is_pinned INTEGER NOT NULL DEFAULT 0 CHECK (is_pinned IN (0, 1)),
+          sort_order INTEGER NOT NULL CHECK (sort_order >= 0),
+          created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
+          updated_at TEXT NOT NULL CHECK (length(trim(updated_at)) > 0),
+          UNIQUE (work_item_id, sort_order)
+        )
+        """
+    )
+    database.execute(
+        """
+        CREATE INDEX IF NOT EXISTS work_item_memos_work_item_order_idx
+          ON work_item_memos(work_item_id, is_pinned DESC, sort_order, id)
+        """
+    )
+    database.execute(
+        """
+        CREATE INDEX IF NOT EXISTS work_item_memos_work_item_filters_idx
+          ON work_item_memos(work_item_id, status, kind)
+        """
+    )
 
 
 @contextmanager
@@ -909,6 +952,7 @@ def delete_backlog_work_item(
             "SELECT 1 FROM runs WHERE work_item_id = ? LIMIT 1", (work_item_id,)
         ).fetchone():
             raise ConflictError("WorkItem with Run history cannot be deleted")
+        database.execute("DELETE FROM work_item_memos WHERE work_item_id = ?", (work_item_id,))
         database.execute("DELETE FROM acceptance_criteria WHERE work_item_id = ?", (work_item_id,))
         database.execute("DELETE FROM work_items WHERE id = ?", (work_item_id,))
         _append_state_event(
@@ -2389,6 +2433,254 @@ def reject_candidate(
         return _candidate_from_row(row)
 
 
+def _clean_memo_text(value: str, field: str, *, max_length: int) -> str:
+    """Trim and validate one user-authored memo text field."""
+
+    cleaned = value.strip()
+    if not cleaned:
+        raise ConflictError(f"Memo {field} is required")
+    if len(cleaned) > max_length:
+        raise ConflictError(f"Memo {field} is too long")
+    return cleaned
+
+
+def _list_work_item_memos_database(
+    database: sqlite3.Connection,
+    work_item_id: str,
+    *,
+    status: str | None = None,
+    kind: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read memos from an existing connection so detail reads stay compact."""
+
+    clauses = ["work_item_id = ?"]
+    parameters: list[Any] = [work_item_id]
+    if status is not None:
+        if status not in _MEMO_STATUSES:
+            raise ConflictError("Memo status must be open or closed")
+        clauses.append("status = ?")
+        parameters.append(status)
+    if kind is not None:
+        if kind not in _MEMO_KINDS:
+            raise ConflictError("Memo kind is not supported")
+        clauses.append("kind = ?")
+        parameters.append(kind)
+    return [
+        dict(row)
+        for row in database.execute(
+            "SELECT * FROM work_item_memos WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY is_pinned DESC, sort_order, id",
+            parameters,
+        )
+    ]
+
+
+def create_work_item_memo(
+    work_item_id: str,
+    *,
+    title: str,
+    content: str,
+    kind: str = "general",
+    author: str | None = None,
+    status: str = "open",
+    is_pinned: bool = False,
+    actor: str = "web_console",
+    memo_id: str | None = None,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Create one user memo without adding a workflow State Event."""
+
+    cleaned_title = _clean_memo_text(title, "title", max_length=200)
+    cleaned_content = _clean_memo_text(content, "content", max_length=100_000)
+    cleaned_author = (author or "anon").strip() or "anon"
+    if len(cleaned_author) > 200:
+        raise ConflictError("Memo author is too long")
+    if kind not in _MEMO_KINDS:
+        raise ConflictError("Memo kind is not supported")
+    if status not in _MEMO_STATUSES:
+        raise ConflictError("Memo status must be open or closed")
+
+    identifier = memo_id or _generate_id("MEMO")
+    now = _utc_now()
+    with _transaction(database_path) as database:
+        _require_row(database, "SELECT id FROM work_items WHERE id = ?", (work_item_id,), "WorkItem")
+        next_order = database.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM work_item_memos WHERE work_item_id = ?",
+            (work_item_id,),
+        ).fetchone()[0]
+        database.execute(
+            """
+            INSERT INTO work_item_memos (
+              id, work_item_id, title, content, kind, author, status,
+              is_pinned, sort_order, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                identifier, work_item_id, cleaned_title, cleaned_content, kind,
+                cleaned_author, status, int(is_pinned), next_order, now, now,
+            ),
+        )
+        return _require_row(
+            database, "SELECT * FROM work_item_memos WHERE id = ?", (identifier,), "Memo"
+        )
+
+
+def get_work_item_memo(
+    work_item_id: str,
+    memo_id: str,
+    *,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Return one memo only when it belongs to the requested WorkItem."""
+
+    database = open_database(database_path)
+    try:
+        _require_row(database, "SELECT id FROM work_items WHERE id = ?", (work_item_id,), "WorkItem")
+        return _require_row(
+            database,
+            "SELECT * FROM work_item_memos WHERE id = ? AND work_item_id = ?",
+            (memo_id, work_item_id),
+            "Memo",
+        )
+    finally:
+        database.close()
+
+
+def list_work_item_memos(
+    work_item_id: str,
+    *,
+    status: str | None = None,
+    kind: str | None = None,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """List one WorkItem's memos, pinned first and then by saved order."""
+
+    database = open_database(database_path)
+    try:
+        _require_row(database, "SELECT id FROM work_items WHERE id = ?", (work_item_id,), "WorkItem")
+        return _list_work_item_memos_database(database, work_item_id, status=status, kind=kind)
+    finally:
+        database.close()
+
+
+def update_work_item_memo(
+    work_item_id: str,
+    memo_id: str,
+    *,
+    title: str | object = _UNSET,
+    content: str | object = _UNSET,
+    kind: str | object = _UNSET,
+    author: str | None | object = _UNSET,
+    status: str | object = _UNSET,
+    is_pinned: bool | object = _UNSET,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Update memo fields; pin changes move the memo to its target group end."""
+
+    with _transaction(database_path) as database:
+        current = _require_row(
+            database,
+            "SELECT * FROM work_item_memos WHERE id = ? AND work_item_id = ?",
+            (memo_id, work_item_id),
+            "Memo",
+        )
+        changes: dict[str, Any] = {}
+        if title is not _UNSET:
+            changes["title"] = _clean_memo_text(str(title), "title", max_length=200)
+        if content is not _UNSET:
+            changes["content"] = _clean_memo_text(str(content), "content", max_length=100_000)
+        if kind is not _UNSET:
+            if not isinstance(kind, str) or kind not in _MEMO_KINDS:
+                raise ConflictError("Memo kind is not supported")
+            changes["kind"] = kind
+        if author is not _UNSET:
+            cleaned_author = (author or "anon").strip() if isinstance(author, str) else "anon"
+            changes["author"] = cleaned_author or "anon"
+            if len(changes["author"]) > 200:
+                raise ConflictError("Memo author is too long")
+        if status is not _UNSET:
+            if not isinstance(status, str) or status not in _MEMO_STATUSES:
+                raise ConflictError("Memo status must be open or closed")
+            changes["status"] = status
+        pin_changed = is_pinned is not _UNSET and bool(is_pinned) != bool(current["is_pinned"])
+        if is_pinned is not _UNSET:
+            changes["is_pinned"] = int(bool(is_pinned))
+        changes = {field: value for field, value in changes.items() if current[field] != value}
+        if not changes:
+            return current
+        if pin_changed:
+            changes["sort_order"] = database.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM work_item_memos WHERE work_item_id = ?",
+                (work_item_id,),
+            ).fetchone()[0]
+        changes["updated_at"] = _utc_now()
+        assignments = ", ".join(f"{field} = ?" for field in changes)
+        database.execute(
+            f"UPDATE work_item_memos SET {assignments} WHERE id = ? AND work_item_id = ?",
+            (*changes.values(), memo_id, work_item_id),
+        )
+        return _require_row(
+            database, "SELECT * FROM work_item_memos WHERE id = ?", (memo_id,), "Memo"
+        )
+
+
+def delete_work_item_memo(
+    work_item_id: str,
+    memo_id: str,
+    *,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> None:
+    """Hard-delete one memo after the caller's confirmation."""
+
+    with _transaction(database_path) as database:
+        _require_row(
+            database,
+            "SELECT id FROM work_item_memos WHERE id = ? AND work_item_id = ?",
+            (memo_id, work_item_id),
+            "Memo",
+        )
+        database.execute(
+            "DELETE FROM work_item_memos WHERE id = ? AND work_item_id = ?",
+            (memo_id, work_item_id),
+        )
+
+
+def reorder_work_item_memos(
+    work_item_id: str,
+    memo_ids: Sequence[str],
+    *,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """Atomically save a complete, same-group-only memo order."""
+
+    submitted = list(memo_ids)
+    with _transaction(database_path) as database:
+        existing = _list_work_item_memos_database(database, work_item_id)
+        existing_ids = [memo["id"] for memo in existing]
+        if len(submitted) != len(set(submitted)) or set(submitted) != set(existing_ids):
+            raise ConflictError("Memo reorder must contain every memo exactly once")
+        pinned_ids = {memo["id"] for memo in existing if memo["is_pinned"]}
+        submitted_groups = [memo_id in pinned_ids for memo_id in submitted]
+        expected_groups = [True] * len(pinned_ids) + [False] * (len(existing) - len(pinned_ids))
+        if submitted_groups != expected_groups:
+            raise ConflictError("Pinned and normal memos can only be reordered within their own group")
+        temporary_base = database.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM work_item_memos WHERE work_item_id = ?",
+            (work_item_id,),
+        ).fetchone()[0] + len(existing) + 1
+        database.execute(
+            "UPDATE work_item_memos SET sort_order = sort_order + ? WHERE work_item_id = ?",
+            (temporary_base, work_item_id),
+        )
+        for order, memo_id in enumerate(submitted):
+            database.execute(
+                "UPDATE work_item_memos SET sort_order = ? WHERE id = ? AND work_item_id = ?",
+                (order, memo_id, work_item_id),
+            )
+        return _list_work_item_memos_database(database, work_item_id)
+
+
 def get_work_item_context(
     work_item_id: str,
     *,
@@ -2437,12 +2729,14 @@ def get_work_item_context(
                 (work_item_id,),
             )
         ]
+        memos = _list_work_item_memos_database(database, work_item_id)
         return {
             "work_item": work_item,
             "feature": feature,
             "acceptance_criteria": criteria,
             "running_run": running_run,
             "recent_runs": recent_runs,
+            "memos": memos,
         }
     finally:
         database.close()

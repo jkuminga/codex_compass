@@ -117,6 +117,53 @@ class ControlCenterApiTests(unittest.TestCase):
         self.assertTrue(context["capabilities"]["can_edit"])
         self.assertTrue(context["capabilities"]["can_delete"])
         self.assertEqual(context["capabilities"]["allowed_statuses"], [])
+        self.assertEqual(context["memos"], [])
+
+    def test_memo_api_supports_create_update_filters_reorder_and_delete(self) -> None:
+        draft = self.create_draft()
+        base = f"/api/work-items/{draft['id']}/memos"
+        created = self.client.post(
+            base,
+            json={
+                "title": "결정 기록",
+                "content": "## 선택\n\nSQLite를 사용한다.",
+                "kind": "decision",
+                "author": "   ",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        memo = created.json()["memo"]
+        self.assertEqual(memo["author"], "anon")
+        self.assertEqual(memo["status"], "open")
+        second = self.client.post(
+            base,
+            json={"title": "문제", "content": "잠금 확인", "kind": "problem"},
+        ).json()["memo"]
+
+        updated = self.client.patch(
+            f"{base}/{memo['id']}",
+            json={"status": "closed", "is_pinned": True},
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["memo"]["status"], "closed")
+        self.assertEqual(updated.json()["memo"]["is_pinned"], 1)
+        filtered = self.client.get(f"{base}?status=closed&kind=decision")
+        self.assertEqual([entry["id"] for entry in filtered.json()["memos"]], [memo["id"]])
+
+        reordered = self.client.post(
+            f"{base}/reorder", json={"memo_ids": [memo["id"], second["id"]]}
+        )
+        self.assertEqual(reordered.status_code, 200)
+        self.assertEqual(
+            [entry["id"] for entry in reordered.json()["memos"]], [memo["id"], second["id"]]
+        )
+        context = self.client.get(f"/api/work-items/{draft['id']}").json()
+        self.assertEqual([entry["id"] for entry in context["memos"]], [memo["id"], second["id"]])
+        deleted = self.client.delete(f"{base}/{second['id']}")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(
+            [entry["id"] for entry in self.client.get(base).json()["memos"]], [memo["id"]]
+        )
 
     def test_edit_updates_user_managed_fields(self) -> None:
         draft = self.create_draft()

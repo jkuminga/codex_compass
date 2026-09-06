@@ -1,4 +1,4 @@
-"""HTTP API for viewing WorkItems and creating lightweight Draft WorkItems."""
+"""HTTP API for WorkItem management, Draft capture, and user memos."""
 
 from __future__ import annotations
 
@@ -34,6 +34,8 @@ WorkItemStatusFilter = Literal[
 
 WorkItemPriority = Literal["urgent", "high", "normal", "low"]
 WebStatusTarget = Literal["ready", "cancelled"]
+MemoKind = Literal["general", "decision", "problem", "idea", "question", "reference"]
+MemoStatus = Literal["open", "closed"]
 
 
 class DraftWorkItemRequest(BaseModel):
@@ -75,6 +77,50 @@ class ChangeWorkItemStatusRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     status: WebStatusTarget
+
+
+class CreateMemoRequest(BaseModel):
+    """User-authored fields for one WorkItem memo."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=100_000)
+    kind: MemoKind = "general"
+    author: str | None = Field(default=None, max_length=200)
+    status: MemoStatus = "open"
+    is_pinned: bool = False
+
+    @field_validator("author")
+    @classmethod
+    def blank_author_becomes_none(cls, value: str | None) -> str | None:
+        return value or None
+
+
+class UpdateMemoRequest(BaseModel):
+    """Partial editable fields for an existing memo."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    content: str | None = Field(default=None, min_length=1, max_length=100_000)
+    kind: MemoKind | None = None
+    author: str | None = Field(default=None, max_length=200)
+    status: MemoStatus | None = None
+    is_pinned: bool | None = None
+
+    @field_validator("author")
+    @classmethod
+    def blank_update_author_becomes_none(cls, value: str | None) -> str | None:
+        return value or None
+
+
+class ReorderMemosRequest(BaseModel):
+    """Complete visible-order payload sent after an unfiltered drag."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    memo_ids: list[str] = Field(min_length=1, max_length=500)
 
 
 def _database_path(request: Request) -> Path:
@@ -253,5 +299,78 @@ def create_router() -> APIRouter:
             database_path=database_path,
         )
         return {"deleted_work_item_id": work_item_id}
+
+    @router.get("/work-items/{work_item_id}/memos")
+    def list_memos(
+        work_item_id: str,
+        request: Request,
+        memo_status: MemoStatus | None = Query(default=None, alias="status"),
+        memo_kind: MemoKind | None = Query(default=None, alias="kind"),
+    ) -> dict[str, object]:
+        memos = state_store.list_work_item_memos(
+            work_item_id,
+            status=memo_status,
+            kind=memo_kind,
+            database_path=_database_path(request),
+        )
+        return {"memos": memos}
+
+    @router.post("/work-items/{work_item_id}/memos", status_code=status.HTTP_201_CREATED)
+    def create_memo(
+        work_item_id: str, payload: CreateMemoRequest, request: Request
+    ) -> dict[str, object]:
+        memo = state_store.create_work_item_memo(
+            work_item_id,
+            title=payload.title,
+            content=payload.content,
+            kind=payload.kind,
+            author=payload.author,
+            status=payload.status,
+            is_pinned=payload.is_pinned,
+            actor="web_console",
+            database_path=_database_path(request),
+        )
+        return {"memo": memo}
+
+    @router.patch("/work-items/{work_item_id}/memos/{memo_id}")
+    def update_memo(
+        work_item_id: str,
+        memo_id: str,
+        payload: UpdateMemoRequest,
+        request: Request,
+    ) -> dict[str, object]:
+        changes = payload.model_dump(exclude_unset=True)
+        for field in ("title", "content", "kind", "status", "is_pinned"):
+            if field in changes and changes[field] is None:
+                raise state_store.ConflictError(f"Memo {field} cannot be null")
+        memo = state_store.update_work_item_memo(
+            work_item_id,
+            memo_id,
+            database_path=_database_path(request),
+            **changes,
+        )
+        return {"memo": memo}
+
+    @router.delete("/work-items/{work_item_id}/memos/{memo_id}")
+    def delete_memo(
+        work_item_id: str, memo_id: str, request: Request
+    ) -> dict[str, object]:
+        state_store.delete_work_item_memo(
+            work_item_id, memo_id, database_path=_database_path(request)
+        )
+        return {"deleted_memo_id": memo_id}
+
+    @router.post("/work-items/{work_item_id}/memos/reorder")
+    def reorder_memos(
+        work_item_id: str,
+        payload: ReorderMemosRequest,
+        request: Request,
+    ) -> dict[str, object]:
+        memos = state_store.reorder_work_item_memos(
+            work_item_id,
+            payload.memo_ids,
+            database_path=_database_path(request),
+        )
+        return {"memos": memos}
 
     return router

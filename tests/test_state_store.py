@@ -1193,6 +1193,52 @@ class StateStoreLifecycleTests(unittest.TestCase):
             "running",
         )
 
+    def test_work_item_memos_cover_lifecycle_filters_and_safe_group_reorder(self) -> None:
+        work_item = state_store.create_work_item(
+            title="메모 기능", kind="implementation", goal="작업 메모를 관리한다.",
+            actor="test", database_path=self.database_path,
+        )
+        first = state_store.create_work_item_memo(
+            work_item["id"], title="결정", content="**SQLite**를 사용한다.",
+            kind="decision", author="", actor="web_console", database_path=self.database_path,
+        )
+        second = state_store.create_work_item_memo(
+            work_item["id"], title="질문", content="확인할 항목", kind="question",
+            database_path=self.database_path,
+        )
+        pinned = state_store.update_work_item_memo(
+            work_item["id"], second["id"], is_pinned=True,
+            database_path=self.database_path,
+        )
+
+        self.assertEqual(first["author"], "anon")
+        self.assertEqual(pinned["is_pinned"], 1)
+        self.assertEqual(
+            [memo["id"] for memo in state_store.list_work_item_memos(work_item["id"], database_path=self.database_path)],
+            [second["id"], first["id"]],
+        )
+        closed = state_store.update_work_item_memo(
+            work_item["id"], first["id"], status="closed", database_path=self.database_path,
+        )
+        self.assertEqual(closed["status"], "closed")
+        self.assertEqual(
+            len(state_store.list_work_item_memos(work_item["id"], status="closed", database_path=self.database_path)),
+            1,
+        )
+        reordered = state_store.reorder_work_item_memos(
+            work_item["id"], [second["id"], first["id"]], database_path=self.database_path,
+        )
+        self.assertEqual([memo["id"] for memo in reordered], [second["id"], first["id"]])
+        with self.assertRaisesRegex(state_store.ConflictError, "Pinned"):
+            state_store.reorder_work_item_memos(
+                work_item["id"], [first["id"], second["id"]], database_path=self.database_path,
+            )
+        events_before = len(state_store.get_recent_activity(database_path=self.database_path))
+        state_store.delete_work_item_memo(work_item["id"], first["id"], database_path=self.database_path)
+        self.assertEqual(events_before, len(state_store.get_recent_activity(database_path=self.database_path)))
+        with self.assertRaises(state_store.NotFoundError):
+            state_store.get_work_item_memo(work_item["id"], first["id"], database_path=self.database_path)
+
 
 if __name__ == "__main__":
     unittest.main()

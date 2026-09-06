@@ -185,6 +185,25 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
   )
 );
 
+-- WorkItem에 붙는 사용자 메모. 메모는 실행 상태가 아닌 작업 노트이므로
+-- state_events에는 기록하지 않으며, 삭제는 확인 후 행을 즉시 제거한다.
+CREATE TABLE IF NOT EXISTS work_item_memos (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+  work_item_id TEXT NOT NULL REFERENCES work_items(id),
+  title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+  content TEXT NOT NULL CHECK (length(trim(content)) > 0),
+  kind TEXT NOT NULL CHECK (kind IN (
+    'general', 'decision', 'problem', 'idea', 'question', 'reference'
+  )),
+  author TEXT NOT NULL DEFAULT 'anon' CHECK (length(trim(author)) > 0),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  is_pinned INTEGER NOT NULL DEFAULT 0 CHECK (is_pinned IN (0, 1)),
+  sort_order INTEGER NOT NULL CHECK (sort_order >= 0),
+  created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
+  updated_at TEXT NOT NULL CHECK (length(trim(updated_at)) > 0),
+  UNIQUE (work_item_id, sort_order)
+);
+
 CREATE TRIGGER IF NOT EXISTS work_items_validate_status_transition
 BEFORE UPDATE OF status ON work_items
 WHEN OLD.status <> NEW.status
@@ -397,6 +416,10 @@ CREATE INDEX IF NOT EXISTS memory_candidates_run_status_created_at_idx
   ON memory_candidates(run_id, status, created_at);
 CREATE INDEX IF NOT EXISTS state_events_entity_created_at_idx
   ON state_events(entity_type, entity_id, created_at);
+CREATE INDEX IF NOT EXISTS work_item_memos_work_item_order_idx
+  ON work_item_memos(work_item_id, is_pinned DESC, sort_order, id);
+CREATE INDEX IF NOT EXISTS work_item_memos_work_item_filters_idx
+  ON work_item_memos(work_item_id, status, kind);
 
 CREATE VIEW IF NOT EXISTS feature_progress AS
 SELECT
