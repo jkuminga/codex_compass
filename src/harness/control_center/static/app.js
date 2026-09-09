@@ -146,13 +146,13 @@ function escapeHtml(value) {
 }
 
 function renderMarkdown(value) {
-  // Escape first: user-authored HTML never becomes executable markup.
-  const source = escapeHtml(value);
+  // Detect block syntax from the raw text, then escape every user-authored fragment.
+  const source = String(value ?? "");
   const lines = source.split("\n");
   const output = [];
   let inCode = false;
-  let listOpen = false;
-  const inline = (line) => line
+  let openList = null;
+  const inline = (line) => escapeHtml(line)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/__([^_]+)__/g, "<strong>$1</strong>")
@@ -160,7 +160,15 @@ function renderMarkdown(value) {
     .replace(/_([^_]+)_/g, "<em>$1</em>")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
   const closeList = () => {
-    if (listOpen) { output.push("</ul>"); listOpen = false; }
+    if (openList) { output.push(`</${openList}>`); openList = null; }
+  };
+  const addListItem = (type, content) => {
+    if (openList !== type) {
+      closeList();
+      output.push(`<${type}>`);
+      openList = type;
+    }
+    output.push(`<li>${inline(content)}</li>`);
   };
   for (const line of lines) {
     if (line.startsWith("```")) {
@@ -168,17 +176,98 @@ function renderMarkdown(value) {
       else { closeList(); output.push("<pre><code>"); inCode = true; }
       continue;
     }
-    if (inCode) { output.push(`${line}\n`); continue; }
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
-    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (inCode) { output.push(`${escapeHtml(line)}\n`); continue; }
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    const quote = line.match(/^\s*>\s?(.*)$/);
     if (heading) { closeList(); output.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`); }
-    else if (bullet) { if (!listOpen) { output.push("<ul>"); listOpen = true; } output.push(`<li>${inline(bullet[1])}</li>`); }
+    else if (bullet) { addListItem("ul", bullet[1]); }
+    else if (ordered) { addListItem("ol", ordered[1]); }
+    else if (quote) { closeList(); output.push(`<blockquote>${inline(quote[1])}</blockquote>`); }
     else if (!line.trim()) { closeList(); }
     else { closeList(); output.push(`<p>${inline(line)}</p>`); }
   }
   closeList();
   if (inCode) output.push("</code></pre>");
   return output.join("");
+}
+
+function updateMemoPreview() {
+  const content = elements.memoForm.elements.namedItem("content")?.value || "";
+  const preview = document.querySelector("#memo-preview");
+  if (!preview) return;
+  preview.classList.toggle("is-empty", !content.trim());
+  preview.innerHTML = content.trim()
+    ? renderMarkdown(content)
+    : '<p class="memo-preview-empty">Markdown을 입력하면 여기에 미리보기가 표시됩니다.</p>';
+}
+
+function toggleMemoCodeFormatting(textarea) {
+  const value = textarea.value;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selected = value.slice(start, end);
+  const multiline = selected.includes("\n");
+  const opening = multiline ? "```\n" : "`";
+  const closing = multiline ? "\n```" : "`";
+  const wrapped = value.slice(start - opening.length, start) === opening
+    && value.slice(end, end + closing.length) === closing;
+
+  if (wrapped) {
+    textarea.setRangeText(selected, start - opening.length, end + closing.length, "select");
+  } else {
+    textarea.setRangeText(`${opening}${selected}${closing}`, start, end, "end");
+    const contentStart = start + opening.length;
+    textarea.setSelectionRange(contentStart, contentStart + selected.length);
+  }
+  textarea.focus();
+  updateMemoPreview();
+}
+
+function toggleMemoInlineFormatting(textarea, marker) {
+  const value = textarea.value;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selected = value.slice(start, end);
+  const wrapped = value.slice(start - marker.length, start) === marker
+    && value.slice(end, end + marker.length) === marker;
+
+  if (wrapped) {
+    textarea.setRangeText(selected, start - marker.length, end + marker.length, "select");
+  } else {
+    textarea.setRangeText(`${marker}${selected}${marker}`, start, end, "end");
+    const contentStart = start + marker.length;
+    textarea.setSelectionRange(contentStart, contentStart + selected.length);
+  }
+  textarea.focus();
+  updateMemoPreview();
+}
+
+function indentMemoSelection(textarea, outdent = false) {
+  const value = textarea.value;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const trailingNewline = end > start && value[end - 1] === "\n";
+  const lineEndSearch = trailingNewline ? end - 1 : end;
+  const nextNewline = value.indexOf("\n", lineEndSearch);
+  const lineEnd = nextNewline === -1 ? value.length : nextNewline;
+  const block = value.slice(lineStart, lineEnd);
+  const lines = block.split("\n");
+  const transformed = lines.map((line) => outdent ? line.replace(/^ {1,2}/, "") : `  ${line}`).join("\n");
+  const firstDelta = transformed.split("\n", 1)[0].length - lines[0].length;
+  const totalDelta = transformed.length - block.length;
+
+  textarea.setRangeText(transformed, lineStart, lineEnd, "start");
+  if (start === end) {
+    const caret = Math.max(lineStart, start + firstDelta);
+    textarea.setSelectionRange(caret, caret);
+  } else {
+    textarea.setSelectionRange(Math.max(lineStart, start + firstDelta), end + totalDelta);
+  }
+  textarea.focus();
+  updateMemoPreview();
 }
 
 function memoKindLabel(value) {
@@ -694,6 +783,7 @@ function openMemoModal(memoId = null) {
   }
   elements.memoFormError.classList.add("hidden");
   elements.memoFormError.textContent = "";
+  updateMemoPreview();
   elements.memoModal.classList.remove("hidden");
   document.body.style.overflow = "hidden";
   elements.memoForm.elements.namedItem("title")?.focus();
@@ -796,6 +886,28 @@ document.querySelector("#cancel-delete").addEventListener("click", closeDeleteMo
 document.querySelector("#close-memo-modal").addEventListener("click", closeMemoModal);
 document.querySelector("#cancel-memo").addEventListener("click", closeMemoModal);
 elements.memoForm.addEventListener("submit", submitMemo);
+elements.memoForm.elements.namedItem("content").addEventListener("input", updateMemoPreview);
+elements.memoForm.elements.namedItem("content").addEventListener("keydown", (event) => {
+  const textarea = event.currentTarget;
+  const command = event.metaKey || event.ctrlKey;
+  const key = event.key.toLowerCase();
+  if (command && !event.altKey && key === "e") {
+    event.preventDefault();
+    toggleMemoCodeFormatting(textarea);
+  } else if (command && !event.altKey && key === "b") {
+    event.preventDefault();
+    toggleMemoInlineFormatting(textarea, "**");
+  } else if (command && !event.altKey && key === "i") {
+    event.preventDefault();
+    toggleMemoInlineFormatting(textarea, "*");
+  } else if (command && key === "enter") {
+    event.preventDefault();
+    elements.memoForm.requestSubmit();
+  } else if (!command && !event.altKey && event.key === "Tab") {
+    event.preventDefault();
+    indentMemoSelection(textarea, event.shiftKey);
+  }
+});
 elements.deleteConfirmation.addEventListener("input", () => {
   elements.confirmDelete.disabled = elements.deleteConfirmation.value !== state.selectedContext?.work_item?.id;
 });

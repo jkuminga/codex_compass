@@ -208,7 +208,7 @@
     </div>
 
     <div class="modal-backdrop hidden" id="memo-modal" role="presentation">
-      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="memo-modal-title">
+      <section class="modal memo-modal" role="dialog" aria-modal="true" aria-labelledby="memo-modal-title">
         <header class="modal-header">
           <div><p class="eyebrow">WORK ITEM NOTE</p><h2 id="memo-modal-title">새 메모</h2></div>
           <button class="icon-button" id="close-memo-modal" type="button" aria-label="닫기">×</button>
@@ -227,7 +227,20 @@
             </div>
           </label>
           <label class="field memo-author-field"><span>Author <em>선택</em></span><input name="author" type="text" maxlength="200" placeholder="(선택사항)" /></label>
-          <label class="field memo-content-field"><span>Content <b>필수</b></span><textarea name="content" rows="6" maxlength="100000" placeholder="Markdown으로 메모를 작성하세요."></textarea><small class="field-hint">입력 중 미리보기는 제공하지 않으며, 저장 후 안전하게 Markdown으로 표시합니다.</small></label>
+          <div class="field memo-content-field">
+            <span>Content <b>필수</b> <em>Markdown 지원</em></span>
+            <div class="memo-markdown-workspace">
+              <section class="memo-markdown-pane memo-editor-pane" aria-labelledby="memo-editor-heading">
+                <header><strong id="memo-editor-heading">✎ Markdown 원본</strong><span>EDITOR</span></header>
+                <textarea name="content" rows="12" maxlength="100000" placeholder="Markdown으로 메모를 작성하세요." aria-label="Markdown 메모 원본"></textarea>
+              </section>
+              <section class="memo-markdown-pane memo-preview-pane" aria-labelledby="memo-preview-heading">
+                <header><strong id="memo-preview-heading">◉ 실시간 미리보기</strong><span class="memo-preview-status"><i aria-hidden="true"></i>LIVE</span></header>
+                <div class="memo-preview-content" id="memo-preview" aria-live="polite"></div>
+              </section>
+            </div>
+            <small class="field-hint">단축키: <kbd>⌘/Ctrl+B</kbd> 굵게 · <kbd>⌘/Ctrl+I</kbd> 기울임 · <kbd>⌘/Ctrl+E</kbd> 코드 · <kbd>Tab</kbd>/<kbd>Shift+Tab</kbd> 들여쓰기 · <kbd>⌘/Ctrl+Enter</kbd> 저장</small>
+          </div>
           <footer class="modal-actions">
             <button class="secondary-button" id="cancel-memo" type="button">취소</button>
             <button class="primary-button" id="submit-memo" type="submit"><span class="memo-submit-label">메모 저장</span><span class="button-spinner hidden" aria-hidden="true"></span></button>

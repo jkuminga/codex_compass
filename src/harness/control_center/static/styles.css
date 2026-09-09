@@ -231,13 +231,18 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
 .memo-card-actions button { width: 24px; height: 24px; border-radius: 4px; font-size: 15px; }
 .memo-card-actions button:hover, .memo-card-footer button:hover { background: var(--paper-muted); color: var(--forest); }
 .memo-content { margin: 9px 0 8px 21px; color: #4b554f; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
-.memo-content p { margin: 0 0 5px; }
-.memo-content p:last-child { margin-bottom: 0; }
-.memo-content h1, .memo-content h2, .memo-content h3 { margin: 7px 0 4px; color: var(--forest); font: 600 13px/1.3 var(--serif); }
-.memo-content ul { margin: 4px 0; padding-left: 18px; }
-.memo-content code { padding: 1px 3px; border-radius: 3px; background: var(--paper-muted); font: 10px/1.3 var(--mono); }
-.memo-content pre { overflow-x: auto; margin: 5px 0; padding: 7px; border-radius: 4px; background: #f0f1ed; font: 10px/1.4 var(--mono); }
-.memo-content a { color: var(--forest-mid); text-decoration: underline; }
+:is(.memo-content, .memo-preview-content) p { margin: 0 0 7px; }
+:is(.memo-content, .memo-preview-content) p:last-child { margin-bottom: 0; }
+:is(.memo-content, .memo-preview-content) h1, :is(.memo-content, .memo-preview-content) h2, :is(.memo-content, .memo-preview-content) h3, :is(.memo-content, .memo-preview-content) h4 { margin: 12px 0 6px; color: var(--forest); font-family: var(--serif); font-weight: 650; line-height: 1.3; }
+:is(.memo-content, .memo-preview-content) h1:first-child, :is(.memo-content, .memo-preview-content) h2:first-child, :is(.memo-content, .memo-preview-content) h3:first-child, :is(.memo-content, .memo-preview-content) h4:first-child { margin-top: 0; }
+.memo-content h1, .memo-content h2, .memo-content h3, .memo-content h4 { font-size: 13px; }
+:is(.memo-content, .memo-preview-content) ul, :is(.memo-content, .memo-preview-content) ol { margin: 6px 0; padding-left: 21px; }
+:is(.memo-content, .memo-preview-content) li { margin: 3px 0; }
+:is(.memo-content, .memo-preview-content) code { padding: 1px 4px; border: 1px solid #dfe1ee; border-radius: 3px; background: #f0f1fa; color: var(--forest); font: .92em/1.3 var(--mono); }
+:is(.memo-content, .memo-preview-content) pre { overflow-x: auto; margin: 7px 0; padding: 9px; border-radius: 5px; background: #f0f1ed; font: 10px/1.5 var(--mono); }
+:is(.memo-content, .memo-preview-content) pre code { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; }
+:is(.memo-content, .memo-preview-content) blockquote { margin: 8px 0; padding: 7px 10px; border-left: 3px solid var(--forest-mid); border-radius: 0 5px 5px 0; background: #f5f5ef; color: var(--ink-soft); }
+:is(.memo-content, .memo-preview-content) a { color: var(--forest-mid); text-decoration: underline; text-underline-offset: 2px; }
 .memo-card-footer { gap: 8px; margin-left: 21px; color: #8a918b; font: 9px/1.2 var(--mono); }
 .memo-card-footer time { margin-left: auto; }
 .memo-card-footer button { padding: 3px 4px; font: 9px/1.2 var(--sans); }
@@ -304,6 +309,7 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: rgba(18,26,22,.42); backdrop-filter: blur(3px); }
 .modal { width: min(640px, 100%); max-height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--paper-bright); box-shadow: var(--shadow); }
+.memo-modal { width: min(1040px, 100%); }
 .modal-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 19px 22px 17px; border-bottom: 1px solid var(--line); }
 .modal-header h2 { margin: 0; color: var(--forest); font: 650 23px/1.2 var(--serif); }
 #draft-form, #edit-form, #memo-form { min-height: 0; flex: 1 1 auto; overflow-y: auto; padding: 21px 22px 0; }
@@ -320,10 +326,28 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
 .field > span em { margin-left: 4px; color: #939994; font-style: normal; font-size: 9px; }
 .field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line-strong); border-radius: 6px; padding: 10px 11px; outline: none; background: white; color: var(--ink); transition: border .15s, box-shadow .15s; }
 .field textarea { resize: vertical; min-height: 92px; line-height: 1.5; }
-#memo-form .memo-content-field textarea { min-height: 180px; max-height: 360px; }
+#memo-form .memo-content-field textarea { min-height: 0; }
+.memo-markdown-workspace { min-height: 330px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-muted); }
+.memo-markdown-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 7px; background: white; }
+.memo-markdown-pane > header { flex: 0 0 38px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line); background: #f7f6f1; color: var(--ink-soft); font: 9px/1 var(--mono); letter-spacing: .06em; }
+.memo-markdown-pane > header strong { overflow: hidden; color: var(--ink); font: 700 10px/1 var(--sans); letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
+.memo-preview-pane > header { background: #f2f6f2; }
+.memo-preview-pane > header strong { color: var(--forest); }
+.memo-preview-status { display: inline-flex; align-items: center; gap: 5px; color: var(--forest-mid); font-weight: 700; }
+.memo-preview-status i { width: 6px; height: 6px; border-radius: 50%; background: #49a678; box-shadow: 0 0 0 3px rgba(73,166,120,.12); }
+#memo-form .memo-editor-pane textarea { flex: 1; min-height: 290px; resize: none; border: 0; border-radius: 0; padding: 13px; box-shadow: none; background: white; font: 11px/1.65 var(--mono); }
+#memo-form .memo-editor-pane:focus-within { border-color: var(--forest-mid); box-shadow: 0 0 0 2px rgba(47,102,80,.1); }
+.memo-preview-content { flex: 1; overflow: auto; padding: 13px 15px; color: #3f4a44; font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; }
+.memo-preview-content h1 { font-size: 19px; }
+.memo-preview-content h2 { font-size: 16px; }
+.memo-preview-content h3 { font-size: 14px; }
+.memo-preview-content h4 { font-size: 12px; }
+.memo-preview-content.is-empty { display: grid; place-items: center; }
+.memo-preview-empty { max-width: 230px; color: #939994; text-align: center; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--forest-mid); box-shadow: 0 0 0 3px rgba(47,102,80,.1); }
 .field [aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 3px rgba(166,59,50,.08); }
 .field-hint { color: #888f8b; font-size: 10px; }
+.field-hint kbd { padding: 1px 4px; border: 1px solid var(--line); border-bottom-color: var(--line-strong); border-radius: 3px; background: white; color: var(--ink-soft); font: 9px/1.2 var(--mono); }
 .field-error { min-height: 0; color: var(--red); font-size: 10px; }
 .field-error:empty { display: none; }
 .form-error { margin-bottom: 17px; padding: 10px 12px; border: 1px solid #e4bab5; border-radius: 6px; background: var(--red-pale); color: #832d26; font-size: 11px; line-height: 1.5; }
@@ -363,6 +387,9 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
   .detail-pane { position: fixed; inset: 0 0 0 auto; z-index: 30; width: min(480px, 92vw); box-shadow: -12px 0 40px rgba(18,40,30,.18); }
   .detail-pane:has(.empty-detail:not(.hidden)) { display: none; }
   .status-dock { position: sticky; bottom: 0; }
+  .memo-markdown-workspace { grid-template-columns: 1fr; }
+  #memo-form .memo-editor-pane textarea { min-height: 220px; }
+  .memo-preview-content { min-height: 220px; }
 }
 
 @media (max-width: 620px) {
@@ -388,5 +415,6 @@ legend { width: 100%; margin-bottom: 8px; color: #737b76; font: 700 10px/1 var(-
   .modal-backdrop { padding: 8px; }
   .modal { max-height: calc(100vh - 16px); border-radius: 8px; }
   #memo-form { display: block; }
-  #memo-form .memo-content-field textarea { min-height: 150px; }
+  .memo-markdown-workspace { min-height: 0; padding: 6px; }
+  #memo-form .memo-editor-pane textarea, .memo-preview-content { min-height: 190px; }
 }
