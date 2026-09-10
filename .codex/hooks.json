@@ -39,6 +39,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/bin/harness-stop\"",
+            "timeout": 10,
+            "statusMessage": "Checking project work closeout"
+          }
+        ]
+      }
     ]
   }
 }

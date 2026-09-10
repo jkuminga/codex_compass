@@ -32,7 +32,7 @@ description: 활성 Run이 있는 프로젝트 작업의 최종 답변 전에 Po
 
 `pending_memory_candidates`가 있으면 후보마다 `$memory-finalize` 스킬을 실행한다. 저장 가치·노드 타입·중복·관계 판단과 `finalize_memory_candidate()` 호출은 해당 스킬에 맡긴다. 후보의 최종 상태는 finalize 내부 처리로만 변경한다.
 
-후보 처리 후 `get_postflight_status()`를 다시 호출한다. pending 후보가 남았다면 그 수와 오류를 최종 보고에 포함하되, 후보가 있다는 이유만으로 Run 종료 자체를 막지는 않는다.
+후보 처리 후 `get_postflight_status()`를 다시 호출한다. pending 후보가 남았다면 `finish_work()`를 호출하지 않는다. 상태 저장 계층도 pending 후보가 있는 Run의 종료를 거부하므로, 남은 후보 수와 처리 실패 원인을 사용자에게 알린다.
 
 ## 4. Outcome 선택
 

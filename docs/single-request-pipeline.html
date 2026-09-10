@@ -38,7 +38,7 @@
     <div class="three">
       <article class="lane agent"><h3>작업 시작 · 구현됨</h3><p>UserPromptSubmit, <code>$work-start</code> 스킬, SQLite·MCP, 세션별 Runtime Binding, <code>start_work</code>·<code>finish_work</code> 전용 PostToolUse와 Recall Wrapper.</p></article>
       <article class="lane hook"><h3>작업 보호 · 구현됨</h3><p>PreToolUse의 도구 분류, <code>validate_active_binding()</code> 기반 변경 허용·차단과 실패 감시 Guard.</p></article>
-      <article class="lane skill"><h3>다음 구현</h3><p>Codex의 Artifact 판단·기록 지침. 이후 Stop Guard·Trace 연결과 MemoryGraph Finalize Skill을 구현한다.</p></article>
+      <article class="lane skill"><h3>작업 마감 · 구현됨</h3><p><code>$work-finish</code>, MemoryGraph Finalize Skill, pending 후보가 있는 Run의 종료 차단과 <code>stop_hook_active</code> 기반 Stop Hook 안전망.</p></article>
     </div>
   </section>
 
@@ -286,7 +286,7 @@ not meaningful / incomplete
       <tr><td data-label="시점">기억 검토·저장</td><td data-label="주체"><span class="owner skill">work-finish</span></td><td data-label="호출"><code>list_memory_candidates</code> → <code>inspect_memory_candidate</code> → 저장된 Plan이 없으면 Storage Plan 생성, 있으면 Plan 재사용 → <code>finalize_memory_candidate</code> (create·merge 성공 시 내부 promote, reject도 내부 처리)</td><td data-label="이유">중복·가치·관계 평가는 Skill을 따르는 Codex가 판단한다. merge의 <code>memory</code>는 기존 기억과 새 정보를 합친 완성본이어야 한다. 최초 finalize가 State DB에 Plan 원문과 <code>plan_fingerprint</code>를 남기므로, 중단 후에는 새 계획을 만들지 않고 기존 계획으로 빠진 단계만 재시도한다. <code>work-finish</code>는 promote·reject를 직접 호출하지 않는다.</td></tr>
       <tr><td data-label="시점">종료 직전</td><td data-label="주체"><span class="owner agent">Codex</span></td><td data-label="호출"><code>get_postflight_status</code> → <code>finish_work</code></td><td data-label="이유">전체 완료·정상 진전·재시도·막힘·중단 중 outcome을 Codex가 판단한다.</td></tr>
       <tr><td data-label="시점"><code>finish_work</code> 성공 직후</td><td data-label="주체"><span class="owner hook">전용 PostToolUse</span></td><td data-label="호출">도구 응답의 종료 Run ID 확인 → <code>delete_binding(session_id, expected_run_id)</code></td><td data-label="이유">종료된 Run의 Binding을 즉시 제거하되, Binding이 다른 Run으로 바뀌었으면 삭제하지 않는다. 실패하면 다음 UPS가 현재 세션에서만 fallback 정리한다.</td></tr>
-      <tr><td data-label="시점">종료 시도</td><td data-label="주체"><span class="owner hook">Stop</span></td><td data-label="호출"><code>get_running_run()</code>, <code>get_postflight_status()</code></td><td data-label="이유">마감 대신 누락만 검사한다.</td></tr>
+      <tr><td data-label="시점">종료 시도</td><td data-label="주체"><span class="owner hook">Stop</span></td><td data-label="호출">현재 세션 Binding 검증 → DB의 활성 Run 확인 → pending Memory Candidate 조회</td><td data-label="이유">정상 마감은 조용히 허용하고, 유효한 활성 Run이 남으면 첫 Stop에서만 <code>$work-finish</code>를 지시한다. 두 번째 Stop은 경고 후 허용한다.</td></tr>
       <tr><td data-label="시점">세션 종료</td><td data-label="주체"><span class="owner hook">SessionEnd</span></td><td data-label="호출">Trace flush, 임시 파일 정리</td><td data-label="이유">늦게 실행돼도 안전한 보조 처리만 둔다.</td></tr>
     </tbody></table></div>
   </section>
@@ -332,8 +332,9 @@ not meaningful / incomplete
     <details><summary>테스트는 통과했지만 Criterion과 연결되지 않았다면?</summary><div>Codex가 먼저 <code>record_artifact()</code>로 결과를 저장하고, 해당 결과가 Criterion의 근거라면 <code>verify_criterion()</code>으로 Evidence를 연결한다. 향후 Stop Guard는 이 연결 누락을 알리고 한 번 계속한다.</div></details>
     <details><summary>작업이 실패하거나 막혔다면?</summary><div>Codex가 <code>finish_work</code>에서 <code>retry_needed</code>, <code>blocked</code> 또는 <code>interrupted</code>를 선택하고 다음 Run이 이어갈 <code>next_action</code>과 종료 이유를 기록한다.</div></details>
     <details><summary>이번 Run은 성공했지만 WorkItem은 아직 남았다면?</summary><div><code>finish_work(outcome="progressed")</code>로 종료한다. Run은 <code>succeeded</code>, WorkItem은 <code>ready</code>와 새 <code>next_action</code>으로 남아 다음 Run에서 이어진다.</div></details>
-    <details><summary>pending 기억 후보가 남았다면?</summary><div><code>work-finish</code>가 후보를 inspect한 뒤 저장 Plan이 없으면 만들고, 있으면 그대로 재사용해 <code>finalize_memory_candidate()</code>를 호출한다. merge Plan은 기존 기억을 잃지 않은 완성본이어야 한다. 부분 실패 후보는 pending으로 남으며 다음 마감 시 저장된 Plan으로 빠진 쓰기만 재시도한다. 후보 상태는 finalize 내부에서만 바꾸고 같은 이유의 반복은 한 번으로 제한한다.</div></details>
-    <details><summary>한 번 더 실행해도 정리하지 못했다면?</summary><div>무한 반복하지 않는다. 같은 이유의 재시도는 한 번으로 제한하고 Run을 보존한 채 남은 누락과 사용자 조치 필요성을 보고한다.</div></details>
+    <details><summary>pending 기억 후보가 남았다면?</summary><div><code>work-finish</code>가 후보를 inspect한 뒤 저장 Plan이 없으면 만들고, 있으면 그대로 재사용해 <code>finalize_memory_candidate()</code>를 호출한다. merge Plan은 기존 기억을 잃지 않은 완성본이어야 한다. 상태 저장 계층의 <code>finish_run()</code>은 pending 후보가 하나라도 있으면 모든 outcome의 종료를 거부하므로 Run·WorkItem·Binding은 그대로 유지된다. Codex는 후보를 처리한 뒤 <code>finish_work()</code>를 다시 호출한다.</div></details>
+    <details><summary>Stop Hook은 무엇을 보고 언제 종료를 막나?</summary><div>스킬 호출 로그나 transcript를 해석하지 않고 현재 세션의 Runtime Binding, 일치하는 <code>running</code> Run, pending 후보 수만 확인한다. Binding과 활성 Run이 유효하면 후보 유무와 관계없이 첫 종료 시도에서 <code>decision:block</code>으로 <code>$work-finish</code>를 지시한다. Binding이 없고 이 세션에 귀속시킬 활성 Run도 없으면 조용히 허용한다. 다른 세션·소유 불명 Run, Binding 불일치 또는 DB 실패는 자동 수정하지 않고 경고 후 허용한다.</div></details>
+    <details><summary>한 번 더 실행해도 정리하지 못했다면?</summary><div>Codex가 자동 전달하는 <code>stop_hook_active</code>가 두 번째 종료 시도에서 <code>true</code>가 된다. Stop Hook 자체는 다시 실행되지만 두 번째 <code>block</code>은 반환하지 않고 남은 활성 Run과 후보 수를 경고한 뒤 종료를 허용한다. 별도 DB 카운터나 재시도 파일은 사용하지 않는다.</div></details>
   </section>
 
   <footer><a href="./docs-index.html">← 문서 허브</a> · 관련 Interface는 <a href="./mcp-state-store-functions.html">MCP · DB 함수표</a>, 저장 규칙은 <a href="./state-store.html">상태 저장소</a>를 참고한다.</footer>

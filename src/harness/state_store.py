@@ -1720,6 +1720,18 @@ def finish_run(
         run = _require_row(database, "SELECT * FROM runs WHERE id = ?", (run_id,), "Run")
         if run["status"] != "running":
             raise ConflictError("only a running Run can be finished")
+        pending_candidate_count = database.execute(
+            """
+            SELECT COUNT(*)
+            FROM memory_candidates
+            WHERE run_id = ? AND status = 'pending'
+            """,
+            (run_id,),
+        ).fetchone()[0]
+        if pending_candidate_count:
+            raise ConflictError(
+                "Run cannot finish while pending Memory Candidates remain"
+            )
         work_item = _require_row(
             database,
             "SELECT * FROM work_items WHERE id = ?",

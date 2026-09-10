@@ -846,6 +846,68 @@ class StateStoreLifecycleTests(unittest.TestCase):
             "in_progress",
         )
 
+    def test_pending_memory_candidate_prevents_finishing_a_run(self) -> None:
+        work_item = state_store.create_work_item(
+            title="기억 후보 선행 처리",
+            kind="implementation",
+            goal="기억 후보를 처리하기 전에는 Run을 닫지 않는다.",
+            next_action="기억 후보를 만든다.",
+            actor="planner",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="기억 후보를 만든다.",
+            actor="planner",
+            reason="테스트 준비",
+            database_path=self.database_path,
+        )
+        run = self.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+        state_store.create_candidate(
+            run["id"],
+            proposed_type="general",
+            title="후보를 먼저 처리한다",
+            content="Run 종료 전에 pending 후보를 확정한다.",
+            keywords=["finish", "pending"],
+            database_path=self.database_path,
+        )
+
+        with self.assertRaisesRegex(
+            state_store.ConflictError, "pending Memory Candidates"
+        ):
+            state_store.finish_run(
+                run["id"],
+                run_status="succeeded",
+                work_item_status="ready",
+                summary="후보를 남긴 채 종료를 시도한다.",
+                next_action="후보를 처리한다.",
+                actor="codex",
+                reason="안전장치 검증",
+                database_path=self.database_path,
+            )
+
+        self.assertEqual(
+            state_store.get_run(run["id"], database_path=self.database_path)["status"],
+            "running",
+        )
+        self.assertEqual(
+            state_store.get_work_item(
+                work_item["id"], database_path=self.database_path
+            )["status"],
+            "in_progress",
+        )
+        self.assertEqual(
+            len(
+                state_store.list_pending_candidates(
+                    run_id=run["id"], database_path=self.database_path
+                )
+            ),
+            1,
+        )
+
     def test_successful_run_can_progress_an_unfinished_work_item(self) -> None:
         work_item = state_store.create_work_item(
             title="여러 세션 설계",
