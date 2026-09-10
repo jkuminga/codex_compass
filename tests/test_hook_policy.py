@@ -123,6 +123,12 @@ class HookPolicyTests(unittest.TestCase):
             ("mcp__harness_state__start_work", {}, "bootstrap", True),
             ("mcp__harness_state__create_ready_work_item", {}, "bootstrap", True),
             (
+                "mcp__harness_state__refine_draft_work_item",
+                {},
+                "bootstrap",
+                True,
+            ),
+            (
                 "mcp__harness_state__change_work_item_state",
                 {"status": "ready"},
                 "bootstrap",
