@@ -340,12 +340,43 @@ function renderMemoCards() {
     list.innerHTML = `<div class="subtle-empty">표시할 메모가 없습니다.</div>`;
     return;
   }
-  list.innerHTML = memos.map((memo) => `
+  list.innerHTML = memos.map((memo) => {
+    const author = (memo.author || "anon").trim() || "anon";
+    const authorInitial = [...author][0]?.toUpperCase() || "A";
+    const statusLabel = memo.status === "open" ? "활성" : "종료";
+    const statusActionLabel = memo.status === "open" ? "종료 상태로 변경" : "활성 상태로 변경";
+    return `
     <article class="memo-card ${memo.is_pinned ? "is-pinned" : ""} ${memo.status === "closed" ? "is-closed" : ""}" data-memo-id="${escapeHtml(memo.id)}" data-pinned="${memo.is_pinned ? "true" : "false"}" draggable="${filtered ? "false" : "true"}">
-      <div class="memo-card-top"><span class="memo-drag-handle" aria-hidden="true">⋮⋮</span><div class="memo-card-title"><h4>${escapeHtml(memo.title)}</h4><span class="memo-kind">${escapeHtml(memoKindLabel(memo.kind))}</span><span class="memo-status">${escapeHtml(memo.status === "open" ? "확인 필요" : "정리됨")}</span></div><div class="memo-card-actions"><button type="button" data-memo-action="pin" title="${memo.is_pinned ? "고정 해제" : "상단 고정"}">${memo.is_pinned ? "★" : "☆"}</button><button type="button" data-memo-action="edit" title="메모 수정">✎</button><button type="button" data-memo-action="delete" title="메모 삭제">×</button></div></div>
-      <div class="memo-content">${renderMarkdown(memo.content)}</div>
-      <div class="memo-card-footer"><span>${escapeHtml(memo.author || "anon")}</span><time>${escapeHtml(formatDate(memo.updated_at || memo.created_at))}</time><button type="button" data-memo-action="status">${memo.status === "open" ? "정리됨으로 표시" : "확인 필요로 되돌리기"}</button></div>
-    </article>`).join("");
+      <header class="memo-card-header">
+        <div class="memo-card-header-main">
+          <span class="memo-drag-handle" aria-hidden="true" title="드래그하여 순서 변경">⋮⋮</span>
+          <div class="memo-card-title">
+            <h4>${escapeHtml(memo.title)}</h4>
+            <span class="memo-kind memo-kind-${escapeHtml(memo.kind)}">${escapeHtml(memoKindLabel(memo.kind))}</span>
+            <span class="memo-status">${escapeHtml(statusLabel)}</span>
+          </div>
+        </div>
+        <div class="memo-card-actions" aria-label="메모 작업">
+          <button type="button" data-memo-action="pin" aria-label="${memo.is_pinned ? "고정 해제" : "상단 고정"}" title="${memo.is_pinned ? "고정 해제" : "상단 고정"}">${memo.is_pinned ? "★" : "☆"}</button>
+          <button type="button" data-memo-action="edit" aria-label="메모 수정" title="메모 수정">✎</button>
+          <button type="button" data-memo-action="delete" aria-label="메모 삭제" title="메모 삭제">×</button>
+        </div>
+      </header>
+      <section class="memo-content" aria-label="메모 본문">${renderMarkdown(memo.content)}</section>
+      <footer class="memo-card-footer">
+        <div class="memo-card-author">
+          <span class="memo-author-avatar" aria-hidden="true">${escapeHtml(authorInitial)}</span>
+          <span class="memo-author-name">${escapeHtml(author)}</span>
+          <span class="memo-footer-divider" aria-hidden="true">•</span>
+          <time>${escapeHtml(formatDate(memo.updated_at || memo.created_at))}</time>
+        </div>
+        <div class="memo-card-footer-actions">
+          <button type="button" class="memo-copy-button" data-memo-action="copy" aria-label="마크다운 원본 복사" title="마크다운 원본 복사"><span aria-hidden="true">⧉</span><span class="memo-copy-label">Markdown 원본 복사</span></button>
+          <button type="button" class="memo-status-button" data-memo-action="status"><span aria-hidden="true">✓</span><span>${escapeHtml(statusActionLabel)}</span></button>
+        </div>
+      </footer>
+    </article>`;
+  }).join("");
 }
 
 async function refreshSelectedDetail() {
@@ -364,6 +395,7 @@ async function handleMemoAction(event) {
   const action = button.dataset.memoAction;
   try {
     if (action === "edit") return openMemoModal(memoId);
+    if (action === "copy") return copyMemoMarkdown(button, memo.content);
     if (action === "delete") {
       if (!window.confirm(`“${memo.title}” 메모를 삭제할까요? 삭제 후 복구할 수 없습니다.`)) return;
       await api(`/api/work-items/${encodeURIComponent(item.id)}/memos/${encodeURIComponent(memoId)}`, { method: "DELETE" });
@@ -373,6 +405,36 @@ async function handleMemoAction(event) {
     }
     await refreshSelectedDetail();
   } catch (error) { window.alert(error.message); }
+}
+
+async function copyMemoMarkdown(button, content) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(content);
+    } else {
+      const helper = document.createElement("textarea");
+      helper.value = content;
+      helper.setAttribute("readonly", "");
+      helper.style.position = "fixed";
+      helper.style.opacity = "0";
+      document.body.append(helper);
+      helper.select();
+      const copied = document.execCommand("copy");
+      helper.remove();
+      if (!copied) throw new Error("clipboard unavailable");
+    }
+    const label = button.querySelector(".memo-copy-label");
+    if (!label) return;
+    const original = label.textContent;
+    label.textContent = "복사됨";
+    button.classList.add("is-copied");
+    window.setTimeout(() => {
+      label.textContent = original;
+      button.classList.remove("is-copied");
+    }, 1600);
+  } catch (_) {
+    window.alert("Markdown 원본을 복사하지 못했습니다.");
+  }
 }
 
 async function saveMemoOrder() {

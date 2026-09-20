@@ -1,0 +1,298 @@
+<!DOCTYPE html><html lang="ko"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Harness v2 - Work Item Memo &amp; Note Detail</title>
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts: Inter & Literata + JetBrains Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Literata:ital,opsz,wght@0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,500&amp;display=swap" rel="stylesheet">
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            serif: ['Literata', 'Georgia', 'serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace']
+          },
+          colors: {
+            harness: {
+              forest: '#14382c',
+              'forest-hover': '#0e2920',
+              'forest-light': '#ecf3ef',
+              'forest-border': '#c8dcce',
+              canvas: '#f7f8fa',
+              surface: '#ffffff',
+              border: '#e3e6eb',
+              'border-subtle': '#f0f2f5',
+              tag: '#f1f4f8',
+              text: {
+                primary: '#191f28',
+                secondary: '#4e5968',
+                muted: '#8b95a1'
+              }
+            }
+          },
+          boxShadow: {
+            'card': '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)',
+            'card-elevated': '0 8px 30px -4px rgba(16, 24, 40, 0.06), 0 4px 10px -2px rgba(16, 24, 40, 0.03)'
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Custom CSS Styling -->
+<style data-purpose="base-styling">
+    body {
+      background-color: #f7f9fb;
+      color: #191f28;
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #d1d5db;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
+    }
+  </style>
+<style data-purpose="typography-enhancements">
+    .markdown-code-token {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.84em;
+      padding: 0.15em 0.42em;
+      border-radius: 0.35rem;
+      background-color: #f1f4f9;
+      color: #1a4231;
+      border: 1px solid #dfe5ee;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+  </style>
+<!-- END: Custom CSS Styling -->
+</head>
+<body class="min-h-screen flex flex-col font-sans">
+<!-- BEGIN: Application Shell Header -->
+
+<!-- END: Application Shell Header -->
+<!-- BEGIN: Main Content Area -->
+<main class="flex-1 max-w-5xl w-full mx-auto p-6 md:p-8 flex flex-col space-y-4 py-8" data-purpose="memo-container">
+<!-- Top Context Navigation & Meta Indicator -->
+<div class="flex items-center justify-between text-xs text-harness-text-muted px-1">
+<div class="flex items-center space-x-2">
+<span class="inline-flex items-center text-gray-600 font-mono font-medium">MEMO-ID #082</span>
+<span class="">•</span>
+<span class="">작성자: <span class="font-medium text-gray-800">anon</span> (Dev UID #8401)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200/70">
+          검토 대기중
+        </span>
+</div>
+</div>
+<!-- BEGIN: Refactored Single High-Fidelity Note Card -->
+<article class="bg-white rounded-xl border border-harness-border shadow-card-elevated overflow-hidden transition-all duration-200" data-purpose="harness-work-item-note">
+<!-- BEGIN: Compact, Unified Header (Fixing Multi-line Redundancy) -->
+<header class="px-6 py-4 bg-white border-b border-harness-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none" data-purpose="note-unified-header">
+<!-- Left: Drag Handle, Consolidated Titles & Status Badges in One Seamless Flow -->
+<div class="flex items-start sm:items-center gap-3 min-w-0">
+<!-- Subtle Reorder/Drag Handle -->
+<div class="text-gray-300 hover:text-gray-500 cursor-grab pt-0.5 sm:pt-0" title="드래그하여 순서 변경">
+<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+<path d="M7 4a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm0 6a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm0 6a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm8-12a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm0 6a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm0 6a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"></path>
+</svg>
+</div>
+<!-- Title with Category Prefix & Inline Badges -->
+<div class="flex items-center flex-wrap gap-2.5 min-w-0">
+<!-- Context Scope Badge -->
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider bg-gray-100 text-gray-700 border border-gray-200 font-mono">
+              현재 구조
+            </span>
+<h1 class="text-base sm:text-lg font-bold text-gray-900 tracking-tight font-serif flex items-center gap-1.5 truncate">
+              ARTIFACT를 등록하는 과정의 이분화 문제
+            </h1>
+<!-- Semantic Kind & Triage Tags -->
+<div class="flex items-center gap-1.5 pl-0.5">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200/80">
+<span class="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5"></span>
+                문제
+              </span>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200/70">
+                확인 필요
+              </span>
+</div>
+</div>
+</div>
+<!-- Right: Action Icons (Star, Markdown Copy, Edit, More/Delete) -->
+<div class="flex items-center justify-end space-x-1 sm:space-x-1.5 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100">
+<!-- Favorite Button -->
+<button aria-label="즐겨찾기" class="p-1.5 rounded-lg text-gray-400 hover:text-amber-500 hover:bg-amber-50 transition-colors" title="즐겨찾기 추가" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<!-- Copy Raw Markdown Button -->
+<button aria-label="마크다운 복사" class="p-1.5 rounded-lg text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors" title="마크다운 복사" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<!-- Edit Button -->
+<button aria-label="수정" class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors" title="수정" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<!-- Close / Dismiss / More Options Button -->
+<button aria-label="닫기" class="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors" title="삭제 또는 닫기" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+</header>
+<!-- END: Compact, Unified Header -->
+<!-- BEGIN: Content Body (Markdown Presentation) -->
+<section class="p-6 md:p-8 text-gray-800 leading-relaxed text-[15px]" data-purpose="note-markdown-body">
+<!-- Summary Callout Block -->
+<div class="mb-6 p-4 rounded-lg bg-emerald-50/50 border border-emerald-900/10 flex items-start gap-3">
+<div class="mt-0.5 text-emerald-800 shrink-0">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+<p class="text-sm text-emerald-950 leading-relaxed">
+            아티팩트(<span class="font-semibold text-emerald-900">ARTIFACT</span>) 생성이 작업 런타임 내 분산되어 있어, 컨텍스트 추론 실패 시 누락될 가능성이 존재합니다. 아래 두 가지 등록 경로의 일관성 보완이 요구됩니다.
+          </p>
+</div>
+<!-- Structured Item 1 -->
+<div class="group relative pl-2 md:pl-3 border-l-2 border-emerald-700/30 hover:border-emerald-700 transition-colors mb-8">
+<h2 class="text-base md:text-lg font-bold text-gray-900 font-serif flex items-center gap-2 mb-3">
+<span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-900 font-mono text-xs font-semibold">1</span>
+<span class="">Codex 작업 세션 도중 아티팩트 등록</span>
+</h2>
+<div class="space-y-3 text-gray-700 text-sm md:text-[14.5px] pl-8">
+<div class="flex items-start gap-2.5">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 mt-2 shrink-0"></span>
+<p class="leading-relaxed">
+                Codex는 아티팩트를 등록하는 <code class="markdown-code-token">record_artifact()</code> 도구의 설명을 보고, 해당 도구가 WI의 아티팩트로 등록되어야 할 가치가 있다고 판단하면 해당 도구를 호출하여 저장한다.
+              </p>
+</div>
+<div class="flex items-start gap-2.5">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 mt-2 shrink-0"></span>
+<p class="leading-relaxed text-gray-600">
+                단, 현재 구조상 <code class="markdown-code-token font-mono">AGENTS.md</code>나 <code class="markdown-code-token font-mono">PostToolUse Hook</code>에 명시된 내용은 아니므로 반드시 작동하지는 않고, 확률적으로 추론하여 작동된다.
+              </p>
+</div>
+</div>
+</div>
+<!-- Structured Item 2 -->
+<div class="group relative pl-2 md:pl-3 border-l-2 border-emerald-700/30 hover:border-emerald-700 transition-colors">
+<h2 class="text-base md:text-lg font-bold text-gray-900 font-serif flex items-center gap-2 mb-3">
+<span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-900 font-mono text-xs font-semibold">2</span>
+<span class="">
+<code class="markdown-code-token text-emerald-950 font-bold bg-emerald-50 border-emerald-200 mr-1">$work-finish</code>
+              에서의 등록 <span class="text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 ml-1">중요</span>
+</span>
+</h2>
+<div class="space-y-3 text-gray-700 text-sm md:text-[14.5px] pl-8">
+<div class="flex items-start gap-2.5">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 mt-2 shrink-0"></span>
+<p class="leading-relaxed">
+<code class="markdown-code-token font-mono">$work-finish</code> 스킬에서는 해당 턴의 컨텍스트를 읽고 WI에 등록되지 않았으나 가치가 있는 아티팩트 후보를 직접 찾아서 가치를 검증하고 직접 등록한다.
+              </p>
+</div>
+<div class="flex items-start gap-2.5">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 mt-2 shrink-0"></span>
+<p class="leading-relaxed">
+                이는 <code class="markdown-code-token font-mono">$work-finish</code>의 파이프라인 상 명시되어 있는 내용이므로 <strong class="font-semibold text-gray-900">거의 반드시 실행</strong>된다.
+              </p>
+</div>
+</div>
+</div>
+</section>
+<!-- END: Content Body -->
+<!-- BEGIN: Card Footer with Meta & Interaction Tools -->
+<footer class="px-6 py-3.5 bg-gray-50/80 border-t border-harness-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500 font-sans" data-purpose="note-footer">
+<!-- Left Footer: Author Stamp & Metadata -->
+<div class="flex items-center space-x-3 text-xs w-full sm:w-auto justify-between sm:justify-start">
+<div class="flex items-center space-x-2">
+<div class="w-5 h-5 rounded-full bg-emerald-800 text-white flex items-center justify-center text-[10px] font-bold">
+              A
+            </div>
+<span class="font-medium text-gray-700">anon</span>
+</div>
+<span class="text-gray-300">•</span>
+<time class="text-gray-500 flex items-center gap-1" datetime="2024-09-20T18:37:00">
+<svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+            9월 20일 오후 06:37
+          </time>
+</div>
+<!-- Right Footer: Status Action Toggle & Secondary Tools -->
+<div class="flex items-center space-x-2.5 w-full sm:w-auto justify-end">
+<button class="inline-flex items-center space-x-1.5 text-gray-600 hover:text-gray-900 px-2.5 py-1 rounded border border-gray-200 bg-white hover:bg-gray-50 text-xs font-medium transition-colors shadow-sm" type="button">
+<svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span class="">Markdown 원본 복사</span>
+</button>
+<!-- Toggle Resolved / Mark Cleaned Action -->
+<button class="inline-flex items-center space-x-1.5 text-emerald-800 hover:text-emerald-950 px-3 py-1 rounded border border-emerald-300/80 bg-emerald-50 hover:bg-emerald-100 text-xs font-semibold transition-colors shadow-sm" type="button">
+<svg class="w-3.5 h-3.5 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span class="">정리됨으로 표시</span>
+</button>
+</div>
+</footer>
+<!-- END: Card Footer -->
+</article>
+<!-- END: Refactored Single High-Fidelity Note Card -->
+<!-- BEGIN: Quick Help / UX Hint -->
+<div class="flex items-center justify-between text-xs text-gray-400 px-2 pt-1" data-purpose="meta-shortcuts">
+<span class="">Tip: <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-white border border-gray-300 rounded shadow-xs text-gray-600">E</kbd> 키를 눌러 바로 수정 모드로 전환할 수 있습니다.</span>
+<span class="hover:underline cursor-pointer">기록 이력 (3개 변경됨)</span>
+</div>
+<!-- END: Quick Help / UX Hint -->
+</main>
+<!-- END: Main Content Area -->
+<!-- BEGIN: Interactive Feedback Script -->
+<script data-purpose="card-interactions">
+    document.addEventListener('DOMContentLoaded', () => {
+      // Simple toggle indicator for '정리됨으로 표시' button
+      const resolveBtn = document.querySelector('button:has(span:contains("정리됨으로 표시"))') || document.querySelectorAll('footer button')[1];
+      
+      if (resolveBtn) {
+        resolveBtn.addEventListener('click', function() {
+          const isResolved = this.classList.contains('bg-emerald-700');
+          if (!isResolved) {
+            this.classList.remove('bg-emerald-50', 'text-emerald-800', 'border-emerald-300/80', 'hover:bg-emerald-100');
+            this.classList.add('bg-emerald-700', 'text-white', 'border-emerald-800', 'hover:bg-emerald-800');
+            this.querySelector('span').textContent = '정리 완료됨 ✓';
+          } else {
+            this.classList.add('bg-emerald-50', 'text-emerald-800', 'border-emerald-300/80', 'hover:bg-emerald-100');
+            this.classList.remove('bg-emerald-700', 'text-white', 'border-emerald-800', 'hover:bg-emerald-800');
+            this.querySelector('span').textContent = '정리됨으로 표시';
+          }
+        });
+      }
+    });
+  </script>
+<!-- END: Interactive Feedback Script -->
+
+
+</body></html>
