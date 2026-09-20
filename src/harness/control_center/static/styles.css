@@ -17,9 +17,10 @@
   --line: #d7d8d0;
   --line-strong: #b9bdb6;
   --shadow: 0 18px 55px rgba(20, 43, 33, 0.14);
-  --serif: "Iowan Old Style", "Noto Serif KR", "AppleMyungjo", Georgia, serif;
-  --sans: "Avenir Next", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
-  --mono: "SFMono-Regular", Menlo, Consolas, monospace;
+  --pretendard: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --serif: var(--pretendard);
+  --sans: var(--pretendard);
+  --mono: var(--pretendard);
 }
 
 * { box-sizing: border-box; }

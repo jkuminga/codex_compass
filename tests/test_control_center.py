@@ -37,6 +37,10 @@ class ControlCenterApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Harness Control Center", response.text)
         self.assertIn("새 Draft WI 생성", response.text)
+        self.assertIn(
+            "pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css",
+            response.text,
+        )
 
     def test_create_draft_uses_server_owned_defaults(self) -> None:
         draft = self.create_draft()
