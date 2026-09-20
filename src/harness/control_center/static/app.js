@@ -33,6 +33,7 @@ const state = {
   kindFilters: new Set(),
   memoStatusFilter: "",
   memoKindFilter: "",
+  expandedMemoIds: new Set(),
   editingMemoId: null,
   detailTab: "overview",
 };
@@ -329,7 +330,12 @@ function renderMemoCards() {
   if (statusFilter) statusFilter.value = state.memoStatusFilter;
   if (kindFilter) kindFilter.value = state.memoKindFilter;
   const memos = visibleMemos();
-  const total = (state.selectedContext?.memos || []).length;
+  const allMemos = state.selectedContext?.memos || [];
+  const total = allMemos.length;
+  const currentMemoIds = new Set(allMemos.map((memo) => memo.id));
+  for (const memoId of state.expandedMemoIds) {
+    if (!currentMemoIds.has(memoId)) state.expandedMemoIds.delete(memoId);
+  }
   count.textContent = `총 ${total}건`;
   const filtered = Boolean(state.memoStatusFilter || state.memoKindFilter);
   const summary = document.querySelector("#memo-filter-summary");
@@ -345,8 +351,9 @@ function renderMemoCards() {
     const authorInitial = [...author][0]?.toUpperCase() || "A";
     const statusLabel = memo.status === "open" ? "활성" : "종료";
     const statusActionLabel = memo.status === "open" ? "종료 상태로 변경" : "활성 상태로 변경";
+    const expanded = state.expandedMemoIds.has(memo.id);
     return `
-    <article class="memo-card ${memo.is_pinned ? "is-pinned" : ""} ${memo.status === "closed" ? "is-closed" : ""}" data-memo-id="${escapeHtml(memo.id)}" data-pinned="${memo.is_pinned ? "true" : "false"}" draggable="${filtered ? "false" : "true"}">
+    <article class="memo-card ${memo.is_pinned ? "is-pinned" : ""} ${memo.status === "closed" ? "is-closed" : ""} ${expanded ? "is-expanded" : ""}" data-memo-id="${escapeHtml(memo.id)}" data-pinned="${memo.is_pinned ? "true" : "false"}" draggable="${filtered ? "false" : "true"}">
       <header class="memo-card-header">
         <div class="memo-card-header-main">
           <span class="memo-drag-handle" aria-hidden="true" title="드래그하여 순서 변경">⋮⋮</span>
@@ -357,13 +364,14 @@ function renderMemoCards() {
           </div>
         </div>
         <div class="memo-card-actions" aria-label="메모 작업">
+          <button type="button" class="memo-expand-button" data-memo-action="toggle" aria-expanded="${expanded}" aria-label="메모 ${expanded ? "접기" : "열기"}" title="메모 ${expanded ? "접기" : "열기"}"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg><span>${expanded ? "접기" : "열기"}</span></button>
           <button type="button" data-memo-action="pin" aria-label="${memo.is_pinned ? "고정 해제" : "상단 고정"}" title="${memo.is_pinned ? "고정 해제" : "상단 고정"}">${memo.is_pinned ? "★" : "☆"}</button>
           <button type="button" data-memo-action="edit" aria-label="메모 수정" title="메모 수정">✎</button>
           <button type="button" data-memo-action="delete" aria-label="메모 삭제" title="메모 삭제">×</button>
         </div>
       </header>
-      <section class="memo-content" aria-label="메모 본문">${renderMarkdown(memo.content)}</section>
-      <footer class="memo-card-footer">
+      <section class="memo-content ${expanded ? "" : "hidden"}" aria-label="메모 본문">${renderMarkdown(memo.content)}</section>
+      <footer class="memo-card-footer ${expanded ? "" : "hidden"}">
         <div class="memo-card-author">
           <span class="memo-author-avatar" aria-hidden="true">${escapeHtml(authorInitial)}</span>
           <span class="memo-author-name">${escapeHtml(author)}</span>
@@ -394,6 +402,19 @@ async function handleMemoAction(event) {
   if (!item || !memo) return;
   const action = button.dataset.memoAction;
   try {
+    if (action === "toggle") {
+      const expanded = !state.expandedMemoIds.has(memoId);
+      if (expanded) state.expandedMemoIds.add(memoId);
+      else state.expandedMemoIds.delete(memoId);
+      card.classList.toggle("is-expanded", expanded);
+      card.querySelector(".memo-content")?.classList.toggle("hidden", !expanded);
+      card.querySelector(".memo-card-footer")?.classList.toggle("hidden", !expanded);
+      button.setAttribute("aria-expanded", String(expanded));
+      button.setAttribute("aria-label", `메모 ${expanded ? "접기" : "열기"}`);
+      button.title = `메모 ${expanded ? "접기" : "열기"}`;
+      button.querySelector("span:last-child").textContent = expanded ? "접기" : "열기";
+      return;
+    }
     if (action === "edit") return openMemoModal(memoId);
     if (action === "copy") return copyMemoMarkdown(button, memo.content);
     if (action === "delete") {
@@ -698,6 +719,7 @@ async function changeSelectedStatus(target) {
 }
 
 async function selectItem(workItemId) {
+  if (state.selectedId !== workItemId) state.expandedMemoIds.clear();
   state.selectedId = workItemId;
   renderItems();
   elements.detail.innerHTML = `<div class="loading-state"><span class="spinner"></span><p>상세 정보를 불러오는 중입니다.</p></div>`;
