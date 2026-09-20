@@ -33,7 +33,7 @@ WorkItemStatusFilter = Literal[
 ]
 
 WorkItemPriority = Literal["urgent", "high", "normal", "low"]
-WebStatusTarget = Literal["ready", "cancelled"]
+WebStatusTarget = Literal["ready", "done", "cancelled"]
 MemoKind = Literal["general", "decision", "problem", "idea", "question", "reference"]
 MemoStatus = Literal["open", "closed"]
 
@@ -273,15 +273,23 @@ def create_router() -> APIRouter:
             raise state_store.ConflictError(
                 f"웹 콘솔에서는 {current['status']} → {payload.status} 상태 변경을 허용하지 않습니다."
             )
-        state_store.change_work_item_status(
-            work_item_id,
-            payload.status,
-            actor="web_console",
-            reason="웹 콘솔에서 상태 변경",
-            next_action=current["next_action"] if payload.status == "ready" else None,
-            block_reason=None,
-            database_path=database_path,
-        )
+        if payload.status == "done":
+            state_store.close_work_item(
+                work_item_id,
+                actor="web_console",
+                reason="사용자가 웹 콘솔에서 WorkItem 완료를 확인함",
+                database_path=database_path,
+            )
+        else:
+            state_store.change_work_item_status(
+                work_item_id,
+                payload.status,
+                actor="web_console",
+                reason="웹 콘솔에서 상태 변경",
+                next_action=current["next_action"] if payload.status == "ready" else None,
+                block_reason=None,
+                database_path=database_path,
+            )
         return _detail(work_item_id, database_path)
 
     @router.delete("/work-items/{work_item_id}")

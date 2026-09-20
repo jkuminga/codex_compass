@@ -24,6 +24,7 @@ enabled_tools = [
   "resolve_artifact",
   "verify_criterion",
   "finish_work",
+  "close_work_item",
   "recover_abandoned_work",
   "create_memory_candidate",
   "list_memory_candidates",

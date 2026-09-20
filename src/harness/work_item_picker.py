@@ -26,7 +26,8 @@ FZF_PREVIEW = (
     "우선순위  %s\\n"
     "종류      %s\\n\\n"
     "◆ 제목\\n  %s\\n\\n"
-    "◆ 목표\\n  %s\\n' {1} {3} {4} {5} {6} {7}"
+    "◆ 목표\\n  %s\\n\\n"
+    "◆ 다음 행동\\n  %s\\n' {1} {3} {4} {5} {6} {7} {8}"
 )
 
 
@@ -156,6 +157,10 @@ def read_and_validate_request(path: Path) -> dict[str, Any]:
             _required_string(work_item, "kind")
         if "is_draft" in work_item and not isinstance(work_item["is_draft"], bool):
             raise SelectionFileError("work_items is_draft must be a boolean")
+        if work_item.get("next_action") is not None and not isinstance(
+            work_item["next_action"], str
+        ):
+            raise SelectionFileError("work_items next_action must be a string or null")
     return request
 
 
@@ -225,6 +230,7 @@ def format_fzf_line(item: Mapping[str, Any]) -> str:
             _one_line(item.get("kind", "work")),
             _one_line(item["title"]),
             _one_line(item["goal"]),
+            _one_line(item.get("next_action") or "구체화 전이라 다음 행동이 없습니다."),
         )
     )
 

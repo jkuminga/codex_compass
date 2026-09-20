@@ -21,6 +21,26 @@ from uuid import uuid4
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / ".harness" / "state.db"
 SCHEMA_PATH = PROJECT_ROOT / ".harness" / "schema.sql"
+COMPLETION_RECOMMENDED_NEXT_ACTION = (
+    "[완료 확인 권장] 현재 AC 기준으로 완료 가능합니다. "
+    "결과를 확인해 WI를 완료하거나, 추가 작업을 계속 진행하세요."
+)
+
+_WORK_ITEM_STATUS_TRANSITION_TRIGGER_SQL = """
+CREATE TRIGGER work_items_validate_status_transition
+BEFORE UPDATE OF status ON work_items
+WHEN OLD.status <> NEW.status
+  AND NOT (
+    (OLD.status = 'backlog' AND NEW.status IN ('ready', 'cancelled'))
+    OR (OLD.status = 'ready' AND NEW.status IN ('in_progress', 'done', 'cancelled'))
+    OR (OLD.status = 'in_progress'
+      AND NEW.status IN ('ready', 'blocked', 'cancelled'))
+    OR (OLD.status = 'blocked' AND NEW.status IN ('ready', 'cancelled'))
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'invalid work item status transition');
+END
+"""
 
 
 class StateStoreError(RuntimeError):
@@ -146,6 +166,7 @@ def initialize_database(
         _migrate_run_recall_fields(database)
         _migrate_memory_candidate_finalize_fields(database)
         _migrate_work_item_memos(database)
+        _migrate_work_item_status_transition(database)
         database.commit()
     except (OSError, sqlite3.Error) as error:
         raise StateStoreError(f"database initialization failed: {error}") from error
@@ -238,6 +259,13 @@ def _migrate_work_item_memos(database: sqlite3.Connection) -> None:
           ON work_item_memos(work_item_id, status, kind)
         """
     )
+
+
+def _migrate_work_item_status_transition(database: sqlite3.Connection) -> None:
+    """Replace the lifecycle Trigger so existing DBs use user-owned completion."""
+
+    database.execute("DROP TRIGGER IF EXISTS work_items_validate_status_transition")
+    database.execute(_WORK_ITEM_STATUS_TRANSITION_TRIGGER_SQL)
 
 
 @contextmanager
@@ -906,7 +934,7 @@ def get_work_item_management_capabilities(
         ]
         allowed_statuses = {
             "backlog": ["cancelled"],
-            "ready": ["cancelled"],
+            "ready": ["done", "cancelled"],
             "blocked": ["ready", "cancelled"],
         }[status]
     elif status == "in_progress":
@@ -1333,6 +1361,9 @@ def change_work_item_status(
 ) -> dict[str, Any]:
     """Change a WorkItem outside Run finalization and append its State Event."""
 
+    if status == "done":
+        raise ConflictError("done WorkItems must be closed with close_work_item")
+
     now = _utc_now()
     with _transaction(database_path) as database:
         current = _require_row(
@@ -1342,11 +1373,9 @@ def change_work_item_status(
             return current
         if current["is_draft"] and status != "backlog":
             raise ConflictError("Draft WorkItem must be refined before it becomes executable")
-        if status in {"ready", "blocked", "done", "cancelled"}:
+        if status in {"ready", "blocked", "cancelled"}:
             _require_no_running_run(database, work_item_id)
-        if status == "done":
-            _validate_work_item_completion(database, work_item_id)
-        closed_at = now if status in {"done", "cancelled"} else None
+        closed_at = now if status == "cancelled" else None
         database.execute(
             """
             UPDATE work_items
@@ -1679,7 +1708,6 @@ def pass_criterion(
 
 
 _FINISH_STATUS_PAIRS = {
-    ("succeeded", "done"),
     ("succeeded", "ready"),
     ("interrupted", "blocked"),
     ("failed", "ready"),
@@ -1699,6 +1727,7 @@ def finish_run(
     termination_reason: str | None = None,
     next_action: str | None = None,
     block_reason: str | None = None,
+    completion_recommended: bool = False,
     database_path: str | Path = DEFAULT_DATABASE_PATH,
 ) -> dict[str, dict[str, Any]]:
     """Atomically finish a Run, update its WorkItem, and append both events."""
@@ -1707,7 +1736,11 @@ def finish_run(
         raise ConflictError("unsupported Run and WorkItem finish status combination")
     if run_status in {"failed", "interrupted", "cancelled"} and not termination_reason:
         raise ConflictError("termination_reason is required for non-successful Run completion")
-    if work_item_status in {"ready", "blocked"} and (
+    if completion_recommended and (run_status, work_item_status) != ("succeeded", "ready"):
+        raise ConflictError("completion_recommended requires a succeeded Run and ready WorkItem")
+    if completion_recommended and next_action is not None:
+        raise ConflictError("next_action must be omitted when completion_recommended is true")
+    if not completion_recommended and work_item_status in {"ready", "blocked"} and (
         next_action is None or not next_action.strip()
     ):
         raise ConflictError("next_action is required when a WorkItem remains actionable")
@@ -1738,8 +1771,10 @@ def finish_run(
             (run["work_item_id"],),
             "WorkItem",
         )
-        if work_item_status == "done":
+        resolved_next_action = next_action
+        if completion_recommended:
             _validate_work_item_completion(database, run["work_item_id"])
+            resolved_next_action = COMPLETION_RECOMMENDED_NEXT_ACTION
         database.execute(
             """
             UPDATE runs
@@ -1757,7 +1792,7 @@ def finish_run(
             """,
             (
                 work_item_status,
-                next_action,
+                resolved_next_action,
                 block_reason,
                 closed_at,
                 now,
@@ -2177,33 +2212,53 @@ def recover_abandoned_work(
         }
 
 
-def complete_work_item(
+def close_work_item(
     work_item_id: str,
     *,
-    summary: str,
     actor: str,
     reason: str,
     database_path: str | Path = DEFAULT_DATABASE_PATH,
-) -> dict[str, dict[str, Any]]:
-    """Finish the active Run successfully after checking all completion proof."""
+) -> dict[str, Any]:
+    """Close one ready WorkItem after validating its stored completion proof."""
 
-    verification = get_work_item_verification(
-        work_item_id, database_path=database_path
-    )
-    if not verification["can_complete"]:
-        raise ConflictError("WorkItem cannot complete: " + "; ".join(verification["issues"]))
-    run = get_running_run(work_item_id, database_path=database_path)
-    if run is None:
-        raise ConflictError("WorkItem has no running Run to complete")
-    return finish_run(
-        run["id"],
-        run_status="succeeded",
-        work_item_status="done",
-        summary=summary,
-        actor=actor,
-        reason=reason,
-        database_path=database_path,
-    )
+    now = _utc_now()
+    with _transaction(database_path) as database:
+        work_item = _require_row(
+            database,
+            "SELECT * FROM work_items WHERE id = ?",
+            (work_item_id,),
+            "WorkItem",
+        )
+        if work_item["status"] != "ready":
+            raise ConflictError("only a ready WorkItem can be closed")
+        _require_no_running_run(database, work_item_id)
+        _validate_work_item_completion(database, work_item_id)
+        database.execute(
+            """
+            UPDATE work_items
+            SET status = 'done', next_action = NULL, block_reason = NULL,
+                closed_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (now, now, work_item_id),
+        )
+        _append_state_event(
+            database,
+            entity_type="work_item",
+            entity_id=work_item_id,
+            event_type="status_changed",
+            actor=actor,
+            from_status="ready",
+            to_status="done",
+            reason=reason,
+            created_at=now,
+        )
+        return _require_row(
+            database,
+            "SELECT * FROM work_items WHERE id = ?",
+            (work_item_id,),
+            "WorkItem",
+        )
 
 
 def get_work_item_verification(

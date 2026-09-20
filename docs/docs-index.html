@@ -298,7 +298,7 @@
         <p class="lede">하네스의 설계 결정, 상태 관리 방식과 장기 기억 구조를 한곳에서 찾는다. 카드를 클릭하면 해당 문서로 이동한다.</p>
       </div>
       <div class="summary" aria-label="문서 현황">
-        <div class="metric"><strong>13</strong><span>등록된 문서</span></div>
+        <div class="metric"><strong>16</strong><span>등록된 문서</span></div>
         <div class="metric"><strong>3</strong><span>문서 범주</span></div>
       </div>
     </header>
@@ -309,7 +309,7 @@
       <button class="filter" type="button" data-filter="overview" aria-pressed="false">개요</button>
       <button class="filter" type="button" data-filter="workflow" aria-pressed="false">작업·상태</button>
       <button class="filter" type="button" data-filter="memory" aria-pressed="false">장기 기억</button>
-      <span class="result-count" id="result-count" aria-live="polite">12개 표시</span>
+      <span class="result-count" id="result-count" aria-live="polite">16개 표시</span>
     </div>
 
     <section class="group" data-group="overview">
@@ -369,6 +369,27 @@
           <h3>Draft WorkItem</h3>
           <p>웹 콘솔에서 가볍게 할 일을 만들고, Codex가 실행 가능한 작업으로 다듬는 규칙을 정리한다.</p>
           <span class="filename">draft-work-items.md</span>
+        </a>
+        <a class="doc-card featured" data-category="workflow" data-search="사용자 명시적 완료 workitem ready in progress done run 성공 close 종료 권한" href="./viewer.html?file=user-controlled-work-item-completion.md">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge">Markdown</span><span class="topic">Completion policy</span></div>
+          <h3>사용자 명시적 WI 완료</h3>
+          <p>Run 성공 후 WI를 ready로 유지하고, 웹 콘솔이나 사용자의 명시적 요청으로만 done 처리하는 기준이다.</p>
+          <span class="filename">user-controlled-work-item-completion.md</span>
+        </a>
+        <a class="doc-card" data-category="workflow" data-search="폐기된 대안 완료 done workitem wi 후속 수정 run 재사용 fzf" href="./viewer.html?file=completed-work-item-follow-up-runs.md">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge">Markdown</span><span class="topic">Superseded design</span></div>
+          <h3>완료 WI 후속 Run — 폐기됨</h3>
+          <p>완료 WI를 다시 여는 방안을 검토했던 과거 설계다. 현재 구현 기준으로 사용하지 않는다.</p>
+          <span class="filename">completed-work-item-follow-up-runs.md</span>
+        </a>
+        <a class="doc-card" data-category="workflow" data-search="중단된 체크리스트 완료 done workitem 후속 run migration fzf binding recovery" href="./viewer.html?file=completed-work-item-follow-up-checklist.md">
+          <span class="arrow" aria-hidden="true">↗</span>
+          <div class="card-meta"><span class="badge">Markdown</span><span class="topic">Stopped checklist</span></div>
+          <h3>완료 WI 후속 Run 체크리스트 — 중단됨</h3>
+          <p>done 재개 대안에서 발견한 문제를 보존한 기록이며 현재 구현 작업에는 사용하지 않는다.</p>
+          <span class="filename">completed-work-item-follow-up-checklist.md</span>
         </a>
       </div>
     </section>

@@ -53,6 +53,10 @@ class UserPromptSubmitHookTests(unittest.TestCase):
                 {item["id"] for item in request["work_items"]},
                 {work_item["id"], second_work_item["id"]},
             )
+            selected = next(
+                item for item in request["work_items"] if item["id"] == work_item["id"]
+            )
+            self.assertEqual(selected["next_action"], "로그인 화면을 구현한다.")
             work_item_picker.atomic_write_json(work_item_picker.result_path_for(request_path), {
                 "schema_version": 1, "request_id": request["request_id"], "session_id": request["session_id"],
                 "turn_id": request["turn_id"], "created_at": work_item_picker.format_timestamp(work_item_picker.utc_now()),
@@ -313,9 +317,11 @@ class UserPromptSubmitHookTests(unittest.TestCase):
         preview = next(option for option in command if option.startswith("--preview="))
         self.assertIn("◆ 제목", preview)
         self.assertIn("◆ 목표", preview)
+        self.assertIn("◆ 다음 행동", preview)
         self.assertNotIn("선택한 WorkItem\\n\\n", preview)
         self.assertIn("{6}", preview)
         self.assertIn("{7}", preview)
+        self.assertIn("{8}", preview)
         self.assertIn("--preview-window=down:50%,border-top,wrap", command)
 
     def test_picker_formats_visible_columns_with_fixed_separators(self) -> None:
@@ -327,13 +333,14 @@ class UserPromptSubmitHookTests(unittest.TestCase):
                 "kind": "bug",
                 "title": "로그인\t구현",
                 "goal": "로그인한다.\n검증한다.",
+                "next_action": "로그인 테스트를 실행한다.",
             }
         )
 
         self.assertEqual(
             line,
             "WI-1\tREADY   | high     | bug            | 로그인 구현 / 로그인한다. 검증한다."
-            "\tREADY\thigh\tbug\t로그인 구현\t로그인한다. 검증한다.",
+            "\tREADY\thigh\tbug\t로그인 구현\t로그인한다. 검증한다.\t로그인 테스트를 실행한다.",
         )
 
     def test_terminal_picker_shows_guidance_when_terminal_cannot_access_desktop(self) -> None:

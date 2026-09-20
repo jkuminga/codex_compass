@@ -393,6 +393,23 @@ def create_server(
             database_path=database_path,
         )
 
+    @server.tool(name="close_work_item")
+    def close_work_item(work_item_id: str, reason: str) -> dict[str, Any]:
+        """Close one ready WorkItem after an explicit user completion request.
+
+        This tool does not create or finish a Run. Use the exact WorkItem ID
+        selected by the user through ``w/`` or supplied by the web console.
+        The state store rechecks the status, active Run, Acceptance Criteria,
+        and Evidence before changing the WorkItem to done.
+        """
+
+        return state_store.close_work_item(
+            work_item_id,
+            actor="codex",
+            reason=reason,
+            database_path=database_path,
+        )
+
     @server.tool(name="start_work")
     def start_work(
         work_item_id: str,
@@ -531,7 +548,6 @@ def create_server(
     def finish_work(
         run_id: str,
         outcome: Literal[
-            "completed",
             "progressed",
             "retry_needed",
             "blocked",
@@ -540,29 +556,20 @@ def create_server(
         ],
         summary: str,
         reason: str,
+        completion_recommended: bool = False,
         next_action: str | None = None,
         block_reason: str | None = None,
         termination_reason: str | None = None,
     ) -> dict[str, Any]:
         """Atomically finish a Run and move its WorkItem to the matching state.
 
-        completed means succeeded/done; progressed means this Run succeeded but
-        the WorkItem returns to ready with a concrete next action; retry_needed
-        means failed/ready; blocked means interrupted/blocked; interrupted means
-        interrupted/ready; cancelled closes both. Failed, interrupted, and
-        cancelled Runs need a termination reason, and ready or blocked WorkItems
-        need a concrete next action.
+        progressed means this Run succeeded and the WorkItem returns to ready.
+        Set completion_recommended when its stored completion proof is valid;
+        the state store then supplies the fixed user-completion prompt. Otherwise
+        provide a concrete next_action. retry_needed means failed/ready; blocked
+        means interrupted/blocked; interrupted means interrupted/ready; cancelled
+        closes both. Non-successful Runs need a termination reason.
         """
-
-        run = state_store.get_run(run_id, database_path=database_path)
-        if outcome == "completed":
-            return state_store.complete_work_item(
-                run["work_item_id"],
-                summary=summary,
-                actor="codex",
-                reason=reason,
-                database_path=database_path,
-            )
 
         mapping = {
             "progressed": ("succeeded", "ready"),
@@ -585,6 +592,7 @@ def create_server(
             termination_reason=resolved_termination_reason,
             next_action=next_action,
             block_reason=block_reason,
+            completion_recommended=completion_recommended,
             database_path=database_path,
         )
 
@@ -674,6 +682,9 @@ mcp = create_server(os.environ.get("HARNESS_STATE_DB", state_store.DEFAULT_DATAB
 def main() -> None:
     """Run the local MCP server over stdio for Codex."""
 
+    state_store.initialize_database(
+        os.environ.get("HARNESS_STATE_DB", state_store.DEFAULT_DATABASE_PATH)
+    )
     mcp.run()
 
 

@@ -234,6 +234,54 @@ class ControlCenterApiTests(unittest.TestCase):
         self.assertEqual(response.json()["work_item"]["next_action"], "권한을 기다린다.")
         self.assertIsNone(response.json()["work_item"]["block_reason"])
 
+    def test_ready_work_item_can_be_closed_from_web_with_valid_proof(self) -> None:
+        work_item = state_store.create_ready_work_item(
+            title="웹 완료",
+            kind="verification",
+            goal="사용자가 웹 콘솔에서 WI를 닫는다.",
+            next_action="사용자 확인을 기다린다.",
+            acceptance_criteria=["사용자가 결과를 확인한다."],
+            actor="test",
+            database_path=self.database_path,
+        )
+        criterion = state_store.get_work_item_context(
+            work_item["id"], database_path=self.database_path
+        )["acceptance_criteria"][0]
+        state_store.waive_criterion(
+            criterion["id"], actor="user", reason="결과 확인",
+            database_path=self.database_path,
+        )
+
+        response = self.client.patch(
+            f"/api/work-items/{work_item['id']}/status", json={"status": "done"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["work_item"]["status"], "done")
+        self.assertIsNone(response.json()["work_item"]["next_action"])
+        self.assertIsNotNone(response.json()["work_item"]["closed_at"])
+
+    def test_web_rejects_close_when_criteria_are_pending(self) -> None:
+        work_item = state_store.create_ready_work_item(
+            title="미검증 웹 완료",
+            kind="verification",
+            goal="완료 조건 없는 종료를 거부한다.",
+            next_action="검증을 수행한다.",
+            acceptance_criteria=["검증이 통과한다."],
+            actor="test",
+            database_path=self.database_path,
+        )
+
+        response = self.client.patch(
+            f"/api/work-items/{work_item['id']}/status", json={"status": "done"}
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            state_store.get_work_item(work_item["id"], database_path=self.database_path)["status"],
+            "ready",
+        )
+
     def test_delete_is_limited_to_unstarted_backlog_items(self) -> None:
         draft = self.create_draft()
         response = self.client.delete(f"/api/work-items/{draft['id']}")

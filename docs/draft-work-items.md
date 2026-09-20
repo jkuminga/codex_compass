@@ -88,7 +88,7 @@ Priority · Feature · Created
 | --- | --- |
 | Draft | 상태 변경 없음. `w/` 구체화 후 `ready`가 된다는 안내만 표시 |
 | `backlog` | `cancelled` |
-| `ready` | `cancelled`; `in_progress`는 `start_work()`만 변경 가능 |
+| `ready` | `done`, `cancelled`; `in_progress`는 `start_work()`만 변경 가능. `done`은 사용자 완료 전용 `close_work_item()`이 처리 |
 | `blocked` | `ready`, `cancelled` |
 | `in_progress` | 직접 변경 불가. 활성 Run을 `finish_work()`로 종료해야 한다는 안내 표시 |
 | `done`, `cancelled` | 최종 상태이므로 변경 메뉴 비활성화 |

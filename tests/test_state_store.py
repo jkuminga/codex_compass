@@ -46,6 +46,34 @@ class StateStoreLifecycleTests(unittest.TestCase):
         self.assertEqual(columns["intent"]["notnull"], 1)
         self.assertEqual(columns["recall_query"]["notnull"], 1)
 
+    def test_initialize_database_replaces_the_status_transition_trigger(self) -> None:
+        database = state_store.open_database(self.database_path)
+        database.execute("DROP TRIGGER work_items_validate_status_transition")
+        database.execute(
+            """
+            CREATE TRIGGER work_items_validate_status_transition
+            BEFORE UPDATE OF status ON work_items
+            WHEN OLD.status <> NEW.status
+              AND NOT (OLD.status = 'ready' AND NEW.status = 'in_progress')
+            BEGIN
+              SELECT RAISE(ABORT, 'legacy transition');
+            END
+            """
+        )
+        database.commit()
+        database.close()
+
+        state_store.initialize_database(self.database_path)
+
+        database = state_store.open_database(self.database_path)
+        trigger_sql = database.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+            ("work_items_validate_status_transition",),
+        ).fetchone()[0]
+        database.close()
+        self.assertIn("OLD.status = 'ready' AND NEW.status IN ('in_progress', 'done', 'cancelled')", trigger_sql)
+        self.assertIn("NEW.status IN ('ready', 'blocked', 'cancelled')", trigger_sql)
+
     def test_database_health_reports_foreign_keys_and_complete_schema(self) -> None:
         health = state_store.check_database_health(self.database_path)
 
@@ -165,16 +193,32 @@ class StateStoreLifecycleTests(unittest.TestCase):
             database_path=self.database_path,
         )
 
-        result = state_store.complete_work_item(
-            work_item["id"],
+        result = state_store.finish_run(
+            run["id"],
+            run_status="succeeded",
+            work_item_status="ready",
             summary="구현과 검증을 완료했다.",
             actor="codex",
             reason="모든 완료 조건 충족",
+            completion_recommended=True,
             database_path=self.database_path,
         )
 
         self.assertEqual(result["run"]["status"], "succeeded")
-        self.assertEqual(result["work_item"]["status"], "done")
+        self.assertEqual(result["work_item"]["status"], "ready")
+        self.assertEqual(
+            result["work_item"]["next_action"],
+            state_store.COMPLETION_RECOMMENDED_NEXT_ACTION,
+        )
+        closed = state_store.close_work_item(
+            work_item["id"],
+            actor="user",
+            reason="결과 확인 후 완료",
+            database_path=self.database_path,
+        )
+        self.assertEqual(closed["status"], "done")
+        self.assertIsNone(closed["next_action"])
+        self.assertIsNotNone(closed["closed_at"])
         self.assertGreaterEqual(
             len(state_store.get_recent_activity(database_path=self.database_path)), 8
         )
@@ -1250,6 +1294,107 @@ class StateStoreLifecycleTests(unittest.TestCase):
                 database_path=self.database_path,
             )
 
+        self.assertEqual(
+            state_store.get_run(run["id"], database_path=self.database_path)["status"],
+            "running",
+        )
+
+    def test_completion_recommendation_requires_proof_and_rolls_back(self) -> None:
+        work_item = state_store.create_ready_work_item(
+            title="완료 권장 검증",
+            kind="verification",
+            goal="검증되지 않은 WI에 완료를 권장하지 않는다.",
+            next_action="검증을 수행한다.",
+            acceptance_criteria=["검증 결과가 기록된다."],
+            actor="test",
+            database_path=self.database_path,
+        )
+        run = self.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+
+        with self.assertRaisesRegex(state_store.ConflictError, "cannot complete"):
+            state_store.finish_run(
+                run["id"],
+                run_status="succeeded",
+                work_item_status="ready",
+                summary="검증 없이 종료를 시도했다.",
+                actor="codex",
+                reason="완료 권장 시도",
+                completion_recommended=True,
+                database_path=self.database_path,
+            )
+
+        self.assertEqual(
+            state_store.get_run(run["id"], database_path=self.database_path)["status"],
+            "running",
+        )
+        self.assertEqual(
+            state_store.get_work_item(work_item["id"], database_path=self.database_path)["status"],
+            "in_progress",
+        )
+
+    def test_done_is_available_only_through_close_work_item(self) -> None:
+        work_item = state_store.create_ready_work_item(
+            title="사용자 완료 전용",
+            kind="verification",
+            goal="일반 상태 변경의 완료 우회를 막는다.",
+            next_action="사용자 확인을 기다린다.",
+            acceptance_criteria=["사용자가 확인한다."],
+            actor="test",
+            database_path=self.database_path,
+        )
+        criterion = state_store.get_work_item_context(
+            work_item["id"], database_path=self.database_path
+        )["acceptance_criteria"][0]
+        state_store.waive_criterion(
+            criterion["id"], actor="user", reason="사용자 직접 확인",
+            database_path=self.database_path,
+        )
+
+        with self.assertRaisesRegex(state_store.ConflictError, "close_work_item"):
+            state_store.change_work_item_status(
+                work_item["id"], "done", actor="codex", reason="자동 완료",
+                database_path=self.database_path,
+            )
+        with self.assertRaisesRegex(state_store.ConflictError, "unsupported"):
+            state_store.finish_run(
+                "RUN-missing", run_status="succeeded", work_item_status="done",
+                summary="자동 완료", actor="codex", reason="자동 완료",
+                database_path=self.database_path,
+            )
+
+        closed = state_store.close_work_item(
+            work_item["id"], actor="user", reason="사용자 완료",
+            database_path=self.database_path,
+        )
+        self.assertEqual(closed["status"], "done")
+
+    def test_close_work_item_rejects_missing_proof_and_active_run(self) -> None:
+        work_item = state_store.create_ready_work_item(
+            title="완료 조건 재검증",
+            kind="verification",
+            goal="완료 조건과 Run 잠금을 검증한다.",
+            next_action="증거를 준비한다.",
+            acceptance_criteria=["증거가 확인된다."],
+            actor="test",
+            database_path=self.database_path,
+        )
+
+        with self.assertRaisesRegex(state_store.ConflictError, "cannot complete"):
+            state_store.close_work_item(
+                work_item["id"], actor="user", reason="조기 완료",
+                database_path=self.database_path,
+            )
+
+        run = self.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+        with self.assertRaisesRegex(state_store.ConflictError, "only a ready"):
+            state_store.close_work_item(
+                work_item["id"], actor="user", reason="실행 중 완료",
+                database_path=self.database_path,
+            )
         self.assertEqual(
             state_store.get_run(run["id"], database_path=self.database_path)["status"],
             "running",

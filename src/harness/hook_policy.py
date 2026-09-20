@@ -45,6 +45,7 @@ HARNESS_BOOTSTRAP_TOOLS = frozenset(
         "create_ready_work_item",
         "refine_draft_work_item",
         "start_work",
+        "close_work_item",
         "recover_abandoned_work",
     }
 )

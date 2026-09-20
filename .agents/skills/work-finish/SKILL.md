@@ -40,14 +40,19 @@ description: 활성 Run이 있는 프로젝트 작업의 최종 답변 전에 Po
 
 | outcome | 의미 | 필수 입력 |
 | --- | --- | --- |
-| `completed` | WorkItem 전체 목표가 끝났고 재조회한 `can_complete`가 `true` | `summary`, `reason` |
-| `progressed` | 이번 Run은 성공했지만 WorkItem에 후속 작업이 남음 | `summary`, `reason`, 구체적인 `next_action` |
+| `progressed` | 이번 Run이 성공했고 WorkItem은 계속 선택 가능한 `ready`로 돌아감 | `summary`, `reason`, 아래 규칙에 따른 완료 권장값 또는 `next_action` |
 | `retry_needed` | 구현이나 검증이 실패하여 다음 Run에서 다시 수행해야 함 | `summary`, `reason`, `termination_reason`, 구체적인 `next_action` |
 | `blocked` | 외부 결정·권한·환경 때문에 진행할 수 없음 | `summary`, `reason`, `termination_reason`, `block_reason`, 해제 후의 `next_action` |
 | `interrupted` | 작업이 중간에 멈췄지만 다시 시작할 수 있음 | `summary`, `reason`, `termination_reason`, 구체적인 `next_action` |
 | `cancelled` | WorkItem 자체를 더 수행하지 않기로 확정함 | `summary`, `reason`, `termination_reason` |
 
-`completed`는 일부 테스트 성공이나 이번 Run의 성공만으로 선택하지 않는다. `can_complete`가 `false`라면 남은 일이 정상적인 후속 작업인지, 실패인지, 차단인지에 따라 다른 outcome을 선택한다.
+성공한 Run은 모두 `progressed`를 선택한다.
+
+- 재조회한 `can_complete`가 `true`이면 `completion_recommended=true`를 전달하고 `next_action`은 생략한다. 상태 저장 함수가 고정된 사용자 완료 권장 문구를 저장한다.
+- `can_complete`가 `false`이고 정상적인 후속 작업이 남았다면 `completion_recommended=false`와 구체적인 `next_action`을 전달한다.
+- 구현·검증 실패나 외부 차단이면 성공으로 처리하지 않고 실제 상태에 맞는 outcome을 선택한다.
+
+Codex는 Run 종료 과정에서 WI를 `done`으로 바꾸지 않는다. WI 완료는 웹 콘솔 또는 사용자의 명시적 완료 요청에서 별도로 수행된다.
 
 ## 5. Run 종료
 

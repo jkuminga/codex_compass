@@ -124,7 +124,7 @@ work next            # 다음 우선 작업 제안
 | `backlog` → `ready` | 목표·완료 조건·다음 행동이 준비되면 에이전트가 변경 가능 |
 | `ready` → `in_progress` | `start_work`가 Run 생성과 함께 변경 |
 | `in_progress` → `ready` 또는 `blocked` | Run 종료 이유와 다음 행동을 남기며 `finish_work`가 변경 |
-| `in_progress` → `done` | 모든 완료 조건과 유효한 Evidence를 확인한 `finish_work`만 변경 |
+| `ready` → `done` | 사용자 완료 요청을 받은 `close_work_item`이 완료 조건과 유효한 Evidence를 확인한 뒤 변경 |
 | 미완료 상태 → `cancelled` | 취소 이유를 남기고 진행 중인 Run이 있다면 먼저 함께 종료 |
 | 프로젝트 목표·범위·우선순위 변경 | 사용자의 의도를 기준으로 결정 |
 

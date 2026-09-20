@@ -620,7 +620,10 @@ function bindDetailActions() {
 
 async function changeSelectedStatus(target) {
   const item = state.selectedContext?.work_item;
-  if (!item || !window.confirm(`${labelFor(STATUS_OPTIONS, target)} 상태로 변경할까요?`)) return;
+  const confirmation = target === "done"
+    ? "이 WorkItem의 결과를 확인했으며 완료 처리할까요?"
+    : `${labelFor(STATUS_OPTIONS, target)} 상태로 변경할까요?`;
+  if (!item || !window.confirm(confirmation)) return;
   try {
     const context = await api(`/api/work-items/${encodeURIComponent(item.id)}/status`, {
       method: "PATCH", body: JSON.stringify({ status: target }),

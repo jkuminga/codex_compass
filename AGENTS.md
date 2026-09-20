@@ -39,3 +39,9 @@
 ## WorkItem 직접 등록
 
 - 사용자가 현재 대화의 내용을 바탕으로 완성 WorkItem(non-Draft WI)을 생성·등록·추가해 달라고 명시하면 `$work-item-create` 스킬을 실행한다. Draft 생성은 웹 콘솔 흐름을 사용한다. 이 요청은 미래 작업 등록으로 끝내며 `w/` 선택과 Run 시작은 하지 않는다.
+
+## WorkItem 완료
+
+- Codex는 Run 종료 과정에서 WorkItem을 `done`으로 바꾸지 않는다. 성공한 Run은 `$work-finish`로 종료하고 WI를 `ready`로 돌린다.
+- WI는 사용자가 웹 콘솔에서 완료하거나 `w/`로 선택한 WI의 완료를 명시적으로 요청한 경우에만 닫는다. 명시적 완료 요청은 `$work-start`의 완료 분기로 처리하며 새 Run을 만들지 않는다.
+- 최종 응답에서는 이번 Run의 성공과 WI의 최종 `done` 상태를 구분한다.

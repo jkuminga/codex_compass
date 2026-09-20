@@ -209,9 +209,9 @@ BEFORE UPDATE OF status ON work_items
 WHEN OLD.status <> NEW.status
   AND NOT (
     (OLD.status = 'backlog' AND NEW.status IN ('ready', 'cancelled'))
-    OR (OLD.status = 'ready' AND NEW.status IN ('in_progress', 'cancelled'))
+    OR (OLD.status = 'ready' AND NEW.status IN ('in_progress', 'done', 'cancelled'))
     OR (OLD.status = 'in_progress'
-      AND NEW.status IN ('ready', 'blocked', 'done', 'cancelled'))
+      AND NEW.status IN ('ready', 'blocked', 'cancelled'))
     OR (OLD.status = 'blocked' AND NEW.status IN ('ready', 'cancelled'))
   )
 BEGIN

@@ -28,7 +28,16 @@ description: 사용자 요청을 기존 WorkItem에 연결하거나 새 WorkItem
 - 테스트·검증·디버깅
 - 프로젝트 결과, 진행 상태 또는 다음 행동을 바꾸는 일
 
-## 3. 실행 중 충돌 확인
+## 3. 명시적 완료 분기
+
+`selection_status`가 `selected`이고 사용자 요청이 선택한 WI 자체를 지금 완료하라는 명시적 요청이면 패킷의 `work_item_id`로 `close_work_item(work_item_id, reason)`을 호출하고 종료한다.
+
+- 완료 요청: “이 WI 완료 처리해줘”, “선택한 작업을 done으로 닫아줘”
+- 일반 작업: “WI 완료 기능을 구현해줘”, “완료됐는지 확인해줘”, “결과가 좋아”
+
+이 분기에서는 Draft 구체화, 후보 비교·검색, WI 생성·수정, `intent`·`recall_query` 생성과 `start_work()`를 수행하지 않는다. 완료 함수가 현재 상태, 활성 Run과 AC·Evidence를 검증하며, 실패하면 이유를 보고하고 다른 흐름으로 우회하지 않는다.
+
+## 4. 실행 중 충돌 확인
 
 프로젝트 작업이면 `active_work_items`를 먼저 비교한다. 같은 목표의 WorkItem이 `other_session` 또는 `unknown` 소유로 실행 중이면 새 WorkItem과 Run을 만들지 않는다. 다음 문장으로 사용자 확인을 받는다.
 
@@ -38,7 +47,7 @@ description: 사용자 요청을 기존 WorkItem에 연결하거나 새 WorkItem
 
 `current_session` 소유의 같은 Turn Run은 Hook 재시도로 이미 시작된 작업이다. 같은 WorkItem에 `start_work()`를 다시 호출하지 않고 기존 Run을 사용한다.
 
-## 4. WorkItem 결정
+## 5. WorkItem 결정
 
 `selection_status`가 `selected`이면 사용자가 `w/` 선택기에서 고른 `work_item_id`를 이번 작업의 대상으로 사용한다. 후보 비교·검색·새 WorkItem 생성은 하지 않는다.
 
@@ -49,7 +58,7 @@ description: 사용자 요청을 기존 WorkItem에 연결하거나 새 WorkItem
 - `next_action`
 - 결과 중심 Acceptance Criteria 1개 이상
 
-그 결과를 `refine_draft_work_item()`에 한 번 전달한다. 이 도구는 Draft를 `ready`로 바꾸고 Acceptance Criteria를 함께 저장한다. 성공 후에는 `get_work_context(work_item_id)`를 다시 호출하고 5단계로 간다. 구체화 또는 저장에 실패하면 Run과 프로젝트 변경을 시작하지 않는다.
+그 결과를 `refine_draft_work_item()`에 한 번 전달한다. 이 도구는 Draft를 `ready`로 바꾸고 Acceptance Criteria를 함께 저장한다. 성공 후에는 `get_work_context(work_item_id)`를 다시 호출하고 6단계로 간다. 구체화 또는 저장에 실패하면 Run과 프로젝트 변경을 시작하지 않는다.
 
 `selection_status`가 없을 때만 아래의 자동 결정 절차를 사용한다.
 
@@ -68,7 +77,7 @@ description: 사용자 요청을 기존 WorkItem에 연결하거나 새 WorkItem
 
 새 WorkItem에는 짧은 `title`, 결과 중심의 `goal`, 작업 `kind`, 바로 수행할 `next_action`, 4단계 `priority`, 구체적인 명령에 종속되지 않은 Acceptance Criteria를 넣는다. 명확히 속하는 기존 Feature가 있을 때만 연결한다. 생성 후 `ready`로 바꾼다.
 
-## 5. Run 시작
+## 6. Run 시작
 
 1. 선택한 항목에 `get_work_context(work_item_id)`를 호출한다.
 2. `goal`, `next_action`, Acceptance Criteria, 최근 Run, 활성 상태를 확인하고 낡은 계획만 필요한 범위에서 정리한다.

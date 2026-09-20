@@ -96,6 +96,7 @@ def write_selection_request(
                 "kind": item["kind"],
                 "priority": item["priority"],
                 "is_draft": bool(item["is_draft"]),
+                "next_action": item["next_action"],
             }
             for item in work_items
         ],

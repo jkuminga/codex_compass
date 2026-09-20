@@ -88,6 +88,7 @@ class PreToolUseHookTests(unittest.TestCase):
         cases = (
             self.event("Bash", {"command": "git status"}),
             self.event("mcp__harness_state__start_work", {"work_item_id": "WI-1"}),
+            self.event("mcp__harness_state__close_work_item", {"work_item_id": "WI-1"}),
             self.event("mcp__github__get_issue", {"issue": 1}),
         )
         for event in cases:

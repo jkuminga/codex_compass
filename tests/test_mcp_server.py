@@ -217,13 +217,41 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             postflight_result = await client.call_tool(
                 "get_postflight_status", {"work_item_id": work_item["id"]}
             )
-            finish_result = await client.call_tool(
+            legacy_finish_result = await client.call_tool(
                 "finish_work",
                 {
                     "run_id": run["id"],
                     "outcome": "completed",
+                    "summary": "이전 자동 완료 호출",
+                    "reason": "거부되어야 한다.",
+                },
+            )
+            conflicting_finish_result = await client.call_tool(
+                "finish_work",
+                {
+                    "run_id": run["id"],
+                    "outcome": "progressed",
+                    "summary": "충돌하는 입력",
+                    "reason": "거부되어야 한다.",
+                    "completion_recommended": True,
+                    "next_action": "직접 입력한 문구",
+                },
+            )
+            finish_result = await client.call_tool(
+                "finish_work",
+                {
+                    "run_id": run["id"],
+                    "outcome": "progressed",
                     "summary": "MCP 실행과 검증을 완료했다.",
                     "reason": "모든 완료 조건 충족",
+                    "completion_recommended": True,
+                },
+            )
+            close_result = await client.call_tool(
+                "close_work_item",
+                {
+                    "work_item_id": work_item["id"],
+                    "reason": "사용자가 결과 확인 후 완료를 요청함",
                 },
             )
 
@@ -234,8 +262,15 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             postflight_result.structured_content["verification"]["can_complete"]
         )
+        self.assertTrue(legacy_finish_result.is_error)
+        self.assertTrue(conflicting_finish_result.is_error)
         self.assertEqual(finish_result.structured_content["run"]["status"], "succeeded")
-        self.assertEqual(finish_result.structured_content["work_item"]["status"], "done")
+        self.assertEqual(finish_result.structured_content["work_item"]["status"], "ready")
+        self.assertEqual(
+            finish_result.structured_content["work_item"]["next_action"],
+            state_store.COMPLETION_RECOMMENDED_NEXT_ACTION,
+        )
+        self.assertEqual(close_result.structured_content["status"], "done")
 
     async def test_codex_can_revise_planning_entities_through_mcp(self) -> None:
         feature = state_store.create_feature(
@@ -573,6 +608,7 @@ class StateStoreMCPTests(unittest.IsolatedAsyncioTestCase):
             "refine_draft_work_item",
             "revise_work_item",
             "change_work_item_state",
+            "close_work_item",
             "manage_criterion",
             "start_work",
             "record_artifact",

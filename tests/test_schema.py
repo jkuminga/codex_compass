@@ -258,13 +258,6 @@ class StateStoreSchemaTests(unittest.TestCase):
     def test_work_item_done_requires_at_least_one_resolved_criterion(self) -> None:
         database = self.open_database()
         self.insert_work_item(database, status="ready", next_action="구현 시작")
-        database.execute(
-            """
-            UPDATE work_items
-            SET status = 'in_progress', updated_at = '2026-08-13T00:01:00Z'
-            WHERE id = 'HW-1'
-            """
-        )
 
         with self.assertRaisesRegex(
             sqlite3.IntegrityError, "work item completion requirements not met"
@@ -302,6 +295,33 @@ class StateStoreSchemaTests(unittest.TestCase):
             database.execute("SELECT status FROM work_items WHERE id = 'HW-1'").fetchone()[0],
             "done",
         )
+
+    def test_in_progress_work_item_cannot_be_closed_directly(self) -> None:
+        database = self.open_database()
+        self.insert_work_item(database, status="ready", next_action="구현 시작")
+        database.execute(
+            "UPDATE work_items SET status = 'in_progress' WHERE id = 'HW-1'"
+        )
+        database.execute(
+            """
+            INSERT INTO acceptance_criteria (
+              id, work_item_id, description, status, sort_order, resolved_at
+            ) VALUES (
+              'AC-1', 'HW-1', '사용자 확인', 'waived', 1,
+              '2026-08-13T00:01:00Z'
+            )
+            """
+        )
+
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "invalid work item status transition"):
+            database.execute(
+                """
+                UPDATE work_items
+                SET status = 'done', next_action = NULL,
+                    closed_at = '2026-08-13T00:02:00Z'
+                WHERE id = 'HW-1'
+                """
+            )
 
     def test_evidence_must_come_from_the_criterion_work_item(self) -> None:
         database = self.open_database()

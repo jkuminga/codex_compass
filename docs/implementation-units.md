@@ -22,7 +22,7 @@ Project
 | `WorkItem` | 독립적인 목표와 완료 조건을 가진 프로젝트 작업 | `단일 요청의 Run 생성 정책 확정` |
 | `Run` | WorkItem을 진전시키려는 한 번의 Codex 작업 세션 | `Run 생성 정책 검토 #3` |
 
-하나의 WorkItem은 여러 Run을 가질 수 있다. 이번 세션의 목표를 정상적으로 달성했지만 WorkItem 전체가 남았다면 `finish_work(outcome="progressed")`를 사용한다. Run은 `succeeded`로 끝나고 WorkItem은 새 `next_action`이 있는 `ready`로 돌아간다.
+하나의 WorkItem은 여러 Run을 가질 수 있다. 성공한 Run은 `finish_work(outcome="progressed")`로 끝나고 WorkItem은 새 `next_action`이 있는 `ready`로 돌아간다. AC와 Evidence가 완료 조건을 충족하면 `completion_recommended=true`로 고정된 완료 권장 문구를 저장한다. WI는 웹 콘솔 또는 사용자의 명시적 완료 요청에서 `close_work_item()`으로만 `done` 처리한다.
 
 ## 언제 WorkItem과 Run을 만드는가
 
