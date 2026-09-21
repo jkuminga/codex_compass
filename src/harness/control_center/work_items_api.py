@@ -90,6 +90,7 @@ class CreateMemoRequest(BaseModel):
     author: str | None = Field(default=None, max_length=200)
     status: MemoStatus = "open"
     is_pinned: bool = False
+    is_model_visible: bool = False
 
     @field_validator("author")
     @classmethod
@@ -108,6 +109,7 @@ class UpdateMemoRequest(BaseModel):
     author: str | None = Field(default=None, max_length=200)
     status: MemoStatus | None = None
     is_pinned: bool | None = None
+    is_model_visible: bool | None = None
 
     @field_validator("author")
     @classmethod
@@ -335,6 +337,7 @@ def create_router() -> APIRouter:
             author=payload.author,
             status=payload.status,
             is_pinned=payload.is_pinned,
+            is_model_visible=payload.is_model_visible,
             actor="web_console",
             database_path=_database_path(request),
         )
@@ -348,7 +351,7 @@ def create_router() -> APIRouter:
         request: Request,
     ) -> dict[str, object]:
         changes = payload.model_dump(exclude_unset=True)
-        for field in ("title", "content", "kind", "status", "is_pinned"):
+        for field in ("title", "content", "kind", "status", "is_pinned", "is_model_visible"):
             if field in changes and changes[field] is None:
                 raise state_store.ConflictError(f"Memo {field} cannot be null")
         memo = state_store.update_work_item_memo(

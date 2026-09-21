@@ -361,6 +361,7 @@ function renderMemoCards() {
             <h4>${escapeHtml(memo.title)}</h4>
             <span class="memo-kind memo-kind-${escapeHtml(memo.kind)}">${escapeHtml(memoKindLabel(memo.kind))}</span>
             <span class="memo-status">${escapeHtml(statusLabel)}</span>
+            ${memo.is_model_visible ? '<span class="memo-model-visible" title="작업 시작 시 Codex 컨텍스트에 포함">모델 공유</span>' : ""}
           </div>
         </div>
         <div class="memo-card-actions" aria-label="메모 작업">
@@ -863,6 +864,7 @@ function openMemoModal(memoId = null) {
     elements.memoForm.elements.namedItem("title").value = memo.title;
     elements.memoForm.elements.namedItem("content").value = memo.content;
     elements.memoForm.elements.namedItem("author").value = memo.author || "";
+    elements.memoForm.elements.namedItem("is_model_visible").checked = Boolean(memo.is_model_visible);
     const kind = elements.memoForm.querySelector(`input[name="kind"][value="${CSS.escape(memo.kind)}"]`);
     if (kind) kind.checked = true;
   } else {
@@ -890,6 +892,7 @@ async function submitMemo(event) {
   const payload = {
     title: data.get("title"), content: data.get("content"), kind: data.get("kind"),
     author: data.get("author") || null,
+    is_model_visible: data.has("is_model_visible"),
   };
   elements.submitMemo.disabled = true;
   elements.submitMemo.querySelector(".memo-submit-label").textContent = "저장 중";

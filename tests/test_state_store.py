@@ -1409,6 +1409,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
             work_item["id"], title="결정", content="**SQLite**를 사용한다.",
             kind="decision", author="", actor="web_console", database_path=self.database_path,
         )
+        self.assertEqual(first["is_model_visible"], 0)
         second = state_store.create_work_item_memo(
             work_item["id"], title="질문", content="확인할 항목", kind="question",
             database_path=self.database_path,
@@ -1445,6 +1446,66 @@ class StateStoreLifecycleTests(unittest.TestCase):
         self.assertEqual(events_before, len(state_store.get_recent_activity(database_path=self.database_path)))
         with self.assertRaises(state_store.NotFoundError):
             state_store.get_work_item_memo(work_item["id"], first["id"], database_path=self.database_path)
+
+    def test_preflight_includes_only_explicitly_shared_memos(self) -> None:
+        work_item = state_store.create_work_item(
+            title="모델 공유 메모", kind="implementation", goal="메모 노출 범위를 확인한다.",
+            actor="test", database_path=self.database_path,
+        )
+        private = state_store.create_work_item_memo(
+            work_item["id"], title="개인 메모", content="모델에 보내지 않음",
+            database_path=self.database_path,
+        )
+        shared = state_store.create_work_item_memo(
+            work_item["id"], title="공유 메모", content="모델에 전달",
+            is_model_visible=True, database_path=self.database_path,
+        )
+        self.assertEqual(
+            [memo["id"] for memo in state_store.get_preflight_context(
+                work_item["id"], database_path=self.database_path
+            )["memos"]],
+            [shared["id"]],
+        )
+        self.assertEqual(
+            {memo["id"] for memo in state_store.get_work_item_context(
+                work_item["id"], database_path=self.database_path
+            )["memos"]},
+            {private["id"], shared["id"]},
+        )
+        state_store.update_work_item_memo(
+            work_item["id"], shared["id"], is_model_visible=False,
+            database_path=self.database_path,
+        )
+        self.assertEqual(
+            state_store.get_preflight_context(work_item["id"], database_path=self.database_path)["memos"],
+            [],
+        )
+
+    def test_existing_memo_table_migrates_to_private_default(self) -> None:
+        legacy_path = Path(self.temporary_directory.name) / "legacy_memos.db"
+        database = sqlite3.connect(legacy_path)
+        database.executescript(state_store.SCHEMA_PATH.read_text())
+        database.execute("DROP TABLE work_item_memos")
+        database.execute(
+            "CREATE TABLE work_item_memos (id TEXT PRIMARY KEY, work_item_id TEXT, "
+            "title TEXT, content TEXT, kind TEXT, author TEXT, status TEXT, "
+            "is_pinned INTEGER, sort_order INTEGER, created_at TEXT, updated_at TEXT)"
+        )
+        database.execute(
+            "INSERT INTO work_item_memos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("MEMO-OLD", "WI-OLD", "기존 메모", "개인 내용", "general", "anon", "open", 0, 0, "now", "now"),
+        )
+        database.commit()
+        database.close()
+
+        state_store.initialize_database(legacy_path)
+        state_store.initialize_database(legacy_path)
+        database = state_store.open_database(legacy_path)
+        migrated = database.execute(
+            "SELECT is_model_visible FROM work_item_memos WHERE id = 'MEMO-OLD'"
+        ).fetchone()
+        database.close()
+        self.assertEqual(migrated["is_model_visible"], 0)
 
 
 if __name__ == "__main__":

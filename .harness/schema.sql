@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS work_item_memos (
   author TEXT NOT NULL DEFAULT 'anon' CHECK (length(trim(author)) > 0),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
   is_pinned INTEGER NOT NULL DEFAULT 0 CHECK (is_pinned IN (0, 1)),
+  is_model_visible INTEGER NOT NULL DEFAULT 0 CHECK (is_model_visible IN (0, 1)),
   sort_order INTEGER NOT NULL CHECK (sort_order >= 0),
   created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
   updated_at TEXT NOT NULL CHECK (length(trim(updated_at)) > 0),

@@ -139,6 +139,7 @@ class ControlCenterApiTests(unittest.TestCase):
         memo = created.json()["memo"]
         self.assertEqual(memo["author"], "anon")
         self.assertEqual(memo["status"], "open")
+        self.assertEqual(memo["is_model_visible"], 0)
         second = self.client.post(
             base,
             json={"title": "문제", "content": "잠금 확인", "kind": "problem"},
@@ -151,6 +152,17 @@ class ControlCenterApiTests(unittest.TestCase):
         self.assertEqual(updated.status_code, 200)
         self.assertEqual(updated.json()["memo"]["status"], "closed")
         self.assertEqual(updated.json()["memo"]["is_pinned"], 1)
+        shared = self.client.patch(
+            f"{base}/{memo['id']}", json={"is_model_visible": True}
+        )
+        self.assertEqual(shared.status_code, 200)
+        self.assertEqual(shared.json()["memo"]["is_model_visible"], 1)
+        self.assertEqual(
+            [entry["id"] for entry in state_store.get_preflight_context(
+                draft["id"], database_path=self.database_path
+            )["memos"]],
+            [memo["id"]],
+        )
         filtered = self.client.get(f"{base}?status=closed&kind=decision")
         self.assertEqual([entry["id"] for entry in filtered.json()["memos"]], [memo["id"]])
 

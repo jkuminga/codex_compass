@@ -240,6 +240,7 @@ def _migrate_work_item_memos(database: sqlite3.Connection) -> None:
           author TEXT NOT NULL DEFAULT 'anon' CHECK (length(trim(author)) > 0),
           status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
           is_pinned INTEGER NOT NULL DEFAULT 0 CHECK (is_pinned IN (0, 1)),
+          is_model_visible INTEGER NOT NULL DEFAULT 0 CHECK (is_model_visible IN (0, 1)),
           sort_order INTEGER NOT NULL CHECK (sort_order >= 0),
           created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
           updated_at TEXT NOT NULL CHECK (length(trim(updated_at)) > 0),
@@ -247,6 +248,14 @@ def _migrate_work_item_memos(database: sqlite3.Connection) -> None:
         )
         """
     )
+    columns = {
+        row["name"] for row in database.execute("PRAGMA table_info(work_item_memos)")
+    }
+    if "is_model_visible" not in columns:
+        database.execute(
+            "ALTER TABLE work_item_memos ADD COLUMN is_model_visible INTEGER NOT NULL "
+            "DEFAULT 0 CHECK (is_model_visible IN (0, 1))"
+        )
     database.execute(
         """
         CREATE INDEX IF NOT EXISTS work_item_memos_work_item_order_idx
@@ -2517,11 +2526,14 @@ def _list_work_item_memos_database(
     *,
     status: str | None = None,
     kind: str | None = None,
+    model_visible_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Read memos from an existing connection so detail reads stay compact."""
 
     clauses = ["work_item_id = ?"]
     parameters: list[Any] = [work_item_id]
+    if model_visible_only:
+        clauses.append("is_model_visible = 1")
     if status is not None:
         if status not in _MEMO_STATUSES:
             raise ConflictError("Memo status must be open or closed")
@@ -2552,6 +2564,7 @@ def create_work_item_memo(
     author: str | None = None,
     status: str = "open",
     is_pinned: bool = False,
+    is_model_visible: bool = False,
     actor: str = "web_console",
     memo_id: str | None = None,
     database_path: str | Path = DEFAULT_DATABASE_PATH,
@@ -2580,12 +2593,13 @@ def create_work_item_memo(
             """
             INSERT INTO work_item_memos (
               id, work_item_id, title, content, kind, author, status,
-              is_pinned, sort_order, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              is_pinned, is_model_visible, sort_order, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 identifier, work_item_id, cleaned_title, cleaned_content, kind,
-                cleaned_author, status, int(is_pinned), next_order, now, now,
+                cleaned_author, status, int(is_pinned), int(is_model_visible),
+                next_order, now, now,
             ),
         )
         return _require_row(
@@ -2641,6 +2655,7 @@ def update_work_item_memo(
     author: str | None | object = _UNSET,
     status: str | object = _UNSET,
     is_pinned: bool | object = _UNSET,
+    is_model_visible: bool | object = _UNSET,
     database_path: str | Path = DEFAULT_DATABASE_PATH,
 ) -> dict[str, Any]:
     """Update memo fields; pin changes move the memo to its target group end."""
@@ -2673,6 +2688,8 @@ def update_work_item_memo(
         pin_changed = is_pinned is not _UNSET and bool(is_pinned) != bool(current["is_pinned"])
         if is_pinned is not _UNSET:
             changes["is_pinned"] = int(bool(is_pinned))
+        if is_model_visible is not _UNSET:
+            changes["is_model_visible"] = int(bool(is_model_visible))
         changes = {field: value for field, value in changes.items() if current[field] != value}
         if not changes:
             return current
@@ -2751,6 +2768,7 @@ def reorder_work_item_memos(
 def get_work_item_context(
     work_item_id: str,
     *,
+    model_visible_memos_only: bool = False,
     database_path: str | Path = DEFAULT_DATABASE_PATH,
 ) -> dict[str, Any]:
     """Return the compact state needed to begin or resume one WorkItem."""
@@ -2796,7 +2814,9 @@ def get_work_item_context(
                 (work_item_id,),
             )
         ]
-        memos = _list_work_item_memos_database(database, work_item_id)
+        memos = _list_work_item_memos_database(
+            database, work_item_id, model_visible_only=model_visible_memos_only
+        )
         return {
             "work_item": work_item,
             "feature": feature,
@@ -2816,7 +2836,9 @@ def get_preflight_context(
 ) -> dict[str, Any]:
     """Return the minimal state a hook or agent needs before starting work."""
 
-    context = get_work_item_context(work_item_id, database_path=database_path)
+    context = get_work_item_context(
+        work_item_id, model_visible_memos_only=True, database_path=database_path
+    )
     context["verification"] = get_work_item_verification(
         work_item_id, database_path=database_path
     )
