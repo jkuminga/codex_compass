@@ -418,6 +418,139 @@ process.stdout.write(context.renderMarkdown("first line\\n\\n\\nsecond line"));
         self.assertIsNotNone(recent["started_at"])
         self.assertIsNotNone(recent["ended_at"])
 
+    def test_runs_list_filters_searches_and_paginates_joined_work_items(self) -> None:
+        first = state_store.create_work_item(
+            title="첫 번째 실행 대상", kind="verification", goal="Run 목록을 검증한다.",
+            next_action="첫 실행", actor="test", database_path=self.database_path,
+        )
+        second = state_store.create_work_item(
+            title="검색 가능한 대상", kind="verification", goal="검색을 검증한다.",
+            next_action="둘째 실행", actor="test", database_path=self.database_path,
+        )
+        for item in (first, second):
+            state_store.change_work_item_status(
+                item["id"], "ready", next_action=item["next_action"], actor="test",
+                reason="실행 준비", database_path=self.database_path,
+            )
+        first_run = state_store.start_run(
+            first["id"], intent="완료된 목록 검증", recall_query="목록 검증",
+            actor="test", database_path=self.database_path,
+        )
+        state_store.finish_run(
+            first_run["id"], run_status="succeeded", work_item_status="ready",
+            summary="목록 검증 완료", next_action="다음 검증", actor="test",
+            reason="완료", database_path=self.database_path,
+        )
+        second_run = state_store.start_run(
+            second["id"], intent="검색어 needle 실행", recall_query="검색 검증",
+            actor="test", database_path=self.database_path,
+        )
+
+        filtered = self.client.get("/api/runs?status=running&query=needle&limit=1&offset=0")
+
+        self.assertEqual(filtered.status_code, 200)
+        payload = filtered.json()
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["limit"], 1)
+        self.assertEqual(payload["offset"], 0)
+        self.assertEqual(payload["runs"][0]["id"], second_run["id"])
+        self.assertEqual(payload["runs"][0]["work_item_title"], "검색 가능한 대상")
+        self.assertNotIn("summary", payload["runs"][0])
+
+    def test_run_detail_returns_minimal_run_work_item_and_artifacts(self) -> None:
+        work_item = state_store.create_work_item(
+            title="상세 실행 대상", kind="verification", goal="Run 상세를 검증한다.",
+            next_action="상세 실행", actor="test", database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"], "ready", next_action="상세 실행", actor="test",
+            reason="실행 준비", database_path=self.database_path,
+        )
+        run = state_store.start_run(
+            work_item["id"], intent="상세 정보를 만든다.", recall_query="상세 정보",
+            actor="test", database_path=self.database_path,
+        )
+        artifact = state_store.create_artifact(
+            run["id"], kind="file", uri="src/example.py", verification_status="passed",
+            summary="예제 파일 생성", actor="test", database_path=self.database_path,
+        )
+        state_store.finish_run(
+            run["id"], run_status="failed", work_item_status="ready",
+            summary="일부 검증 실패", termination_reason="환경 오류",
+            next_action="환경 수정", actor="test", reason="실패",
+            database_path=self.database_path,
+        )
+
+        response = self.client.get(f"/api/runs/{run['id']}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["run"]["summary"], "일부 검증 실패")
+        self.assertEqual(payload["run"]["termination_reason"], "환경 오류")
+        self.assertNotIn("recall_query", payload["run"])
+        self.assertNotIn("trace_ref", payload["run"])
+        self.assertEqual(payload["work_item"], {"id": work_item["id"], "title": "상세 실행 대상"})
+        self.assertEqual(payload["artifacts"][0]["id"], artifact["id"])
+
+    def test_run_detail_missing_uses_generic_not_found_message(self) -> None:
+        response = self.client.get("/api/runs/RUN-missing")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["error"]["message"], "요청한 대상을 찾을 수 없습니다.")
+
+    def test_runs_ui_uses_hourglass_without_live_duration_timer(self) -> None:
+        root = Path(__file__).parents[1] / "src/harness/control_center/static"
+        app_js = (root / "app.js").read_text()
+        styles = (root / "styles.css").read_text()
+        index = (root / "index.html").read_text()
+
+        self.assertNotIn("setInterval(updateRunningDurations", app_js)
+        self.assertNotIn("function updateRunningDurations", app_js)
+        self.assertIn("runProgressHtml()", app_js)
+        self.assertIn("hourglass-flip", styles)
+        self.assertIn('id="runs-view"', index)
+        self.assertIn('id="runs-table-body"', index)
+        self.assertIn('name="runs-period"', index)
+        self.assertNotIn('id="runs-period"', index)
+        self.assertIn('name="runs-status"', app_js)
+        self.assertIn("width: clamp(240px, 24vw, 360px)", styles)
+        self.assertIn("flex-wrap: wrap", styles)
+        self.assertIn("gap: 15px", styles)
+        self.assertIn("min-height: 34px", styles)
+        self.assertIn("padding: 0 14px", styles)
+
+    def test_work_item_run_cards_link_to_the_runs_view_and_focus_the_run(self) -> None:
+        app_js = Path(__file__).parents[1] / "src/harness/control_center/static/app.js"
+        styles = Path(__file__).parents[1] / "src/harness/control_center/static/styles.css"
+        source = app_js.read_text()
+        style_source = styles.read_text()
+
+        self.assertIn('data-open-run="${escapeHtml(run.id)}"', source)
+        self.assertIn('switchView("runs", state.selectedContext?.work_item?.id, card.dataset.openRun)', source)
+        self.assertIn("await focusRun(pendingRunId)", source)
+        self.assertIn("scrollIntoView", source)
+        self.assertIn(".run-card-link", style_source)
+
+    def test_runs_rows_use_a_chevron_instead_of_an_action_column(self) -> None:
+        root = Path(__file__).parents[1] / "src/harness/control_center/static"
+        app_js = (root / "app.js").read_text()
+        styles = (root / "styles.css").read_text()
+        index = (root / "index.html").read_text()
+
+        self.assertIn("run-chevron", app_js)
+        self.assertIn('colspan="7"', app_js)
+        self.assertIn("run-chevron.is-open", styles)
+        self.assertIn('class="run-chevron-heading"', index)
+        self.assertNotIn(">Actions<", index)
+
+    def test_run_status_colors_separate_running_and_interrupted_from_success_and_failure(self) -> None:
+        styles = (Path(__file__).parents[1] / "src/harness/control_center/static/styles.css").read_text()
+
+        self.assertIn(".run-status-running { border-color: #b8c5f1; background: #e5e9ff; color: #4358c7; }", styles)
+        self.assertIn(".run-status-interrupted { border-color: #e6cfaa; background: var(--amber-pale); color: var(--amber); }", styles)
+        self.assertIn(".run-status-failed { border-color: #e6beba; background: var(--red-pale); color: var(--red); }", styles)
+        self.assertNotIn(".run-status-failed, .run-status-interrupted", styles)
+
 
 if __name__ == "__main__":
     unittest.main()

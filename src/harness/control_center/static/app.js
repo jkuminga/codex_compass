@@ -24,6 +24,10 @@ const MEMO_KIND_OPTIONS = [
   ["idea", "아이디어"], ["question", "질문"], ["reference", "참고"],
 ];
 const MEMO_STATUS_OPTIONS = [["", "전체 상태"], ["open", "확인 필요"], ["closed", "정리됨"]];
+const RUN_STATUS_OPTIONS = [
+  ["running", "Running"], ["succeeded", "Succeeded"], ["failed", "Failed"],
+  ["interrupted", "Interrupted"], ["cancelled", "Cancelled"],
+];
 
 const state = {
   items: [],
@@ -36,6 +40,18 @@ const state = {
   expandedMemoIds: new Set(),
   editingMemoId: null,
   detailTab: "overview",
+  currentView: "work-items",
+  runs: [],
+  runsTotal: 0,
+  runsLimit: 50,
+  runsOffset: 0,
+  runsQuery: "",
+  runsPeriod: "",
+  runsStatusFilter: "",
+  runsWorkItemId: null,
+  pendingRunId: null,
+  expandedRunId: null,
+  runDetails: new Map(),
 };
 
 const elements = {
@@ -61,6 +77,12 @@ const elements = {
   memoForm: document.querySelector("#memo-form"),
   memoFormError: document.querySelector("#memo-form-error"),
   submitMemo: document.querySelector("#submit-memo"),
+  workItemsView: document.querySelector("#work-items-view"),
+  runsView: document.querySelector("#runs-view"),
+  runsBody: document.querySelector("#runs-table-body"),
+  runsLoading: document.querySelector("#runs-loading"),
+  runsEmpty: document.querySelector("#runs-empty"),
+  runsRange: document.querySelector("#runs-range"),
 };
 
 function statusOf(item) {
@@ -110,19 +132,14 @@ function elapsedSeconds(startedAt, endedAt = null, now = Date.now()) {
 
 function durationLabel(run) {
   if (!run.started_at) return "시간 미상";
+  if (run.status === "running" || !run.ended_at) return "In progress";
   const totalSeconds = elapsedSeconds(run.started_at, run.ended_at);
   if (totalSeconds === null) return "시간 미상";
-  const elapsed = formatElapsed(totalSeconds);
-  return run.status === "running" ? `${elapsed} 경과 중` : `${elapsed} 소요`;
+  return `${formatElapsed(totalSeconds)} 소요`;
 }
 
-function updateRunningDurations(now = Date.now()) {
-  document.querySelectorAll("[data-run-elapsed]").forEach((element) => {
-    const totalSeconds = elapsedSeconds(element.dataset.startedAt, null, now);
-    if (totalSeconds !== null) {
-      element.textContent = `${formatElapsed(totalSeconds)} 경과 중`;
-    }
-  });
+function runProgressHtml() {
+  return '<span class="run-progress" role="status" aria-label="실행 중"><span class="run-hourglass" aria-hidden="true">⌛</span><span>In progress</span></span>';
 }
 
 function runStatusLabel(value) {
@@ -637,7 +654,7 @@ function renderDetail(context) {
         const status = runStatusClass(run.status);
         const result = run.summary || (run.status === "running" ? "현재 실행 중입니다." : "실행 결과가 기록되지 않았습니다.");
         return `
-        <li class="run-card run-card-${status}">
+        <li class="run-card run-card-${status} run-card-link" data-open-run="${escapeHtml(run.id)}" role="button" tabindex="0" aria-label="${escapeHtml(run.id)} 상세 Run 화면에서 보기">
           <div class="run-card-header">
             <div class="run-card-identity">
               <span class="run-status-pill run-status-${status}"><span class="run-status-dot"></span>${escapeHtml(runStatusLabel(run.status))}</span>
@@ -645,13 +662,13 @@ function renderDetail(context) {
             </div>
             <div class="run-card-time">
               <time>${escapeHtml(formatRunDate(run.started_at))}</time>
-              <span class="run-elapsed ${run.status === "running" ? "is-running" : ""}" ${run.status === "running" ? `data-run-elapsed data-started-at="${escapeHtml(run.started_at || "")}"` : ""}>${escapeHtml(durationLabel(run))}</span>
+              <span class="run-elapsed ${run.status === "running" ? "is-running" : ""}">${run.status === "running" ? runProgressHtml() : escapeHtml(durationLabel(run))}</span>
             </div>
           </div>
           <div class="run-card-body">
             <div class="run-field"><span>실행 목적</span><p>${escapeHtml(run.intent || "실행 목적이 기록되지 않았습니다.")}</p></div>
             <div class="run-field"><span>실행 결과</span>${run.status === "running"
-              ? '<div class="run-result is-running"><span class="run-live-status" role="status" aria-label="실행 중"><span class="run-progress-ring" aria-hidden="true"></span><span>현재 실행 중입니다.</span></span></div>'
+              ? `<div class="run-result is-running">${runProgressHtml()}</div>`
               : `<p class="run-result">${escapeHtml(result)}</p>`}</div>
             ${run.termination_reason ? `<div class="run-termination"><span class="run-warning-icon">△</span><span>경고: ${escapeHtml(run.termination_reason)}</span></div>` : ""}
           </div>
@@ -728,6 +745,13 @@ function bindDetailActions() {
   });
   document.querySelector("#edit-work-item")?.addEventListener("click", openEditModal);
   document.querySelector("#delete-work-item")?.addEventListener("click", openDeleteModal);
+  document.querySelectorAll("[data-open-run]").forEach((card) => {
+    const openRun = () => switchView("runs", state.selectedContext?.work_item?.id, card.dataset.openRun);
+    card.addEventListener("click", openRun);
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openRun(); }
+    });
+  });
 }
 
 async function changeSelectedStatus(target) {
@@ -781,6 +805,197 @@ async function loadItems({ selectId = null } = {}) {
   } finally {
     elements.loading.classList.add("hidden");
   }
+}
+
+function periodStart(value) {
+  if (!value) return null;
+  const now = new Date();
+  if (value === "today") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  }
+  const days = Number(value);
+  return Number.isFinite(days) ? new Date(now.getTime() - days * 86400000).toISOString() : null;
+}
+
+function buildRunsStatusFilters() {
+  const container = document.querySelector("#runs-status-options");
+  container.innerHTML = [["", "All"], ...RUN_STATUS_OPTIONS].map(([value, label]) => `
+    <label><input type="radio" name="runs-status" value="${escapeHtml(value)}" ${state.runsStatusFilter === value ? "checked" : ""} /><span>${value ? `<i class="filter-status-dot filter-status-${escapeHtml(value)}"></i>` : ""}${escapeHtml(label)}</span></label>
+  `).join("");
+  container.querySelectorAll("input").forEach((input) => input.addEventListener("change", () => {
+    if (!input.checked) return;
+    state.runsStatusFilter = input.value;
+    state.runsOffset = 0;
+    loadRuns();
+  }));
+}
+
+function artifactHtml(artifact) {
+  const uri = artifact.uri || "";
+  const kindLabel = {
+    file: "File", commit: "Commit", test_run: "Test", lint_run: "Lint",
+    build_run: "Build", screenshot: "Screenshot", report: "Report", other: "Other",
+  }[artifact.kind] || artifact.kind;
+  const statusLabel = {
+    passed: "Passed", failed: "Failed", pending: "Pending", not_applicable: "N/A",
+  }[artifact.verification_status] || artifact.verification_status;
+  const reference = /^https?:\/\//i.test(uri)
+    ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noreferrer noopener">열기</a>`
+    : uri ? `<button type="button" data-copy-artifact="${escapeHtml(uri)}">참조 복사</button>` : "";
+  return `<li>
+    <span class="artifact-status artifact-${escapeHtml(artifact.verification_status)}">${artifact.verification_status === "passed" ? "✓" : artifact.verification_status === "failed" ? "✕" : "•"}</span>
+    <div><strong>${escapeHtml(kindLabel)}</strong><span class="artifact-verification artifact-${escapeHtml(artifact.verification_status)}">${escapeHtml(statusLabel)}</span><p>${escapeHtml(artifact.summary)}</p></div>${reference}
+  </li>`;
+}
+
+function runDetailHtml(detail) {
+  const run = detail.run;
+  const artifacts = detail.artifacts || [];
+  return `<div class="run-expanded-grid">
+    <section><span>Intent</span><p>${escapeHtml(run.intent || "실행 목적이 기록되지 않았습니다.")}</p></section>
+    <section><span>Result</span><p>${run.status === "running" ? "아직 실행 중입니다." : escapeHtml(run.summary || "실행 결과가 기록되지 않았습니다.")}</p>
+      ${run.termination_reason ? `<div class="run-termination"><span class="run-warning-icon">△</span><span><strong>Reason</strong>${escapeHtml(run.termination_reason)}</span></div>` : ""}
+    </section>
+    <dl class="run-expanded-meta">
+      <div><dt>Started</dt><dd>${escapeHtml(formatRunDate(run.started_at))}</dd></div>
+      <div><dt>Ended</dt><dd>${escapeHtml(formatRunDate(run.ended_at))}</dd></div>
+      <div><dt>Duration</dt><dd>${run.status === "running" ? runProgressHtml() : escapeHtml(durationLabel(run))}</dd></div>
+      <div><dt>WI</dt><dd><button type="button" data-open-work-item="${escapeHtml(detail.work_item.id)}"><code>${escapeHtml(detail.work_item.id)}</code> · ${escapeHtml(detail.work_item.title)}</button></dd></div>
+    </dl>
+    <section class="run-artifacts"><span>Artifacts · ${artifacts.length}</span>
+      ${artifacts.length ? `<ul>${artifacts.map(artifactHtml).join("")}</ul>` : '<p class="run-detail-empty">이 Run에 기록된 Artifact가 없습니다.</p>'}
+    </section>
+  </div>`;
+}
+
+function bindRunRows() {
+  document.querySelectorAll("[data-run-row]").forEach((row) => {
+    const open = () => toggleRun(row.dataset.runRow);
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
+    });
+  });
+  document.querySelectorAll("[data-open-work-item]").forEach((button) => button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    switchView("work-items", button.dataset.openWorkItem);
+  }));
+  document.querySelectorAll("[data-copy-artifact]").forEach((button) => button.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await navigator.clipboard.writeText(button.dataset.copyArtifact);
+    button.textContent = "복사됨";
+  }));
+}
+
+function renderRuns() {
+  elements.runsBody.innerHTML = state.runs.map((run) => {
+    const status = runStatusClass(run.status);
+    const expanded = state.expandedRunId === run.id;
+    const detail = state.runDetails.get(run.id);
+    return `<tr class="run-table-row ${expanded ? "is-expanded" : ""}" data-run-row="${escapeHtml(run.id)}" tabindex="0" aria-expanded="${expanded}">
+      <td><span class="run-status-pill run-status-${status}"><span class="run-status-dot"></span>${escapeHtml(runStatusLabel(run.status))}</span></td>
+      <td><code>${escapeHtml(run.id)}</code></td>
+      <td><code>${escapeHtml(run.work_item_id)}</code><strong>${escapeHtml(run.work_item_title)}</strong></td>
+      <td><span class="run-intent-cell">${escapeHtml(run.intent)}</span></td>
+      <td><time>${escapeHtml(formatRunDate(run.started_at))}</time></td>
+      <td>${run.status === "running" ? runProgressHtml() : escapeHtml(durationLabel(run))}</td>
+      <td class="run-chevron-cell"><span class="run-chevron ${expanded ? "is-open" : ""}" aria-hidden="true"></span></td>
+    </tr>${expanded ? `<tr class="run-expanded-row"><td colspan="7">${detail ? runDetailHtml(detail) : '<div class="run-detail-loading"><span class="spinner"></span> 상세 정보를 불러오는 중입니다.</div>'}</td></tr>` : ""}`;
+  }).join("");
+  elements.runsEmpty.classList.toggle("hidden", state.runs.length > 0);
+  document.querySelector(".runs-table").classList.toggle("hidden", state.runs.length === 0);
+  const start = state.runsTotal ? state.runsOffset + 1 : 0;
+  const end = Math.min(state.runsOffset + state.runs.length, state.runsTotal);
+  elements.runsRange.textContent = `전체 ${state.runsTotal}개 · ${start}-${end}`;
+  elements.visibleCount.textContent = `${state.runsTotal} runs`;
+  elements.dockSummary.textContent = `전체 Run ${state.runsTotal}개 · 화면 ${state.runs.length}개`;
+  document.querySelector("#runs-prev").disabled = state.runsOffset === 0;
+  document.querySelector("#runs-next").disabled = state.runsOffset + state.runs.length >= state.runsTotal;
+  bindRunRows();
+}
+
+async function toggleRun(runId) {
+  state.expandedRunId = state.expandedRunId === runId ? null : runId;
+  renderRuns();
+  if (!state.expandedRunId || state.runDetails.has(runId)) return;
+  try {
+    state.runDetails.set(runId, await api(`/api/runs/${encodeURIComponent(runId)}`));
+  } catch (error) {
+    state.runDetails.set(runId, { run: { intent: "", status: "failed", summary: error.message }, work_item: { id: "—", title: "조회 실패" }, artifacts: [] });
+  }
+  if (state.expandedRunId === runId) renderRuns();
+}
+
+async function focusRun(runId) {
+  if (!runId || !state.runs.some((run) => run.id === runId)) return;
+  state.expandedRunId = runId;
+  renderRuns();
+  if (!state.runDetails.has(runId)) {
+    try {
+      state.runDetails.set(runId, await api(`/api/runs/${encodeURIComponent(runId)}`));
+    } catch (error) {
+      state.runDetails.set(runId, { run: { intent: "", status: "failed", summary: error.message }, work_item: { id: "—", title: "조회 실패" }, artifacts: [] });
+    }
+  }
+  renderRuns();
+  requestAnimationFrame(() => document.querySelector(`[data-run-row="${CSS.escape(runId)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+}
+
+async function loadRuns() {
+  elements.runsLoading.classList.remove("hidden");
+  const parameters = new URLSearchParams({ limit: String(state.runsLimit), offset: String(state.runsOffset) });
+  if (state.runsStatusFilter) parameters.set("status", state.runsStatusFilter);
+  if (state.runsQuery) parameters.set("query", state.runsQuery);
+  if (state.runsWorkItemId) parameters.set("work_item_id", state.runsWorkItemId);
+  const startedFrom = periodStart(state.runsPeriod);
+  if (startedFrom) parameters.set("started_from", startedFrom);
+  try {
+    const payload = await api(`/api/runs?${parameters}`);
+    state.runs = payload.runs;
+    state.runsTotal = payload.total;
+    state.expandedRunId = null;
+    state.runDetails.clear();
+    renderRuns();
+    const pendingRunId = state.pendingRunId;
+    state.pendingRunId = null;
+    if (pendingRunId) await focusRun(pendingRunId);
+  } catch (error) {
+    state.runs = [];
+    state.runsTotal = 0;
+    renderRuns();
+    elements.runsEmpty.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+  } finally {
+    elements.runsLoading.classList.add("hidden");
+  }
+}
+
+async function switchView(view, selectedWorkItemId = null, selectedRunId = null) {
+  state.currentView = view;
+  const isRuns = view === "runs";
+  elements.workItemsView.classList.toggle("hidden", isRuns);
+  elements.runsView.classList.toggle("hidden", !isRuns);
+  document.querySelector("#nav-work-items").classList.toggle("active", !isRuns);
+  document.querySelector("#nav-runs").classList.toggle("active", isRuns);
+  document.querySelector("#nav-work-items").toggleAttribute("aria-current", !isRuns);
+  document.querySelector("#nav-runs").toggleAttribute("aria-current", isRuns);
+  document.querySelector("#page-title").textContent = isRuns ? "Runs" : "Work Items";
+  document.querySelector("#page-crumb").textContent = isRuns ? "Runs" : "Work Items";
+  document.querySelector("#open-draft-modal").classList.toggle("hidden", isRuns);
+  if (isRuns) {
+    state.runsWorkItemId = selectedWorkItemId;
+    state.pendingRunId = selectedRunId;
+    if (selectedRunId) {
+      state.runsQuery = "";
+      state.runsPeriod = "";
+      state.runsStatusFilter = "";
+      document.querySelector("#runs-query").value = "";
+      document.querySelector("#runs-period-options input[value='']").checked = true;
+      buildRunsStatusFilters();
+    }
+    await loadRuns();
+  }
+  else if (selectedWorkItemId) await loadItems({ selectId: selectedWorkItemId });
+  else renderItems();
 }
 
 function clearFormErrors() {
@@ -989,6 +1204,29 @@ document.querySelector("#open-draft-modal").addEventListener("click", openModal)
 document.querySelector("#close-draft-modal").addEventListener("click", closeModal);
 document.querySelector("#cancel-draft").addEventListener("click", closeModal);
 document.querySelector("#refresh-items").addEventListener("click", () => loadItems());
+document.querySelector("#nav-work-items").addEventListener("click", (event) => { event.preventDefault(); switchView("work-items"); });
+document.querySelector("#nav-runs").addEventListener("click", (event) => { event.preventDefault(); switchView("runs"); });
+document.querySelector("#refresh-runs").addEventListener("click", () => loadRuns());
+document.querySelector("#runs-prev").addEventListener("click", () => { state.runsOffset = Math.max(0, state.runsOffset - state.runsLimit); loadRuns(); });
+document.querySelector("#runs-next").addEventListener("click", () => { state.runsOffset += state.runsLimit; loadRuns(); });
+document.querySelectorAll('input[name="runs-period"]').forEach((input) => input.addEventListener("change", () => {
+  if (!input.checked) return;
+  state.runsPeriod = input.value;
+  state.runsOffset = 0;
+  loadRuns();
+}));
+let runsSearchTimer = null;
+document.querySelector("#runs-query").addEventListener("input", (event) => {
+  window.clearTimeout(runsSearchTimer);
+  runsSearchTimer = window.setTimeout(() => { state.runsQuery = event.target.value.trim(); state.runsOffset = 0; loadRuns(); }, 250);
+});
+document.querySelector("#reset-runs-filters").addEventListener("click", () => {
+  state.runsQuery = ""; state.runsPeriod = ""; state.runsOffset = 0; state.runsStatusFilter = "";
+  document.querySelector("#runs-query").value = "";
+  document.querySelector('input[name="runs-period"][value=""]').checked = true;
+  buildRunsStatusFilters();
+  loadRuns();
+});
 document.querySelector("#clear-filters").addEventListener("click", () => {
   state.statusFilters.clear();
   state.kindFilters.clear();
@@ -1042,5 +1280,5 @@ document.addEventListener("keydown", (event) => {
   else if (!elements.memoModal.classList.contains("hidden")) closeMemoModal();
 });
 
-window.setInterval(updateRunningDurations, 1000);
+buildRunsStatusFilters();
 loadItems();

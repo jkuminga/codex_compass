@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import state_store
+from .runs_api import create_router as create_runs_router
 from .work_items_api import create_router
 
 
@@ -51,6 +52,7 @@ def create_app(
     )
     application.state.database_path = selected_database
     application.include_router(create_router())
+    application.include_router(create_runs_router())
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @application.exception_handler(RequestValidationError)
@@ -74,7 +76,7 @@ def create_app(
         return _error_response(
             http_status=status.HTTP_404_NOT_FOUND,
             code="not_found",
-            message="요청한 WorkItem을 찾을 수 없습니다.",
+            message="요청한 대상을 찾을 수 없습니다.",
         )
 
     @application.exception_handler(state_store.ConflictError)

@@ -11,8 +11,8 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=memo-card-5" />
-    <script src="/static/app.js?v=memo-card-5" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=runs-view-1" />
+    <script src="/static/app.js?v=runs-view-1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -28,8 +28,8 @@
         <nav class="nav-list">
           <a href="#" aria-disabled="true"><span>◫</span>Overview</a>
           <a href="#" aria-disabled="true"><span>◇</span>Features</a>
-          <a class="active" href="/" aria-current="page"><span>≡</span>Work Items</a>
-          <a href="#" aria-disabled="true"><span>▷</span>Runs</a>
+          <a class="active" id="nav-work-items" href="#work-items" aria-current="page"><span>≡</span>Work Items</a>
+          <a id="nav-runs" href="#runs"><span>▷</span>Runs</a>
           <a href="#" aria-disabled="true"><span>▤</span>Evidence</a>
           <a href="#" aria-disabled="true"><span>◎</span>Memory Candidates</a>
           <a href="#" aria-disabled="true"><span>⌘</span>MemoryGraph</a>
@@ -47,12 +47,12 @@
 
       <div class="main-shell">
         <header class="top-bar">
-          <div class="crumbs"><span>main</span><b>/</b><strong>Work Items</strong></div>
+          <div class="crumbs"><span>main</span><b>/</b><strong id="page-crumb">Work Items</strong></div>
           <div class="page-heading">
             <div>
               <p class="eyebrow">PROJECT CONTROL</p>
               <div class="title-line">
-                <h1>Work Items</h1>
+                <h1 id="page-title">Work Items</h1>
                 <span class="visible-count" id="visible-count">0 visible</span>
               </div>
             </div>
@@ -62,7 +62,7 @@
           </div>
         </header>
 
-        <main class="workspace">
+        <main class="workspace" id="work-items-view">
           <aside class="filters" aria-label="WorkItem 필터">
             <div class="panel-heading">
               <span class="eyebrow">FILTERS</span>
@@ -103,6 +103,48 @@
             </div>
             <div class="detail-content hidden" id="detail-content"></div>
           </aside>
+        </main>
+
+        <main class="runs-workspace hidden" id="runs-view">
+          <section class="runs-filters" aria-label="Run 필터">
+            <label class="runs-search">
+              <span>Search</span>
+              <input id="runs-query" type="search" maxlength="200" placeholder="Run ID, Intent, WorkItem 검색" autocomplete="off" />
+            </label>
+            <fieldset class="runs-status-filter">
+              <legend>Status</legend>
+              <div id="runs-status-options" class="runs-filter-options"></div>
+            </fieldset>
+            <fieldset class="runs-period-filter">
+              <legend>Period</legend>
+              <div id="runs-period-options" class="runs-filter-options runs-period-options">
+                <label><input type="radio" name="runs-period" value="" checked /><span>All</span></label>
+                <label><input type="radio" name="runs-period" value="today" /><span>Today</span></label>
+                <label><input type="radio" name="runs-period" value="7" /><span>7 days</span></label>
+                <label><input type="radio" name="runs-period" value="30" /><span>30 days</span></label>
+              </div>
+            </fieldset>
+            <button class="text-button runs-reset" id="reset-runs-filters" type="button">필터 초기화</button>
+          </section>
+
+          <section class="runs-pane" aria-label="Run 목록">
+            <div class="runs-toolbar">
+              <div><strong>Run History</strong><span>작업 실행 상태와 결과를 확인하세요.</span></div>
+              <button class="icon-button" id="refresh-runs" type="button" title="Run 목록 새로고침" aria-label="Run 목록 새로고침">↻</button>
+            </div>
+            <div class="loading-state hidden" id="runs-loading"><span class="spinner"></span><p>Run을 불러오는 중입니다.</p></div>
+            <div class="runs-table-wrap" id="runs-table-wrap">
+              <table class="runs-table">
+                <thead><tr><th>Status</th><th>Run ID</th><th>Work Item</th><th>Intent</th><th>Started</th><th>Duration</th><th class="run-chevron-heading"><span class="sr-only">열기</span></th></tr></thead>
+                <tbody id="runs-table-body"></tbody>
+              </table>
+              <div class="empty-list hidden" id="runs-empty"><p>조건에 맞는 Run이 없습니다.</p></div>
+            </div>
+            <footer class="runs-pagination">
+              <span id="runs-range">0개</span>
+              <div><button class="secondary-button" id="runs-prev" type="button">이전</button><button class="secondary-button" id="runs-next" type="button">다음</button></div>
+            </footer>
+          </section>
         </main>
 
         <footer class="status-dock">

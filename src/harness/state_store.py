@@ -67,6 +67,9 @@ _RUN_TOOL_EVENT_STATUSES = frozenset({"succeeded", "failed", "unknown"})
 _RUN_TOOL_EVENT_REVIEW_STATUSES = frozenset(
     {"pending", "promoted", "ignored", "error"}
 )
+_RUN_STATUSES = frozenset(
+    {"running", "succeeded", "failed", "interrupted", "cancelled"}
+)
 _EXECUTION_ARTIFACT_URI = re.compile(
     r"^command:(?P<family>[a-z0-9](?:[a-z0-9-]*[a-z0-9])?):"
     r"(?P<started_at>\d{8}T\d{6}Z)(?:-(?P<suffix>[a-z0-9]{6,12}))?$"
@@ -2138,6 +2141,118 @@ def get_run(
     database = open_database(database_path)
     try:
         return _require_row(database, "SELECT * FROM runs WHERE id = ?", (run_id,), "Run")
+    finally:
+        database.close()
+
+
+def list_runs(
+    *,
+    statuses: Sequence[str] = (),
+    query: str | None = None,
+    work_item_id: str | None = None,
+    started_from: str | None = None,
+    started_to: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Return a filtered page of Runs joined to their current WorkItem title."""
+
+    normalized_statuses = tuple(dict.fromkeys(statuses))
+    if not set(normalized_statuses).issubset(_RUN_STATUSES):
+        raise ConflictError("unsupported Run status filter")
+    if not 1 <= limit <= 100:
+        raise ConflictError("Run list limit must be between 1 and 100")
+    if offset < 0:
+        raise ConflictError("Run list offset cannot be negative")
+
+    clauses: list[str] = []
+    parameters: list[Any] = []
+    if normalized_statuses:
+        placeholders = ", ".join("?" for _ in normalized_statuses)
+        clauses.append(f"run.status IN ({placeholders})")
+        parameters.extend(normalized_statuses)
+    cleaned_query = query.strip() if query and query.strip() else None
+    if cleaned_query:
+        clauses.append(
+            "(lower(run.id) LIKE lower(?) OR lower(run.intent) LIKE lower(?) "
+            "OR lower(run.work_item_id) LIKE lower(?) OR lower(work_item.title) LIKE lower(?))"
+        )
+        pattern = f"%{cleaned_query}%"
+        parameters.extend([pattern, pattern, pattern, pattern])
+    if work_item_id:
+        clauses.append("run.work_item_id = ?")
+        parameters.append(work_item_id)
+    if started_from:
+        clauses.append("run.started_at >= ?")
+        parameters.append(started_from)
+    if started_to:
+        clauses.append("run.started_at <= ?")
+        parameters.append(started_to)
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    database = open_database(database_path)
+    try:
+        total = database.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM runs AS run
+            JOIN work_items AS work_item ON work_item.id = run.work_item_id
+            {where}
+            """,
+            parameters,
+        ).fetchone()[0]
+        rows = database.execute(
+            f"""
+            SELECT run.id, run.work_item_id, work_item.title AS work_item_title,
+                   run.intent, run.status, run.started_at, run.ended_at
+            FROM runs AS run
+            JOIN work_items AS work_item ON work_item.id = run.work_item_id
+            {where}
+            ORDER BY run.started_at DESC, run.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [*parameters, limit, offset],
+        )
+        return {
+            "runs": [dict(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    finally:
+        database.close()
+
+
+def get_run_detail(
+    run_id: str,
+    *,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Return one Run with minimal WorkItem context and its Artifacts."""
+
+    database = open_database(database_path)
+    try:
+        run = _require_row(
+            database,
+            "SELECT * FROM runs WHERE id = ?",
+            (run_id,),
+            "Run",
+        )
+        work_item = _require_row(
+            database,
+            "SELECT id, title FROM work_items WHERE id = ?",
+            (run["work_item_id"],),
+            "WorkItem",
+        )
+        artifacts = [
+            dict(row)
+            for row in database.execute(
+                "SELECT * FROM artifacts WHERE run_id = ? ORDER BY created_at, id",
+                (run_id,),
+            )
+        ]
+        return {"run": run, "work_item": work_item, "artifacts": artifacts}
     finally:
         database.close()
 
