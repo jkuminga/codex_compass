@@ -102,19 +102,37 @@ CREATE TABLE IF NOT EXISTS runs (
   )
 );
 
+CREATE TABLE IF NOT EXISTS run_tool_events (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+  tool_use_id TEXT NOT NULL CHECK (length(trim(tool_use_id)) > 0),
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  tool_name TEXT NOT NULL CHECK (length(trim(tool_name)) > 0),
+  tool_family TEXT NOT NULL CHECK (tool_family IN (
+    'bash', 'file_edit', 'mcp', 'lifecycle', 'other'
+  )),
+  status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed', 'unknown')),
+  exit_code INTEGER,
+  input_summary TEXT NOT NULL CHECK (length(trim(input_summary)) <= 512),
+  result_summary TEXT NOT NULL CHECK (length(trim(result_summary)) <= 1024),
+  review_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (review_status IN ('pending', 'promoted', 'ignored', 'error')),
+  created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
+  UNIQUE (run_id, tool_use_id)
+);
+
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
   run_id TEXT NOT NULL REFERENCES runs(id),
+  source_event_id TEXT REFERENCES run_tool_events(id),
   kind TEXT NOT NULL CHECK (kind IN (
     'file', 'commit', 'test_run', 'lint_run', 'build_run', 'pull_request',
     'deployment', 'screenshot', 'report', 'other'
   )),
-  uri TEXT NOT NULL CHECK (length(trim(uri)) > 0),
+  uri TEXT CHECK (uri IS NULL OR length(trim(uri)) > 0),
   verification_status TEXT NOT NULL DEFAULT 'pending'
     CHECK (verification_status IN ('not_applicable', 'pending', 'passed', 'failed')),
   summary TEXT NOT NULL CHECK (length(trim(summary)) > 0),
   created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
-  UNIQUE (run_id, kind, uri),
   CHECK (
     kind NOT IN ('test_run', 'lint_run', 'build_run')
     OR verification_status <> 'not_applicable'
@@ -411,6 +429,11 @@ CREATE INDEX IF NOT EXISTS runs_work_item_started_at_idx
   ON runs(work_item_id, started_at);
 CREATE UNIQUE INDEX IF NOT EXISTS runs_one_running_per_work_item_idx
   ON runs(work_item_id) WHERE status = 'running';
+CREATE INDEX IF NOT EXISTS run_tool_events_run_created_at_idx
+  ON run_tool_events(run_id, created_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS artifacts_source_event_idx
+  ON artifacts(run_id, kind, source_event_id)
+  WHERE source_event_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS artifacts_run_kind_idx
   ON artifacts(run_id, kind);
 CREATE INDEX IF NOT EXISTS memory_candidates_run_status_created_at_idx

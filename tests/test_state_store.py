@@ -46,6 +46,117 @@ class StateStoreLifecycleTests(unittest.TestCase):
         self.assertEqual(columns["intent"]["notnull"], 1)
         self.assertEqual(columns["recall_query"]["notnull"], 1)
 
+    def test_initialize_database_migrates_legacy_artifacts_and_preserves_rows(self) -> None:
+        legacy_path = Path(self.temporary_directory.name) / "legacy_artifacts.db"
+        database = sqlite3.connect(legacy_path)
+        database.executescript(
+            """
+            CREATE TABLE runs (
+              id TEXT PRIMARY KEY,
+              work_item_id TEXT NOT NULL,
+              status TEXT NOT NULL,
+              started_at TEXT NOT NULL,
+              ended_at TEXT,
+              summary TEXT,
+              termination_reason TEXT,
+              trace_ref TEXT
+            );
+            CREATE TABLE artifacts (
+              id TEXT PRIMARY KEY,
+              run_id TEXT NOT NULL REFERENCES runs(id),
+              kind TEXT NOT NULL,
+              uri TEXT NOT NULL,
+              verification_status TEXT NOT NULL,
+              summary TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              UNIQUE (run_id, kind, uri)
+            );
+            INSERT INTO runs VALUES (
+              'RUN-OLD', 'WI-OLD', 'running',
+              '2026-09-22T00:00:00Z', NULL, NULL, NULL, NULL
+            );
+            INSERT INTO artifacts VALUES (
+              'ART-OLD', 'RUN-OLD', 'report', 'report://old',
+              'pending', '기존 결과', '2026-09-22T00:01:00Z'
+            );
+            """
+        )
+        database.commit()
+        database.close()
+
+        state_store.initialize_database(legacy_path)
+
+        database = state_store.open_database(legacy_path)
+        columns = {
+            row["name"]: row for row in database.execute("PRAGMA table_info(artifacts)")
+        }
+        migrated = database.execute(
+            "SELECT id, uri, source_event_id FROM artifacts WHERE id = 'ART-OLD'"
+        ).fetchone()
+        self.assertEqual(migrated["uri"], "report://old")
+        self.assertIsNone(migrated["source_event_id"])
+        self.assertEqual(columns["uri"]["notnull"], 0)
+        self.assertEqual(columns["source_event_id"]["notnull"], 0)
+        self.assertEqual(
+            database.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'run_tool_events'"
+            ).fetchone()[0],
+            1,
+        )
+        database.close()
+
+    def test_run_tool_event_can_link_an_artifact_without_uri(self) -> None:
+        work_item = state_store.create_work_item(
+            title="도구 이벤트 저장",
+            kind="refactor",
+            goal="PostToolUse 결과를 저장한다.",
+            next_action="이벤트를 기록한다.",
+            actor="test",
+            database_path=self.database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"], "ready", next_action="이벤트를 기록한다.",
+            actor="test", reason="이벤트 저장 테스트 준비", database_path=self.database_path,
+        )
+        run = self.start_run(
+            work_item["id"], actor="codex", database_path=self.database_path
+        )
+        event = state_store.record_run_tool_event(
+            run["id"],
+            tool_use_id="tool-1",
+            tool_name="bash",
+            tool_family="bash",
+            status="succeeded",
+            exit_code=0,
+            input_summary="pytest tests/test_state_store.py",
+            result_summary="exit_code=0; lines=1; preview=passed",
+            event_id="EVT-1",
+            database_path=self.database_path,
+        )
+        artifact = state_store.create_artifact(
+            run["id"],
+            kind="test_run",
+            source_event_id=event["id"],
+            verification_status="passed",
+            summary="이벤트 기반 테스트 결과",
+            actor="codex",
+            database_path=self.database_path,
+        )
+
+        self.assertEqual(state_store.list_run_tool_events(run["id"], database_path=self.database_path)[0]["id"], "EVT-1")
+        self.assertEqual(artifact["source_event_id"], "EVT-1")
+        self.assertIsNone(artifact["uri"])
+        with self.assertRaises(state_store.ConflictError):
+            state_store.create_artifact(
+                run["id"],
+                kind="test_run",
+                source_event_id=event["id"],
+                verification_status="passed",
+                summary="중복 이벤트",
+                actor="codex",
+                database_path=self.database_path,
+            )
+
     def test_initialize_database_replaces_the_status_transition_trigger(self) -> None:
         database = state_store.open_database(self.database_path)
         database.execute("DROP TRIGGER work_items_validate_status_transition")
@@ -627,7 +738,7 @@ class StateStoreLifecycleTests(unittest.TestCase):
         self.assertTrue(verification["can_complete"])
         self.assertEqual(verification["issues"], [])
 
-    def test_execution_artifact_uris_distinguish_retries_and_reject_duplicates(
+    def test_execution_artifact_uris_distinguish_retries_and_event_links_dedupe(
         self,
     ) -> None:
         work_item = state_store.create_work_item(
@@ -683,16 +794,18 @@ class StateStoreLifecycleTests(unittest.TestCase):
                 "command:pytest:20260827T082130Z": "passed",
             },
         )
-        with self.assertRaises(state_store.ConflictError):
-            state_store.create_artifact(
-                run["id"],
-                kind="test_run",
-                uri="command:pytest:20260827T082130Z",
-                verification_status="passed",
-                summary="같은 실행 결과 중복",
-                actor="codex",
-                database_path=self.database_path,
-            )
+        # URI alone is now optional metadata; source_event_id is the automatic
+        # promotion idempotency key and is tested separately below.
+        duplicate_uri = state_store.create_artifact(
+            run["id"],
+            kind="test_run",
+            uri="command:pytest:20260827T082130Z",
+            verification_status="passed",
+            summary="URI가 같아도 원본 이벤트가 없는 수동 기록",
+            actor="codex",
+            database_path=self.database_path,
+        )
+        self.assertNotEqual(duplicate_uri["id"], passed["id"])
 
         invalid_uris = (
             "trace://tests/latest",

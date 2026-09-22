@@ -60,6 +60,13 @@ _SEARCHABLE_WORK_ITEM_STATUSES = frozenset({"backlog", "ready", "blocked"})
 _MEMO_KINDS = frozenset({"general", "decision", "problem", "idea", "question", "reference"})
 _MEMO_STATUSES = frozenset({"open", "closed"})
 _EXECUTION_ARTIFACT_KINDS = frozenset({"test_run", "lint_run", "build_run"})
+_RUN_TOOL_EVENT_FAMILIES = frozenset(
+    {"bash", "file_edit", "mcp", "lifecycle", "other"}
+)
+_RUN_TOOL_EVENT_STATUSES = frozenset({"succeeded", "failed", "unknown"})
+_RUN_TOOL_EVENT_REVIEW_STATUSES = frozenset(
+    {"pending", "promoted", "ignored", "error"}
+)
 _EXECUTION_ARTIFACT_URI = re.compile(
     r"^command:(?P<family>[a-z0-9](?:[a-z0-9-]*[a-z0-9])?):"
     r"(?P<started_at>\d{8}T\d{6}Z)(?:-(?P<suffix>[a-z0-9]{6,12}))?$"
@@ -70,6 +77,7 @@ _REQUIRED_TABLES = frozenset(
         "work_items",
         "acceptance_criteria",
         "runs",
+        "run_tool_events",
         "artifacts",
         "criterion_evidence",
         "state_events",
@@ -100,12 +108,16 @@ def _generate_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
 
 
-def _validate_artifact_uri(kind: str, uri: str) -> str:
+def _validate_artifact_uri(kind: str, uri: str | None) -> str | None:
     """Validate and normalize the reference that identifies one Artifact result."""
 
+    if uri is None:
+        return None
+    if not isinstance(uri, str):
+        raise ConflictError("Artifact uri must be a string when provided")
     cleaned_uri = uri.strip()
     if not cleaned_uri:
-        raise ConflictError("Artifact uri is required")
+        raise ConflictError("Artifact uri must be non-empty when provided")
     if kind not in _EXECUTION_ARTIFACT_KINDS:
         return cleaned_uri
 
@@ -161,6 +173,10 @@ def initialize_database(
 
     database = open_database(database_path)
     try:
+        # These two migrations run before schema.sql so a legacy artifacts table
+        # cannot make the new source_event_id index fail during schema loading.
+        _migrate_run_tool_events(database)
+        _migrate_artifacts(database)
         database.executescript(Path(schema_path).read_text())
         _migrate_work_item_draft_fields(database)
         _migrate_run_recall_fields(database)
@@ -173,6 +189,132 @@ def initialize_database(
     finally:
         database.close()
     return check_database_health(database_path)
+
+
+def _migrate_run_tool_events(database: sqlite3.Connection) -> None:
+    """Create the compact PostToolUse event table for older state databases."""
+
+    database.execute(
+        """
+        CREATE TABLE IF NOT EXISTS run_tool_events (
+          id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+          tool_use_id TEXT NOT NULL CHECK (length(trim(tool_use_id)) > 0),
+          run_id TEXT NOT NULL REFERENCES runs(id),
+          tool_name TEXT NOT NULL CHECK (length(trim(tool_name)) > 0),
+          tool_family TEXT NOT NULL CHECK (tool_family IN (
+            'bash', 'file_edit', 'mcp', 'lifecycle', 'other'
+          )),
+          status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed', 'unknown')),
+          exit_code INTEGER,
+          input_summary TEXT NOT NULL CHECK (length(trim(input_summary)) <= 512),
+          result_summary TEXT NOT NULL CHECK (length(trim(result_summary)) <= 1024),
+          review_status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (review_status IN ('pending', 'promoted', 'ignored', 'error')),
+          created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
+          UNIQUE (run_id, tool_use_id)
+        )
+        """
+    )
+    database.execute(
+        """
+        CREATE INDEX IF NOT EXISTS run_tool_events_run_created_at_idx
+          ON run_tool_events(run_id, created_at, id)
+        """
+    )
+    database.commit()
+
+
+def _migrate_artifacts(database: sqlite3.Connection) -> None:
+    """Rebuild legacy Artifacts so URI is nullable and events can be linked."""
+
+    table_exists = database.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'artifacts'
+        """
+    ).fetchone()
+    if table_exists is None:
+        return
+
+    columns = {
+        row["name"]: row
+        for row in database.execute("PRAGMA table_info(artifacts)")
+    }
+    uri_column = columns.get("uri")
+    uri_is_required = bool(uri_column["notnull"]) if uri_column is not None else False
+    if "source_event_id" in columns and not uri_is_required:
+        return
+
+    # SQLite cannot relax NOT NULL in place. Build the replacement while
+    # preserving all existing rows and the child foreign keys.
+    database.commit()
+    foreign_keys_enabled = database.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    database.execute("PRAGMA foreign_keys = OFF")
+    try:
+        database.execute("BEGIN")
+        database.execute(
+            """
+            CREATE TABLE artifacts_migration_new (
+              id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+              run_id TEXT NOT NULL REFERENCES runs(id),
+              source_event_id TEXT REFERENCES run_tool_events(id),
+              kind TEXT NOT NULL CHECK (kind IN (
+                'file', 'commit', 'test_run', 'lint_run', 'build_run', 'pull_request',
+                'deployment', 'screenshot', 'report', 'other'
+              )),
+              uri TEXT CHECK (uri IS NULL OR length(trim(uri)) > 0),
+              verification_status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (verification_status IN ('not_applicable', 'pending', 'passed', 'failed')),
+              summary TEXT NOT NULL CHECK (length(trim(summary)) > 0),
+              created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
+              CHECK (
+                kind NOT IN ('test_run', 'lint_run', 'build_run')
+                OR verification_status <> 'not_applicable'
+              )
+            )
+            """
+        )
+        database.execute(
+            """
+            INSERT INTO artifacts_migration_new (
+              id, run_id, source_event_id, kind, uri,
+              verification_status, summary, created_at
+            )
+            SELECT id, run_id, NULL, kind, uri,
+                   verification_status, summary, created_at
+            FROM artifacts
+            """
+        )
+        # SQLite keeps triggers on sibling tables while the parent table is
+        # replaced. Drop the known Artifact-dependent triggers transactionally;
+        # schema.sql recreates their canonical definitions after the swap.
+        for trigger_name in (
+            "acceptance_criteria_require_valid_evidence_on_pass",
+            "work_items_require_completed_criteria_on_done",
+            "criterion_evidence_validate_work_item_on_insert",
+            "criterion_evidence_validate_work_item_on_update",
+            "artifacts_prevent_final_verification_rewrite",
+            "artifacts_validate_pending_transition",
+        ):
+            database.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
+        database.execute("DROP VIEW IF EXISTS work_item_verification")
+        database.execute("DROP TABLE artifacts")
+        database.execute(
+            "ALTER TABLE artifacts_migration_new RENAME TO artifacts"
+        )
+        violations = database.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise sqlite3.IntegrityError(
+                f"artifact migration produced foreign-key violations: {violations}"
+            )
+        database.commit()
+    except Exception:
+        database.rollback()
+        raise
+    finally:
+        database.execute(
+            f"PRAGMA foreign_keys = {'ON' if foreign_keys_enabled else 'OFF'}"
+        )
 
 
 def _migrate_work_item_draft_fields(database: sqlite3.Connection) -> None:
@@ -1477,11 +1619,138 @@ def start_run(
         return _require_row(database, "SELECT * FROM runs WHERE id = ?", (identifier,), "Run")
 
 
+def _validate_run_tool_event_summary(
+    value: str,
+    *,
+    field: str,
+    max_length: int,
+) -> str:
+    """Normalize one bounded event summary without invoking a model."""
+
+    if not isinstance(value, str):
+        raise ConflictError(f"{field} must be a string")
+    cleaned = " ".join(value.split())
+    if not cleaned:
+        raise ConflictError(f"{field} must be non-empty")
+    if len(cleaned) > max_length:
+        raise ConflictError(f"{field} must be at most {max_length} characters")
+    return cleaned
+
+
+def record_run_tool_event(
+    run_id: str,
+    *,
+    tool_use_id: str,
+    tool_name: str,
+    tool_family: str,
+    status: str,
+    exit_code: int | None,
+    input_summary: str,
+    result_summary: str,
+    review_status: str = "pending",
+    event_id: str | None = None,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> dict[str, Any]:
+    """Store one compact PostToolUse event for an active Run."""
+
+    if tool_family not in _RUN_TOOL_EVENT_FAMILIES:
+        raise ConflictError(f"unsupported tool family: {tool_family}")
+    if status not in _RUN_TOOL_EVENT_STATUSES:
+        raise ConflictError(f"unsupported tool event status: {status}")
+    if review_status not in _RUN_TOOL_EVENT_REVIEW_STATUSES:
+        raise ConflictError(f"unsupported review status: {review_status}")
+    if not isinstance(tool_use_id, str) or not tool_use_id.strip():
+        raise ConflictError("tool_use_id must be non-empty")
+    if not isinstance(tool_name, str) or not tool_name.strip():
+        raise ConflictError("tool_name must be non-empty")
+    if exit_code is not None and not isinstance(exit_code, int):
+        raise ConflictError("exit_code must be an integer or null")
+
+    identifier = event_id or _generate_id("EVT")
+    normalized_tool_use_id = tool_use_id.strip()
+    normalized_tool_name = tool_name.strip()
+    normalized_input = _validate_run_tool_event_summary(
+        input_summary, field="input_summary", max_length=512
+    )
+    normalized_result = _validate_run_tool_event_summary(
+        result_summary, field="result_summary", max_length=1024
+    )
+    now = _utc_now()
+    with _transaction(database_path) as database:
+        run = _require_row(database, "SELECT * FROM runs WHERE id = ?", (run_id,), "Run")
+        if run["status"] != "running":
+            raise ConflictError("Tool events must be recorded during a running Run")
+        database.execute(
+            """
+            INSERT INTO run_tool_events (
+              id, tool_use_id, run_id, tool_name, tool_family, status,
+              exit_code, input_summary, result_summary, review_status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                identifier,
+                normalized_tool_use_id,
+                run_id,
+                normalized_tool_name,
+                tool_family,
+                status,
+                exit_code,
+                normalized_input,
+                normalized_result,
+                review_status,
+                now,
+            ),
+        )
+        return _require_row(
+            database,
+            "SELECT * FROM run_tool_events WHERE id = ?",
+            (identifier,),
+            "Run tool event",
+        )
+
+
+def list_run_tool_events(
+    run_id: str,
+    *,
+    review_status: str | None = None,
+    database_path: str | Path = DEFAULT_DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """List compact tool events for one Run in execution order."""
+
+    if review_status is not None and review_status not in _RUN_TOOL_EVENT_REVIEW_STATUSES:
+        raise ConflictError(f"unsupported review status: {review_status}")
+    database = open_database(database_path)
+    try:
+        _require_row(database, "SELECT id FROM runs WHERE id = ?", (run_id,), "Run")
+        if review_status is None:
+            rows = database.execute(
+                """
+                SELECT * FROM run_tool_events
+                WHERE run_id = ?
+                ORDER BY created_at, id
+                """,
+                (run_id,),
+            )
+        else:
+            rows = database.execute(
+                """
+                SELECT * FROM run_tool_events
+                WHERE run_id = ? AND review_status = ?
+                ORDER BY created_at, id
+                """,
+                (run_id, review_status),
+            )
+        return [dict(row) for row in rows]
+    finally:
+        database.close()
+
+
 def create_artifact(
     run_id: str,
     *,
     kind: str,
-    uri: str,
+    uri: str | None = None,
+    source_event_id: str | None = None,
     verification_status: str,
     summary: str,
     actor: str,
@@ -1491,21 +1760,37 @@ def create_artifact(
     """Register a verifiable Run result without copying its original content."""
 
     normalized_uri = _validate_artifact_uri(kind, uri)
+    if source_event_id is not None and not isinstance(source_event_id, str):
+        raise ConflictError("source_event_id must be a string when provided")
+    normalized_source_event_id = source_event_id.strip() if source_event_id else None
+    if source_event_id is not None and not normalized_source_event_id:
+        raise ConflictError("source_event_id must be non-empty when provided")
     identifier = artifact_id or _generate_id("ART")
     now = _utc_now()
     with _transaction(database_path) as database:
         run = _require_row(database, "SELECT * FROM runs WHERE id = ?", (run_id,), "Run")
         if run["status"] != "running":
             raise ConflictError("Artifact must be registered during a running Run")
+        if normalized_source_event_id is not None:
+            source_event = _require_row(
+                database,
+                "SELECT id, run_id FROM run_tool_events WHERE id = ?",
+                (normalized_source_event_id,),
+                "Run tool event",
+            )
+            if source_event["run_id"] != run_id:
+                raise ConflictError("Artifact source event belongs to another Run")
         database.execute(
             """
             INSERT INTO artifacts (
-              id, run_id, kind, uri, verification_status, summary, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+              id, run_id, source_event_id, kind, uri,
+              verification_status, summary, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 identifier,
                 run_id,
+                normalized_source_event_id,
                 kind,
                 normalized_uri,
                 verification_status,

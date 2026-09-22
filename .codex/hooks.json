@@ -28,13 +28,12 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__harness_state__(start|finish)_work$",
         "hooks": [
           {
             "type": "command",
             "command": "\"$(git rev-parse --show-toplevel)/bin/harness-post-tool-use\"",
             "timeout": 20,
-            "statusMessage": "Updating the active Run binding",
+            "statusMessage": "Recording completed tool events",
             "additionalContextLimit": 1000
           }
         ]

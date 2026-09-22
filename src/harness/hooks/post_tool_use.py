@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +20,18 @@ START_WORK_TOOL = "mcp__harness_state__start_work"
 FINISH_WORK_TOOL = "mcp__harness_state__finish_work"
 DEFAULT_RECALL_LIMIT = 5
 DEFAULT_RECALL_TIMEOUT_SECONDS = 15
+MAX_INPUT_SUMMARY_LENGTH = 512
+MAX_RESULT_SUMMARY_LENGTH = 1024
+_SECRET_PATTERN = re.compile(
+    r"(?i)\b(api[_-]?key|token|password|secret|authorization|bearer)\b"
+    r"(\s*[:=]\s*|\s+)([^\s,;]+)"
+)
+_PATCH_FILE_PATTERN = re.compile(
+    r"^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s*(.+?)\s*$",
+    re.MULTILINE,
+)
+_SHELL_META_PATTERN = re.compile(r"(?:&&|\|\||[|;&<>`$()]|\n)")
+_TRIVIAL_READ_COMMANDS = frozenset({"pwd", "ls", "cd", "pushd", "popd"})
 
 RecallRunner = Callable[[str], dict[str, Any]]
 StartedStatusReader = Callable[..., Mapping[str, Any]]
@@ -24,6 +39,204 @@ StartedStatusReader = Callable[..., Mapping[str, Any]]
 
 class HookInputError(ValueError):
     """Raised when a matching Hook event lacks its required values."""
+
+
+def _compact_text(value: Any, *, limit: int) -> str:
+    """Return a short, whitespace-normalized and secret-redacted string."""
+
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError):
+            text = str(value)
+    text = _SECRET_PATTERN.sub(r"\1=***", text)
+    text = " ".join(text.split())
+    if len(text) > limit:
+        return text[: max(0, limit - 1)] + "…"
+    return text
+
+
+def classify_tool_family(tool_name: str) -> str:
+    """Classify a Codex tool name without model inference."""
+
+    lowered = tool_name.strip().lower()
+    if lowered in {START_WORK_TOOL.lower(), FINISH_WORK_TOOL.lower()}:
+        return "lifecycle"
+    if lowered in {"bash", "shell", "terminal", "exec", "exec_command"}:
+        return "bash"
+    if lowered == "apply_patch" or "file_edit" in lowered:
+        return "file_edit"
+    if lowered.startswith("mcp__"):
+        return "mcp"
+    return "other"
+
+
+def _tool_use_id(event: Mapping[str, Any], *, tool_name: str) -> str:
+    """Use the Codex tool-call ID, with a stable fallback for old payloads."""
+
+    for field in ("tool_use_id", "tool_call_id", "call_id"):
+        value = event.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    fingerprint_input = {
+        "session_id": event.get("session_id"),
+        "turn_id": event.get("turn_id"),
+        "tool_name": tool_name,
+        "tool_input": event.get("tool_input"),
+        "tool_response": event.get("tool_response"),
+    }
+    encoded = json.dumps(
+        fingerprint_input,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "hook-" + hashlib.sha256(encoded).hexdigest()[:24]
+
+
+def summarize_tool_input(tool_name: str, tool_input: Any) -> str:
+    """Create a bounded input summary suitable for a state-store event."""
+
+    family = classify_tool_family(tool_name)
+    if family == "bash":
+        command = tool_input
+        if isinstance(tool_input, Mapping):
+            command = next(
+                (
+                    tool_input.get(field)
+                    for field in ("cmd", "command", "script")
+                    if isinstance(tool_input.get(field), str)
+                ),
+                tool_input,
+            )
+        return _compact_text(f"cmd={command}", limit=MAX_INPUT_SUMMARY_LENGTH)
+    if family == "file_edit":
+        patch = tool_input.get("patch", "") if isinstance(tool_input, Mapping) else tool_input
+        patch_text = patch if isinstance(patch, str) else str(patch)
+        files = [match.strip() for match in _PATCH_FILE_PATTERN.findall(patch_text)]
+        if files:
+            unique_files = list(dict.fromkeys(files))
+            return _compact_text(
+                f"apply_patch files={','.join(unique_files[:20])} ops={len(files)}",
+                limit=MAX_INPUT_SUMMARY_LENGTH,
+            )
+        return "apply_patch files=unknown"
+    if family == "mcp":
+        if isinstance(tool_input, Mapping):
+            keys = ",".join(sorted(str(key) for key in tool_input)[:20]) or "none"
+            return _compact_text(
+                f"mcp input_keys={keys}", limit=MAX_INPUT_SUMMARY_LENGTH
+            )
+        return _compact_text("mcp input=none", limit=MAX_INPUT_SUMMARY_LENGTH)
+    return _compact_text(
+        f"input={tool_input}", limit=MAX_INPUT_SUMMARY_LENGTH
+    )
+
+
+def _shell_command_text(tool_input: Any) -> str | None:
+    """Read a shell command from either Codex's ``cmd`` or ``command`` field."""
+
+    if isinstance(tool_input, str):
+        return tool_input.strip() or None
+    if not isinstance(tool_input, Mapping):
+        return None
+    for field in ("cmd", "command", "script"):
+        value = tool_input.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def is_trivial_read_command(tool_name: str, tool_input: Any) -> bool:
+    """Identify only unambiguous, low-value shell navigation/status commands.
+
+    This intentionally uses a narrow allowlist. Compound commands and anything
+    that cannot be tokenized safely remain eligible for event storage.
+    """
+
+    if classify_tool_family(tool_name) != "bash":
+        return False
+    command = _shell_command_text(tool_input)
+    if command is None or _SHELL_META_PATTERN.search(command):
+        return False
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    if tokens[0] in _TRIVIAL_READ_COMMANDS:
+        return True
+    # Keep this deliberately narrow: only the plain Git status command and
+    # its common display flags are considered navigation noise.
+    if tokens[0] == "git" and len(tokens) >= 2 and tokens[1] == "status":
+        return all(token.startswith("-") for token in tokens[2:])
+    return False
+
+
+def _response_text(tool_response: Any) -> str:
+    """Extract a small useful text preview from common Hook response shapes."""
+
+    if not isinstance(tool_response, Mapping):
+        return _compact_text(tool_response, limit=700)
+    for field in ("output", "stdout", "stderr", "text"):
+        value = tool_response.get(field)
+        if isinstance(value, str) and value.strip():
+            return _compact_text(value, limit=700)
+    content = tool_response.get("content")
+    if isinstance(content, list):
+        texts = [
+            item.get("text")
+            for item in content
+            if isinstance(item, Mapping) and isinstance(item.get("text"), str)
+        ]
+        if texts:
+            return _compact_text(" ".join(texts), limit=700)
+    structured = tool_response.get("structuredContent")
+    if structured is not None:
+        return _compact_text(structured, limit=700)
+    return "no result payload"
+
+
+def summarize_tool_response(tool_response: Any) -> tuple[str, int | None]:
+    """Return a bounded result summary and the optional shell exit code."""
+
+    exit_code: int | None = None
+    if isinstance(tool_response, Mapping):
+        candidate = tool_response.get("exit_code")
+        if isinstance(candidate, int) and not isinstance(candidate, bool):
+            exit_code = candidate
+        if tool_response.get("isError") is True:
+            prefix = "error=true"
+        elif tool_response.get("isError") is False:
+            prefix = "error=false"
+        else:
+            prefix = "result"
+    else:
+        prefix = "result"
+    if exit_code is not None:
+        prefix = f"exit_code={exit_code}; {prefix}"
+    preview = _response_text(tool_response)
+    return (
+        _compact_text(f"{prefix}; preview={preview}", limit=MAX_RESULT_SUMMARY_LENGTH),
+        exit_code,
+    )
+
+
+def tool_event_status(tool_response: Any, exit_code: int | None) -> str:
+    """Derive succeeded/failed/unknown from the raw Hook response."""
+
+    if exit_code is not None:
+        return "succeeded" if exit_code == 0 else "failed"
+    if isinstance(tool_response, Mapping):
+        if tool_response.get("isError") is True:
+            return "failed"
+        if tool_response.get("isError") is False:
+            return "succeeded"
+    return "unknown"
 
 
 def _required_string(payload: Mapping[str, Any], field: str) -> str:
@@ -179,6 +392,62 @@ def _started_system_message(
     return "\n".join(lines)
 
 
+def record_general_tool_event(
+    event: Mapping[str, Any],
+    *,
+    database_path: str | Path = state_store.DEFAULT_DATABASE_PATH,
+    bindings_directory: str | Path = runtime_binding.DEFAULT_BINDINGS_DIRECTORY,
+) -> dict[str, Any] | None:
+    """Record one non-lifecycle tool event when this session owns an active Run.
+
+    This path deliberately performs no MCP call, model inference, or user-facing
+    denial. A missing/invalid Binding (the temporary session-to-Run pointer) or a
+    database failure simply means the event is skipped; the original tool call
+    has already completed and must not be blocked by telemetry bookkeeping.
+    """
+
+    tool_name = event.get("tool_name")
+    if not isinstance(tool_name, str) or not tool_name.strip():
+        return None
+    tool_name = tool_name.strip()
+    if tool_name in {START_WORK_TOOL, FINISH_WORK_TOOL}:
+        return None
+    if is_trivial_read_command(tool_name, event.get("tool_input")):
+        return None
+    session_id = event.get("session_id")
+    turn_id = event.get("turn_id")
+    if not isinstance(session_id, str) or not session_id.strip():
+        return None
+    if not isinstance(turn_id, str) or not turn_id.strip():
+        return None
+    try:
+        active = runtime_binding.validate_active_binding(
+            session_id=session_id.strip(),
+            current_turn_id=turn_id.strip(),
+            database_path=database_path,
+            bindings_directory=bindings_directory,
+        )
+        run_id = active["active_run"]["id"]
+        result_summary, exit_code = summarize_tool_response(
+            event.get("tool_response")
+        )
+        return state_store.record_run_tool_event(
+            run_id,
+            tool_use_id=_tool_use_id(event, tool_name=tool_name),
+            tool_name=tool_name,
+            tool_family=classify_tool_family(tool_name),
+            status=tool_event_status(event.get("tool_response"), exit_code),
+            exit_code=exit_code,
+            input_summary=summarize_tool_input(tool_name, event.get("tool_input")),
+            result_summary=result_summary,
+            database_path=database_path,
+        )
+    except Exception:
+        # PostToolUse is observational. State-store issues must never deny or
+        # otherwise alter the already-completed tool execution.
+        return None
+
+
 def dispatch_post_tool_use(
     event: Mapping[str, Any],
     *,
@@ -187,10 +456,15 @@ def dispatch_post_tool_use(
     database_path: str | Path = state_store.DEFAULT_DATABASE_PATH,
     bindings_directory: str | Path = runtime_binding.DEFAULT_BINDINGS_DIRECTORY,
 ) -> dict[str, Any] | None:
-    """Handle successful start_work and finish_work lifecycle transitions."""
+    """Handle lifecycle transitions and record other tools as compact events."""
 
     tool_name = event.get("tool_name")
     if tool_name not in {START_WORK_TOOL, FINISH_WORK_TOOL}:
+        record_general_tool_event(
+            event,
+            database_path=database_path,
+            bindings_directory=bindings_directory,
+        )
         return None
 
     if tool_name == FINISH_WORK_TOOL:

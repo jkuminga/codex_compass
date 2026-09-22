@@ -450,25 +450,27 @@ def create_server(
             "report",
             "other",
         ],
-        uri: str,
         verification_status: Literal[
             "not_applicable", "pending", "passed", "failed"
         ],
         summary: str,
+        uri: str | None = None,
+        source_event_id: str | None = None,
     ) -> dict[str, Any]:
         """Register a file, test, build, commit, or other verifiable Run result.
 
-        Store only a short summary and URI; keep full output in the referenced
-        file, Trace, Git, or CI system. Repeated test, lint, and build executions
-        use ``command:<command-family>:<YYYYMMDDTHHMMSSZ>`` so each attempt has
-        its own Artifact. Add a 6-12 character lowercase suffix only when two
-        executions start in the same second.
+        Store only a short summary and an optional URI; keep full output in the
+        referenced file, Trace, Git, or CI system when one exists. Automatic
+        Artifact promotion can provide ``source_event_id`` to link the result
+        to one ``run_tool_events.id``. Repeated test, lint, and build executions
+        use ``command:<command-family>:<YYYYMMDDTHHMMSSZ>`` when a URI is known.
         """
 
         return state_store.create_artifact(
             run_id,
             kind=kind,
             uri=uri,
+            source_event_id=source_event_id,
             verification_status=verification_status,
             summary=summary,
             actor="codex",

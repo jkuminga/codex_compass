@@ -15,6 +15,41 @@ class StartWorkPostToolUseHookTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def active_run(self) -> tuple[Path, dict[str, object]]:
+        database_path = Path(self.temporary_directory.name) / "state.db"
+        state_store.initialize_database(database_path)
+        work_item = state_store.create_work_item(
+            title="일반 도구 이벤트 기록",
+            kind="verification",
+            goal="PostToolUse 이벤트를 저장한다.",
+            next_action="이벤트를 검증한다.",
+            actor="test",
+            database_path=database_path,
+        )
+        state_store.change_work_item_status(
+            work_item["id"],
+            "ready",
+            next_action="이벤트를 검증한다.",
+            actor="test",
+            reason="테스트 준비",
+            database_path=database_path,
+        )
+        run = state_store.start_run(
+            work_item["id"],
+            intent="일반 도구 이벤트를 저장한다.",
+            recall_query="PostToolUse 이벤트",
+            actor="test",
+            database_path=database_path,
+        )
+        runtime_binding.save_binding(
+            session_id="session-1",
+            turn_id="turn-7",
+            work_item_id=work_item["id"],
+            run_id=run["id"],
+            bindings_directory=self.bindings_directory,
+        )
+        return database_path, run
+
     def event(self) -> dict[str, object]:
         return {
             "hook_event_name": "PostToolUse",
@@ -53,6 +88,167 @@ class StartWorkPostToolUseHookTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(recall_queries, [])
         self.assertFalse(self.bindings_directory.exists())
+
+    def test_general_tool_event_is_compactly_saved_for_active_binding(self) -> None:
+        database_path, run = self.active_run()
+        event = {
+            "hook_event_name": "PostToolUse",
+            "session_id": "session-1",
+            "turn_id": "turn-7",
+            "tool_use_id": "tool-use-1",
+            "tool_name": "bash",
+            "tool_input": {"cmd": "pytest tests/test_state_store.py"},
+            "tool_response": {
+                "exit_code": 0,
+                "output": "42 passed",
+            },
+        }
+
+        saved = post_tool_use.record_general_tool_event(
+            event,
+            database_path=database_path,
+            bindings_directory=self.bindings_directory,
+        )
+
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["run_id"], run["id"])
+        self.assertEqual(saved["tool_family"], "bash")
+        self.assertEqual(saved["status"], "succeeded")
+        self.assertEqual(saved["exit_code"], 0)
+        self.assertIn("pytest tests/test_state_store.py", saved["input_summary"])
+        self.assertIn("42 passed", saved["result_summary"])
+        self.assertEqual(
+            state_store.list_run_tool_events(
+                run["id"], database_path=database_path
+            ),
+            [saved],
+        )
+
+    def test_trivial_navigation_and_status_commands_are_not_saved(self) -> None:
+        database_path, run = self.active_run()
+        commands = ["pwd", "ls -la", "cd src", "git status --short"]
+
+        for index, command in enumerate(commands):
+            with self.subTest(command=command):
+                event = {
+                    "session_id": "session-1",
+                    "turn_id": "turn-7",
+                    "tool_use_id": f"noise-{index}",
+                    "tool_name": "bash",
+                    "tool_input": {"cmd": command},
+                    "tool_response": {"exit_code": 0, "output": "noise"},
+                }
+                self.assertIsNone(
+                    post_tool_use.record_general_tool_event(
+                        event,
+                        database_path=database_path,
+                        bindings_directory=self.bindings_directory,
+                    )
+                )
+
+        self.assertEqual(
+            state_store.list_run_tool_events(
+                run["id"], database_path=database_path
+            ),
+            [],
+        )
+
+    def test_compound_navigation_command_is_kept_for_review(self) -> None:
+        database_path, run = self.active_run()
+        event = {
+            "session_id": "session-1",
+            "turn_id": "turn-7",
+            "tool_use_id": "compound-1",
+            "tool_name": "bash",
+            "tool_input": {"cmd": "cd src && pytest"},
+            "tool_response": {"exit_code": 0, "output": "42 passed"},
+        }
+
+        saved = post_tool_use.record_general_tool_event(
+            event,
+            database_path=database_path,
+            bindings_directory=self.bindings_directory,
+        )
+
+        self.assertIsNotNone(saved)
+        self.assertIn("cd src && pytest", saved["input_summary"])
+        self.assertEqual(
+            len(
+                state_store.list_run_tool_events(
+                    run["id"], database_path=database_path
+                )
+            ),
+            1,
+        )
+
+    def test_general_tool_event_failure_and_apply_patch_summary_are_deterministic(self) -> None:
+        database_path, _run = self.active_run()
+        event = {
+            "hook_event_name": "PostToolUse",
+            "session_id": "session-1",
+            "turn_id": "turn-7",
+            "tool_use_id": "tool-use-2",
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "patch": "*** Begin Patch\n*** Update File: src/example.py\n@@\n-old\n+new\n*** End Patch"
+            },
+            "tool_response": {"exit_code": 1, "output": "failed"},
+        }
+
+        saved = post_tool_use.record_general_tool_event(
+            event,
+            database_path=database_path,
+            bindings_directory=self.bindings_directory,
+        )
+
+        self.assertEqual(saved["tool_family"], "file_edit")
+        self.assertEqual(saved["status"], "failed")
+        self.assertIn("files=src/example.py", saved["input_summary"])
+        self.assertNotIn("old", saved["input_summary"])
+
+    def test_general_tool_event_without_active_binding_is_skipped(self) -> None:
+        database_path = Path(self.temporary_directory.name) / "state.db"
+        state_store.initialize_database(database_path)
+        event = {
+            "session_id": "session-1",
+            "turn_id": "turn-7",
+            "tool_name": "bash",
+            "tool_input": {"cmd": "pwd"},
+            "tool_response": {"exit_code": 0, "output": "/tmp"},
+        }
+
+        self.assertIsNone(
+            post_tool_use.record_general_tool_event(
+                event,
+                database_path=database_path,
+                bindings_directory=self.bindings_directory,
+            )
+        )
+
+    def test_lifecycle_tools_are_not_recorded_as_general_events(self) -> None:
+        database_path, run = self.active_run()
+        result = post_tool_use.record_general_tool_event(
+            self.event(),
+            database_path=database_path,
+            bindings_directory=self.bindings_directory,
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(
+            state_store.list_run_tool_events(
+                run["id"], database_path=database_path
+            ),
+            [],
+        )
+
+    def test_project_hook_registers_one_matcherless_post_tool_use_entry(self) -> None:
+        hooks_path = Path(__file__).resolve().parents[1] / ".codex" / "hooks.json"
+        hooks = json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"]
+
+        self.assertEqual(len(hooks["PostToolUse"]), 1)
+        entry = hooks["PostToolUse"][0]
+        self.assertNotIn("matcher", entry)
+        self.assertIn("harness-post-tool-use", entry["hooks"][0]["command"])
 
     def test_start_work_saves_binding_and_injects_compact_memory_context(self) -> None:
         recall_queries: list[str] = []
