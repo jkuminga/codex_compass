@@ -153,6 +153,7 @@ function renderMarkdown(value) {
   const output = [];
   let inCode = false;
   const listStack = [];
+  let paragraphLines = [];
   const inline = (line) => escapeHtml(line)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -165,6 +166,14 @@ function renderMarkdown(value) {
       const list = listStack.pop();
       output.push(`</li></${list.type}>`);
     }
+  };
+  const closeParagraph = () => {
+    if (!paragraphLines.length) return;
+    const content = paragraphLines.every((line) => line === "")
+      ? "<br>".repeat(paragraphLines.length)
+      : paragraphLines.map(inline).join("<br>");
+    output.push(`<p>${content}</p>`);
+    paragraphLines = [];
   };
   const addListItem = (type, indent, content) => {
     while (listStack.length && indent < listStack.at(-1).indent) {
@@ -187,6 +196,7 @@ function renderMarkdown(value) {
   };
   for (const line of lines) {
     if (line.startsWith("```")) {
+      closeParagraph();
       if (inCode) { output.push("</code></pre>"); inCode = false; }
       else { closeList(); output.push("<pre><code>"); inCode = true; }
       continue;
@@ -195,16 +205,18 @@ function renderMarkdown(value) {
     const heading = line.match(/^(#{1,4})\s+(.+)$/);
     const listItem = line.match(/^(\s*)([-*]|\d+[.)])\s+(.+)$/);
     const quote = line.match(/^\s*>\s?(.*)$/);
-    if (heading) { closeList(); output.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`); }
+    if (heading) { closeParagraph(); closeList(); output.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`); }
     else if (listItem) {
+      closeParagraph();
       const type = /^\d/.test(listItem[2]) ? "ol" : "ul";
       const indent = listItem[1].replaceAll("\t", "  ").length;
       addListItem(type, indent, listItem[3]);
     }
-    else if (quote) { closeList(); output.push(`<blockquote>${inline(quote[1])}</blockquote>`); }
-    else if (!line.trim()) { closeList(); }
-    else { closeList(); output.push(`<p>${inline(line)}</p>`); }
+    else if (quote) { closeParagraph(); closeList(); output.push(`<blockquote>${inline(quote[1])}</blockquote>`); }
+    else if (!line.trim()) { closeList(); paragraphLines.push(""); }
+    else { closeList(); paragraphLines.push(line); }
   }
+  closeParagraph();
   closeList();
   if (inCode) output.push("</code></pre>");
   return output.join("");

@@ -70,6 +70,33 @@ process.stdout.write(context.renderMarkdown("- parent\\n  - child"));
             "<ul><li>parent<ul><li>child</li></ul></li></ul>",
         )
 
+    def test_memo_markdown_renderer_preserves_single_newlines(self) -> None:
+        app_js = Path(__file__).parents[1] / "src/harness/control_center/static/app.js"
+        script = """
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+const renderer = source.slice(
+  source.indexOf("function escapeHtml"),
+  source.indexOf("function updateMemoPreview"),
+);
+const context = {};
+vm.createContext(context);
+vm.runInContext(renderer, context);
+process.stdout.write(context.renderMarkdown("first line\\n\\n\\nsecond line"));
+"""
+        result = subprocess.run(
+            ["node", "-e", script, str(app_js)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(
+            result.stdout,
+            "<p>first line<br><br><br>second line</p>",
+        )
+
     def test_create_draft_uses_server_owned_defaults(self) -> None:
         draft = self.create_draft()
 
