@@ -152,7 +152,7 @@ function renderMarkdown(value) {
   const lines = source.split("\n");
   const output = [];
   let inCode = false;
-  let openList = null;
+  const listStack = [];
   const inline = (line) => escapeHtml(line)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -161,15 +161,29 @@ function renderMarkdown(value) {
     .replace(/_([^_]+)_/g, "<em>$1</em>")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
   const closeList = () => {
-    if (openList) { output.push(`</${openList}>`); openList = null; }
-  };
-  const addListItem = (type, content) => {
-    if (openList !== type) {
-      closeList();
-      output.push(`<${type}>`);
-      openList = type;
+    while (listStack.length) {
+      const list = listStack.pop();
+      output.push(`</li></${list.type}>`);
     }
-    output.push(`<li>${inline(content)}</li>`);
+  };
+  const addListItem = (type, indent, content) => {
+    while (listStack.length && indent < listStack.at(-1).indent) {
+      const list = listStack.pop();
+      output.push(`</li></${list.type}>`);
+    }
+    const current = listStack.at(-1);
+    if (!current || indent > current.indent) {
+      output.push(`<${type}><li>${inline(content)}`);
+      listStack.push({ type, indent });
+      return;
+    }
+    if (current.type !== type) {
+      listStack.pop();
+      output.push(`</li></${current.type}><${type}><li>${inline(content)}`);
+      listStack.push({ type, indent });
+      return;
+    }
+    output.push(`</li><li>${inline(content)}`);
   };
   for (const line of lines) {
     if (line.startsWith("```")) {
@@ -179,12 +193,14 @@ function renderMarkdown(value) {
     }
     if (inCode) { output.push(`${escapeHtml(line)}\n`); continue; }
     const heading = line.match(/^(#{1,4})\s+(.+)$/);
-    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    const listItem = line.match(/^(\s*)([-*]|\d+[.)])\s+(.+)$/);
     const quote = line.match(/^\s*>\s?(.*)$/);
     if (heading) { closeList(); output.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`); }
-    else if (bullet) { addListItem("ul", bullet[1]); }
-    else if (ordered) { addListItem("ol", ordered[1]); }
+    else if (listItem) {
+      const type = /^\d/.test(listItem[2]) ? "ol" : "ul";
+      const indent = listItem[1].replaceAll("\t", "  ").length;
+      addListItem(type, indent, listItem[3]);
+    }
     else if (quote) { closeList(); output.push(`<blockquote>${inline(quote[1])}</blockquote>`); }
     else if (!line.trim()) { closeList(); }
     else { closeList(); output.push(`<p>${inline(line)}</p>`); }

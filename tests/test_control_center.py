@@ -1,3 +1,4 @@
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,6 +41,33 @@ class ControlCenterApiTests(unittest.TestCase):
         self.assertIn(
             "pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css",
             response.text,
+        )
+
+    def test_memo_markdown_renderer_preserves_nested_list_depth(self) -> None:
+        app_js = Path(__file__).parents[1] / "src/harness/control_center/static/app.js"
+        script = """
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+const renderer = source.slice(
+  source.indexOf("function escapeHtml"),
+  source.indexOf("function updateMemoPreview"),
+);
+const context = {};
+vm.createContext(context);
+vm.runInContext(renderer, context);
+process.stdout.write(context.renderMarkdown("- parent\\n  - child"));
+"""
+        result = subprocess.run(
+            ["node", "-e", script, str(app_js)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(
+            result.stdout,
+            "<ul><li>parent<ul><li>child</li></ul></li></ul>",
         )
 
     def test_create_draft_uses_server_owned_defaults(self) -> None:
