@@ -200,7 +200,7 @@ def run_fzf(lines: Sequence[str]) -> str | None:
     if completed.returncode == 0:
         selected = completed.stdout.rstrip("\n")
         return selected or None
-    if completed.returncode == 1:
+    if completed.returncode in {1, 130}:
         return None
     raise SelectionFileError(f"fzf exited with status {completed.returncode}")
 

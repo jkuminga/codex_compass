@@ -290,6 +290,40 @@ class UserPromptSubmitHookTests(unittest.TestCase):
             with self.assertRaisesRegex(work_item_picker.SelectionFileError, "fzf could not be started"):
                 work_item_picker.run_fzf(["WI-1\thigh\t선택\t고른다"])
 
+    def test_picker_treats_fzf_escape_as_cancellation(self) -> None:
+        completed = work_item_picker.subprocess.CompletedProcess(
+            args=["fzf"], returncode=130, stdout=""
+        )
+
+        with patch.object(work_item_picker.subprocess, "run", return_value=completed):
+            selected = work_item_picker.run_fzf(["WI-1\thigh\t선택\t고른다"])
+
+        self.assertIsNone(selected)
+
+    def test_picker_cli_returns_success_and_writes_cancelled_for_fzf_escape(self) -> None:
+        now = work_item_picker.utc_now()
+        request_path = self.root / "selection-request.request.json"
+        work_item_picker.atomic_write_json(request_path, {
+            "schema_version": 1, "request_id": "request", "session_id": "session", "turn_id": "turn",
+            "created_at": work_item_picker.format_timestamp(now), "expires_at": work_item_picker.format_timestamp(now + timedelta(minutes=5)),
+            "work_items": [{"id": "WI-1", "title": "선택", "goal": "고른다", "priority": "high"}],
+        })
+        completed = work_item_picker.subprocess.CompletedProcess(
+            args=["fzf"], returncode=130, stdout=""
+        )
+
+        with (
+            patch.object(work_item_picker.subprocess, "run", return_value=completed),
+            patch.object(work_item_picker.sys, "argv", ["work-item-picker", "--request", str(request_path)]),
+        ):
+            exit_code = work_item_picker.main()
+
+        result = work_item_picker.read_json_object(
+            work_item_picker.result_path_for(request_path)
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(result["status"], "cancelled")
+
     def test_picker_configures_fzf_with_labels_and_selection_guidance(self) -> None:
         line = "WI-1\tREADY   | high     | implementation | 로그인 구현 / 로그인을 적용한다."
         completed = work_item_picker.subprocess.CompletedProcess(
